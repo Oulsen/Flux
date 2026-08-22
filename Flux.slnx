@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Flux.App/Flux.App.csproj" />
+    <Project Path="src/Flux.Beat/Flux.Beat.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Flux.Beat.Tests/Flux.Beat.Tests.csproj" />
+  </Folder>
+</Solution>
