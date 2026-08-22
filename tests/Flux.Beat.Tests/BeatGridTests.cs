@@ -103,8 +103,8 @@ public class BeatGridTests {
   public void AnnouncesTheFirstTimelineAndEveryTempoChange() {
     FakeClock clock = new FakeClock();
     BeatGrid grid = NewGrid(clock);
-    List<double> announced = new List<double>();
-    grid.TimelineChanged += timeline => announced.Add(timeline.Bpm);
+    List<TempoChange> announced = new List<TempoChange>();
+    grid.TempoChanged += change => announced.Add(change);
 
     grid.Apply(AtOneTwenty);
     grid.Apply(AtOneTwenty);
@@ -112,8 +112,58 @@ public class BeatGridTests {
     grid.Apply(AtOneTwenty with { MicrosPerBeat = 342_857 });
 
     Assert.Equal(2, announced.Count);
-    Assert.Equal(120, announced[0], precision: 2);
-    Assert.Equal(175, announced[1], precision: 2);
+    Assert.Equal(120, announced[0].Timeline.Bpm, precision: 2);
+    Assert.Equal(175, announced[1].Timeline.Bpm, precision: 2);
+  }
+
+  /// <summary>
+  /// Measured against rekordbox: a tempo change renumbers the Link timeline
+  /// wholesale - 176.06 to 172.55 BPM moved the beat number by 2354 beats. The
+  /// announcement carries that shift because anything anchored to a beat index,
+  /// bar alignment above all, is invalidated by it.
+  /// </summary>
+  [Fact]
+  public void ReportsHowFarATempoChangeMovedTheBeatNumbering() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+    List<TempoChange> announced = new List<TempoChange>();
+    grid.TempoChanged += change => announced.Add(change);
+
+    grid.Apply(AtOneTwenty);
+    clock.Advance(TimeSpan.FromMilliseconds(250));
+    grid.Apply(AtOneTwenty with { MicrosPerBeat = 342_857 });
+
+    Assert.Equal(2, announced.Count);
+    Assert.Equal(0, announced[0].BeatNumberingShift, precision: 9);
+
+    // Beat 0.5 at 120 BPM becomes beat 0.729 at 175 BPM, against a shared anchor.
+    Assert.Equal(0.229, announced[1].BeatNumberingShift, precision: 3);
+  }
+
+  /// <summary>
+  /// Regression: the drift metric is a running maximum, so counting a tempo
+  /// change would pin it at thousands of beats for the rest of the session and
+  /// destroy the one signal it exists to give - whether extrapolation between
+  /// packets is still sound.
+  /// </summary>
+  [Fact]
+  public void DoesNotCountATempoChangeAsExtrapolationDrift() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+
+    grid.Apply(AtOneTwenty);
+    clock.Advance(TimeSpan.FromMilliseconds(250));
+    grid.Apply(AtOneTwenty with { MicrosPerBeat = 342_857 });
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot afterChange));
+    Assert.Equal(0, afterChange.MaxReanchorJumpBeats, precision: 9);
+
+    // And it still reports drift once the tempo settles again.
+    clock.Advance(TimeSpan.FromMilliseconds(250));
+    grid.Apply(AtOneTwenty with { MicrosPerBeat = 342_857, BeatOrigin = 2 });
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot afterDrift));
+    Assert.Equal(2, afterDrift.MaxReanchorJumpBeats, precision: 6);
   }
 
   [Fact]

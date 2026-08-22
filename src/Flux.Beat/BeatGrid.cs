@@ -10,7 +10,7 @@ namespace Flux.Beat;
 /// <param name="IsBarAligned">Whether <paramref name="PositionInBar"/> means anything musically.</param>
 /// <param name="IsStale">True once ALIVE packets stop arriving.</param>
 /// <param name="Packets">ALIVE packets accepted so far.</param>
-/// <param name="MaxReanchorJumpBeats">Largest disagreement seen between an old timeline's prediction and its replacement.</param>
+/// <param name="MaxReanchorJumpBeats">Largest drift seen between an old timeline's prediction and its replacement, counting only packets that did not change tempo.</param>
 public readonly record struct BeatGridSnapshot(
   double Bpm,
   double Beat,
@@ -22,6 +22,19 @@ public readonly record struct BeatGridSnapshot(
   /// <summary>The beat currently sounding.</summary>
   public long BeatIndex => (long)Math.Floor(Beat);
 }
+
+/// <summary>
+/// A newly published tempo, and what adopting it did to the beat numbering.
+///
+/// The shift is worth carrying rather than discarding, because it is large and
+/// surprising: rekordbox does not preserve beat continuity across a tempo
+/// change, so the absolute Link beat number is not a stable identity. Anything
+/// anchored to a beat index - bar alignment above all - has to re-arm when this
+/// fires.
+/// </summary>
+/// <param name="Timeline">The timeline now in force.</param>
+/// <param name="BeatNumberingShift">How far the beat number moved at the instant of the change; zero for the first timeline.</param>
+public readonly record struct TempoChange(LinkTimeline Timeline, double BeatNumberingShift);
 
 /// <summary>
 /// Holds the current Link timeline and answers "where is the beat right now?".
@@ -61,7 +74,7 @@ public sealed class BeatGrid {
   }
 
   /// <summary>Raised on the first accepted packet, and again after every tempo change.</summary>
-  public event Action<LinkTimeline>? TimelineChanged;
+  public event Action<TempoChange>? TempoChanged;
 
   /// <summary>
   /// Adopts a freshly received timeline.
@@ -72,22 +85,30 @@ public sealed class BeatGrid {
   /// growing value means the grid is being corrected rather than confirmed.
   /// </summary>
   public void Apply(LinkTimeline received) {
-    LinkTimeline? changed = null;
+    TempoChange? announcement = null;
 
     lock(this.gate) {
       double nowMicros = this.clock.NowMicros;
 
       if(this.timeline is LinkTimeline previous) {
-        double jump = Math.Abs(received.BeatAt(nowMicros) - previous.BeatAt(nowMicros));
-        if(jump > this.maxReanchorJumpBeats) {
-          this.maxReanchorJumpBeats = jump;
-        }
+        double shift = received.BeatAt(nowMicros) - previous.BeatAt(nowMicros);
 
-        if(previous.MicrosPerBeat != received.MicrosPerBeat) {
-          changed = received;
+        if(previous.MicrosPerBeat == received.MicrosPerBeat) {
+          // Same tempo republished, so the two timelines are claims about the
+          // same thing and any disagreement is real error. This is the only
+          // case the health metric may count.
+          if(Math.Abs(shift) > this.maxReanchorJumpBeats) {
+            this.maxReanchorJumpBeats = Math.Abs(shift);
+          }
+        } else {
+          // A tempo change renumbers the timeline wholesale - measured against
+          // rekordbox at thousands of beats - so folding it into the drift
+          // metric would pin that metric at a huge value for the rest of the
+          // session and destroy the one signal it exists to give.
+          announcement = new TempoChange(received, shift);
         }
       } else {
-        changed = received;
+        announcement = new TempoChange(received, BeatNumberingShift: 0);
       }
 
       this.timeline = received;
@@ -95,8 +116,8 @@ public sealed class BeatGrid {
       this.packets++;
     }
 
-    if(changed is LinkTimeline notify) {
-      this.TimelineChanged?.Invoke(notify);
+    if(announcement is TempoChange notify) {
+      this.TempoChanged?.Invoke(notify);
     }
   }
 

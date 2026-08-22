@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 
@@ -60,12 +61,45 @@ public sealed class AbletonLinkListener: BackgroundService {
     using CancellationTokenSource watchdogStop = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
     Task watchdog = this.WatchAsync(joined, watchdogStop.Token);
 
+    this.grid.TempoChanged += this.OnTempoChanged;
+
     try {
       await this.ReceiveAsync(socket, stoppingToken).ConfigureAwait(false);
     } finally {
+      this.grid.TempoChanged -= this.OnTempoChanged;
       await watchdogStop.CancelAsync().ConfigureAwait(false);
       await watchdog.ConfigureAwait(false);
     }
+  }
+
+  /// <summary>
+  /// Reports every tempo the session publishes, including the first.
+  ///
+  /// The raw microseconds-per-beat is logged next to the BPM deliberately. When
+  /// the displayed tempo looks wrong or looks stuck, the question is always
+  /// whether the wire value moved and Flux mishandled it, or whether the wire
+  /// value never moved at all - and only the number off the packet separates
+  /// those two.
+  /// </summary>
+  private void OnTempoChanged(TempoChange change) {
+    // A fractional shift is just the two timelines disagreeing about the current
+    // instant by a rounding error. Whole beats mean the numbering was rebased,
+    // which is the part worth putting in the log.
+    //
+    // Formatted invariantly, because ILogger renders its own parameters that way
+    // and a locale-formatted fragment spliced in beside them produces a single
+    // line carrying two different decimal separators.
+    string renumbering = Math.Abs(change.BeatNumberingShift) >= 0.5
+      ? string.Create(
+        CultureInfo.InvariantCulture,
+        $" Beat numbering shifted by {change.BeatNumberingShift:F1} beats.")
+      : string.Empty;
+
+    this.log.LogInformation(
+      "Link tempo is now {Bpm:F2} BPM ({MicrosPerBeat} us/beat).{Renumbering}",
+      change.Timeline.Bpm,
+      change.Timeline.MicrosPerBeat,
+      renumbering);
   }
 
   /// <summary>
