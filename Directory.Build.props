@@ -1,0 +1,40 @@
+<Project>
+
+  <!-- Reproducible restore + an audit baseline: every project writes a
+       packages.lock.json (committed) pinning its full dependency graph, so a
+       restore can't silently pull a different transitive version than was
+       reviewed. Package versions are also pinned exactly in each csproj. -->
+  <PropertyGroup>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <!-- Single source of truth for the app version (semver). Flows into
+       AssemblyVersion / FileVersion / InformationalVersion for every project,
+       and the app surfaces it in the UI so it's obvious what a phone is
+       actually talking to.
+
+       The version reflects what WORKS, not what is planned. Each completed
+       phase bumps the minor; 1.0.0 lands with the first public release.
+       Bumped by hand - see "Versioning" in the plan for the ladder. -->
+  <PropertyGroup>
+    <Version>0.0.1</Version>
+  </PropertyGroup>
+
+  <!-- Shared language settings for every project (TargetFramework stays
+       per-project: the WinForms shell needs net10.0-windows, the rest don't). -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <!-- IDE0005 (unused usings) only reports reliably when the documentation
+       file is generated, which is what makes `dotnet format style` able to
+       strip dead usings from the command line. CS1591 ("missing XML comment on
+       public member") is the unwanted side effect - suppressed, since this is
+       an app, not a documented public library. -->
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>

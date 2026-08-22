@@ -1,0 +1,41 @@
+# Internal working notes — never committed (see "Repository hygiene" in the plan)
+.plan/
+
+# Secrets: Hue bridge credentials, application key, clientkey
+appsettings.local.json
+appsettings.*.local.json
+*.env
+.env
+.env.*
+secrets.json
+
+# .NET build output
+bin/
+obj/
+
+# IDE
+.vs/
+.idea/
+*.user
+
+# Logs
+*.log
+
+# Git Bash crash dumps
+*.stackdump
+
+# Frontend
+node_modules/
+src/Flux.Web/wwwroot/
+.vite/
+dist/
+
+# Release pipeline (Velopack): publish staging + the generated release feed
+# (Setup.exe, nupkgs, RELEASES). Artifacts, never committed.
+artifacts/
+releases/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
