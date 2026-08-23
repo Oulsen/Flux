@@ -140,6 +140,80 @@ public class LinkPacketTests {
     Assert.Equal(175.00, timeline.Bpm, precision: 2);
   }
 
+  /// <summary>
+  /// The harder decoy: one that declares the right size too, so it is
+  /// indistinguishable from the real chunk by shape alone. Only its contents give
+  /// it away, which is why a candidate that fails to decode has to be walked past
+  /// rather than treated as the answer.
+  /// </summary>
+  [Fact]
+  public void WalksPastADecoyThatDeclaresTheRightSize() {
+    byte[] decoy = [
+      (byte)'t', (byte)'m', (byte)'l', (byte)'n',
+      0x00, 0x00, 0x00, 0x18,
+      .. Enumerable.Repeat((byte)0xFF, 24),
+    ];
+
+    byte[] packet = new AliveDatagram { HeaderNoise = decoy, MicrosPerBeat = 342_857 }.ToBytes();
+
+    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out LinkTimeline timeline));
+    Assert.Equal(175.00, timeline.Bpm, precision: 2);
+  }
+
+  /// <summary>
+  /// An anchor is two thirds of the timeline and was previously taken on trust.
+  /// A wild one paired with a plausible tempo puts the beat number somewhere
+  /// around 1e13, which rotates the bar readout at random and gets blamed on
+  /// Link rather than on the packet.
+  /// </summary>
+  [Fact]
+  public void RejectsATimeOriginThatCannotBeAHostClock() {
+    byte[] packet = new AliveDatagram { TimeOriginMicros = long.MaxValue }.ToBytes();
+
+    Assert.False(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out _));
+  }
+
+  [Fact]
+  public void RejectsABeatOriginNoSessionCouldReach() {
+    byte[] packet = new AliveDatagram { BeatOriginMicroBeats = long.MaxValue }.ToBytes();
+
+    Assert.False(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out _));
+  }
+
+  /// <summary>
+  /// Adding the offset is checked, so an offset that cannot be applied is a
+  /// rejected packet rather than an anchor that silently wrapped to a large
+  /// negative number and then passed the bounds test.
+  /// </summary>
+  [Fact]
+  public void RejectsAClockOffsetThatWouldWrapTheAnchor() {
+    byte[] packet = new AliveDatagram { TimeOriginMicros = 1_000_000 }.ToBytes();
+
+    Assert.False(LinkPacket.TryParseTimeline(packet, double.MaxValue, out _));
+    Assert.False(LinkPacket.TryParseTimeline(packet, double.NaN, out _));
+  }
+
+  /// <summary>
+  /// The session id is the only stable identity a Link session has: every peer in
+  /// it republishes the same value, which is what makes it followable when a
+  /// second session is on the same network.
+  /// </summary>
+  [Fact]
+  public void ReadsTheSessionIdEveryPeerRepublishes() {
+    byte[] packet = new AliveDatagram { SessionId = 0xDEAD_BEEF_0000_0001 }.ToBytes();
+
+    Assert.True(LinkPacket.TryParseSessionId(packet, out ulong session));
+    Assert.Equal(0xDEAD_BEEF_0000_0001, session);
+  }
+
+  [Fact]
+  public void ReportsNoSessionIdWhenTheDatagramNamesNoSession() {
+    byte[] packet = new AliveDatagram { IncludeSession = false }.ToBytes();
+
+    Assert.False(LinkPacket.TryParseSessionId(packet, out _));
+    Assert.False(LinkPacket.TryParseSessionId([0x5F, 0x61], out _));
+  }
+
   [Fact]
   public void RejectsADatagramTooShortToHoldAHeader() {
     Assert.False(LinkPacket.TryParseTimeline([0x5F, 0x61], clockOffsetMicros: 0, out _));

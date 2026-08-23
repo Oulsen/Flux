@@ -1,5 +1,6 @@
 using Flux.Beat;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Threading.Channels;
 
@@ -23,6 +24,7 @@ public sealed class ConsoleBeatMonitor: IHostedService, IDisposable {
 
   private readonly BeatScheduler scheduler;
   private readonly BeatGrid grid;
+  private readonly int quantum;
   private readonly Channel<BeatEvent> queue = Channel.CreateBounded<BeatEvent>(
     new BoundedChannelOptions(QueueCapacity) {
       FullMode = BoundedChannelFullMode.DropOldest,
@@ -33,9 +35,12 @@ public sealed class ConsoleBeatMonitor: IHostedService, IDisposable {
   private Task? printer;
   private CancellationTokenSource? stopping;
 
-  public ConsoleBeatMonitor(BeatScheduler scheduler, BeatGrid grid) {
+  public ConsoleBeatMonitor(BeatScheduler scheduler, BeatGrid grid, IOptions<LinkOptions> options) {
+    ArgumentNullException.ThrowIfNull(options);
+
     this.scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
     this.grid = grid ?? throw new ArgumentNullException(nameof(grid));
+    this.quantum = options.Value.Quantum;
   }
 
   public Task StartAsync(CancellationToken cancellationToken) {
@@ -77,7 +82,7 @@ public sealed class ConsoleBeatMonitor: IHostedService, IDisposable {
     try {
       await foreach(BeatEvent occurred in this.queue.Reader.ReadAllAsync(stoppingToken).ConfigureAwait(false)) {
         this.grid.TryGetSnapshot(out BeatGridSnapshot snapshot);
-        Console.WriteLine(Format(occurred, snapshot));
+        Console.WriteLine(Format(occurred, snapshot, this.quantum));
       }
     } catch(OperationCanceledException) {
       // Shutdown.
@@ -91,9 +96,15 @@ public sealed class ConsoleBeatMonitor: IHostedService, IDisposable {
   /// because it is <em>not</em> anchored to the music yet - Link carries no
   /// downbeat, and Phase 2 supplies one from a cue press or a tap. A line
   /// reading "BAR" would be a claim this source cannot make.
+  ///
+  /// The readout is as wide as the configured quantum, not four slots. Hardcoding
+  /// four made a quantum of eight print half a bar with the dot nowhere in it -
+  /// silently wrong, which is worse than visibly unsupported.
   /// </summary>
-  private static string Format(BeatEvent occurred, BeatGridSnapshot snapshot) {
-    char[] bar = ['.', '.', '.', '.'];
+  private static string Format(BeatEvent occurred, BeatGridSnapshot snapshot, int quantum) {
+    char[] bar = new char[quantum];
+    Array.Fill(bar, '.');
+
     if(occurred.PositionInBar >= 1 && occurred.PositionInBar <= bar.Length) {
       bar[occurred.PositionInBar - 1] = '#';
     }

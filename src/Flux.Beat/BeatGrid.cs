@@ -20,7 +20,7 @@ public readonly record struct BeatGridSnapshot(
   long Packets,
   double MaxReanchorJumpBeats) {
   /// <summary>The beat currently sounding.</summary>
-  public long BeatIndex => (long)Math.Floor(Beat);
+  public long BeatIndex => BeatGrid.IndexOf(Beat);
 }
 
 /// <summary>
@@ -121,16 +121,6 @@ public sealed class BeatGrid {
     }
   }
 
-  /// <summary>Forgets the timeline entirely, so the grid reports no source until packets resume.</summary>
-  public void Reset() {
-    lock(this.gate) {
-      this.timeline = null;
-      this.lastPacketMicros = 0;
-      this.packets = 0;
-      this.maxReanchorJumpBeats = 0;
-    }
-  }
-
   /// <summary>The current timeline, or null before the first packet arrives.</summary>
   public LinkTimeline? Timeline {
     get {
@@ -162,7 +152,7 @@ public sealed class BeatGrid {
       snapshot = new BeatGridSnapshot(
         known.Bpm,
         beat,
-        PositionInBar((long)Math.Floor(beat), this.quantum),
+        PositionInBar(IndexOf(beat), this.quantum),
 
         // Link carries no meter and no quantum, so bar 1 is not recoverable from
         // the wire at any amount of parsing effort. Phase 2 supplies it from a
@@ -175,6 +165,18 @@ public sealed class BeatGrid {
 
       return true;
     }
+  }
+
+  /// <summary>
+  /// The integer beat a fractional beat number belongs to.
+  ///
+  /// One definition, called from everywhere: rounding and flooring disagree by a
+  /// whole beat on anything fractional, and two readings in one codebase is how
+  /// a beat index and the beat it names drift apart. Phase 2 hangs bar alignment
+  /// on that index.
+  /// </summary>
+  public static long IndexOf(double beat) {
+    return (long)Math.Floor(beat);
   }
 
   /// <summary>

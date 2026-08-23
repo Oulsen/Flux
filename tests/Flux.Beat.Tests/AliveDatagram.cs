@@ -37,6 +37,12 @@ internal sealed class AliveDatagram {
   /// <summary>Set false to build a packet with no timeline in it at all.</summary>
   public bool IncludeTimeline { get; init; } = true;
 
+  /// <summary>The id every peer in the session republishes.</summary>
+  public ulong SessionId { get; init; } = 0x1111_1111_1111_1111;
+
+  /// <summary>Set false to build a packet that names no session.</summary>
+  public bool IncludeSession { get; init; } = true;
+
   /// <summary>The length written into the timeline chunk header, which is not always the truth.</summary>
   public int DeclaredTimelineSize { get; init; } = 24;
 
@@ -65,7 +71,12 @@ internal sealed class AliveDatagram {
       AppendChunk(packet, "tmln", this.DeclaredTimelineSize, timeline);
     }
 
-    AppendChunk(packet, "sess", 8, Enumerable.Repeat((byte)0x11, 8));
+    if(this.IncludeSession) {
+      List<byte> session = new List<byte>(8);
+      AppendUInt64(session, this.SessionId);
+      AppendChunk(packet, "sess", 8, session);
+    }
+
     AppendChunk(packet, "stst", 17, Enumerable.Repeat((byte)0x22, 17));
     AppendChunk(packet, "mep4", 6, Enumerable.Repeat((byte)0x33, 6));
 
@@ -89,6 +100,12 @@ internal sealed class AliveDatagram {
   private static void AppendInt64(List<byte> target, long value) {
     Span<byte> bytes = stackalloc byte[8];
     BinaryPrimitives.WriteInt64BigEndian(bytes, value);
+    target.AddRange(bytes);
+  }
+
+  private static void AppendUInt64(List<byte> target, ulong value) {
+    Span<byte> bytes = stackalloc byte[8];
+    BinaryPrimitives.WriteUInt64BigEndian(bytes, value);
     target.AddRange(bytes);
   }
 }

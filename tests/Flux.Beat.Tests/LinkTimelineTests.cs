@@ -38,4 +38,31 @@ public class LinkTimelineTests {
   public void BoundsPlausibleTempi(long microsPerBeat, bool expected) {
     Assert.Equal(expected, new LinkTimeline(microsPerBeat, 0, 0).IsPlausible);
   }
+
+  /// <summary>
+  /// A plausible tempo beside a wild anchor is still a bad timeline: the tempo
+  /// reads correctly on screen while the beat number sits around 1e13 and the bar
+  /// readout rotates at random.
+  /// </summary>
+  [Theory]
+  [InlineData(LinkTimeline.MaxAnchorMagnitudeMicros, true)]
+  [InlineData(-LinkTimeline.MaxAnchorMagnitudeMicros, true)]
+  [InlineData(LinkTimeline.MaxAnchorMagnitudeMicros + 1, false)]
+  [InlineData(long.MinValue, false)]
+  [InlineData(long.MaxValue, false)]
+  public void BoundsPlausibleTimeOrigins(long timeOriginMicros, bool expected) {
+    LinkTimeline timeline = new LinkTimeline(500_000, BeatOrigin: 0, timeOriginMicros);
+
+    Assert.Equal(expected, timeline.IsPlausible);
+  }
+
+  [Theory]
+  [InlineData(LinkTimeline.MaxBeatOriginMagnitude, true)]
+  [InlineData(-LinkTimeline.MaxBeatOriginMagnitude, true)]
+  [InlineData(LinkTimeline.MaxBeatOriginMagnitude * 10, false)]
+  public void BoundsPlausibleBeatOrigins(double beatOrigin, bool expected) {
+    LinkTimeline timeline = new LinkTimeline(500_000, beatOrigin, TimeOriginMicros: 0);
+
+    Assert.Equal(expected, timeline.IsPlausible);
+  }
 }

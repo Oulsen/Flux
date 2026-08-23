@@ -28,10 +28,35 @@ public readonly record struct LinkTimeline(long MicrosPerBeat, double BeatOrigin
   /// <inheritdoc cref="MinMicrosPerBeat"/>
   public const long MaxMicrosPerBeat = 3_000_000;
 
+  /// <summary>
+  /// The widest anchor treated as real, either side of zero. Link's host time is
+  /// microseconds since boot, so 1e15 is about 31 years of uptime - beyond any
+  /// machine, and small enough that a garbage anchor cannot survive.
+  ///
+  /// The tempo bound alone does not cover this. Tempo is one of three wire
+  /// fields, and a plausible tempo beside a wild anchor still puts the beat
+  /// number somewhere around 1e13, which rotates the bar readout at random and
+  /// looks like a Link fault rather than a bad packet.
+  /// </summary>
+  public const long MaxAnchorMagnitudeMicros = 1_000_000_000_000_000;
+
+  /// <summary>
+  /// The widest beat origin treated as real. Generous on purpose: it only has to
+  /// exclude the magnitudes a misparse produces, not police a long session.
+  /// </summary>
+  public const double MaxBeatOriginMagnitude = 1e12;
+
   public double Bpm => 60_000_000.0 / MicrosPerBeat;
 
-  /// <summary>True when the tempo is inside <see cref="MinMicrosPerBeat"/>..<see cref="MaxMicrosPerBeat"/>.</summary>
-  public bool IsPlausible => MicrosPerBeat is >= MinMicrosPerBeat and <= MaxMicrosPerBeat;
+  /// <summary>
+  /// True when all three wire fields are inside their plausible bands: the tempo
+  /// within <see cref="MinMicrosPerBeat"/>..<see cref="MaxMicrosPerBeat"/>, and
+  /// both halves of the anchor within their magnitude bounds.
+  /// </summary>
+  public bool IsPlausible =>
+    MicrosPerBeat is >= MinMicrosPerBeat and <= MaxMicrosPerBeat
+    && TimeOriginMicros is >= -MaxAnchorMagnitudeMicros and <= MaxAnchorMagnitudeMicros
+    && Math.Abs(BeatOrigin) <= MaxBeatOriginMagnitude;
 
   /// <summary>The fractional beat number at a local timestamp.</summary>
   public double BeatAt(double micros) {

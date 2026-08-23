@@ -13,12 +13,19 @@ public static class ServiceCollectionExtensions {
   /// singleton and once as the hosted service resolving to that same instance -
   /// so that subscribing to <see cref="BeatScheduler.Beat"/> reaches the
   /// instance the host is actually running rather than a second, idle copy.
+  ///
+  /// The settings are validated on start rather than on first use, because the
+  /// first use of most of them is on a background thread where a bad value reads
+  /// as a hardware problem.
   /// </summary>
   public static IServiceCollection AddAbletonLink(this IServiceCollection services, IConfiguration configuration) {
     ArgumentNullException.ThrowIfNull(services);
     ArgumentNullException.ThrowIfNull(configuration);
 
-    services.Configure<LinkOptions>(configuration.GetSection(LinkOptions.SectionName));
+    services.AddSingleton<IValidateOptions<LinkOptions>, LinkOptionsValidator>();
+    services.AddOptions<LinkOptions>()
+      .Bind(configuration.GetSection(LinkOptions.SectionName))
+      .ValidateOnStart();
 
     services.AddSingleton<IMonotonicClock, MonotonicClock>();
     services.AddSingleton<BeatGrid>(provider => {

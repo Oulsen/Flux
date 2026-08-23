@@ -10,8 +10,4 @@ internal sealed class FakeClock: IMonotonicClock {
   public void Advance(TimeSpan elapsed) {
     this.NowMicros += elapsed.TotalMilliseconds * 1000.0;
   }
-
-  public void AdvanceMicros(double micros) {
-    this.NowMicros += micros;
-  }
 }

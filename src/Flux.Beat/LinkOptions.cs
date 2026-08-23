@@ -41,7 +41,7 @@ public sealed class LinkOptions {
   ///
   /// rekordbox republishes roughly every 250 ms, so this is ten missed packets -
   /// long enough not to flicker on a scheduling hiccup, short enough that
-  /// switching LINK off is visible on the phone within a breath.
+  /// switching LINK off shows up within a breath.
   /// </summary>
   public TimeSpan StaleAfter { get; set; } = TimeSpan.FromSeconds(2.5);
 

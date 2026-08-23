@@ -71,8 +71,6 @@ public class BeatGridTests {
 
     grid.Apply(AtOneTwenty);
     clock.Advance(TimeSpan.FromMilliseconds(250));
-
-    // The same tempo, shifted half a beat later.
     grid.Apply(AtOneTwenty with { BeatOrigin = -0.5 });
 
     Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
@@ -164,17 +162,6 @@ public class BeatGridTests {
 
     Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot afterDrift));
     Assert.Equal(2, afterDrift.MaxReanchorJumpBeats, precision: 6);
-  }
-
-  [Fact]
-  public void ForgetsEverythingOnReset() {
-    FakeClock clock = new FakeClock();
-    BeatGrid grid = NewGrid(clock);
-
-    grid.Apply(AtOneTwenty);
-    grid.Reset();
-
-    Assert.False(grid.TryGetSnapshot(out _));
   }
 
   /// <summary>

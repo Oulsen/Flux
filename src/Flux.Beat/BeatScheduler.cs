@@ -63,6 +63,9 @@ public sealed class BeatScheduler: IHostedService, IDisposable {
   /// </summary>
   private const double StaleTargetBeats = 2.0;
 
+  /// <summary>How long to wait for the beat thread on shutdown: the longest sleep it can be inside, plus slack.</summary>
+  private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromMilliseconds(500);
+
   private readonly BeatGrid grid;
   private readonly IMonotonicClock clock;
   private readonly int quantum;
@@ -100,13 +103,23 @@ public sealed class BeatScheduler: IHostedService, IDisposable {
     return Task.CompletedTask;
   }
 
+  /// <summary>
+  /// Stops the beat thread, and says so when it does not stop.
+  ///
+  /// The wait is bounded here rather than by <paramref name="cancellationToken"/>
+  /// on purpose: <see cref="ShutdownTimeout"/> is already far inside any host
+  /// shutdown budget, and the thread is a background thread, so a hung one cannot
+  /// hold the process open either way. What it can do is hide the reason, which
+  /// is what the warning is for.
+  /// </summary>
   public async Task StopAsync(CancellationToken cancellationToken) {
     await this.stopping.CancelAsync().ConfigureAwait(false);
 
     Thread? running = this.thread;
-    if(running is not null) {
-      // Bounded by the longest sleep the loop can be inside, plus slack.
-      running.Join(TimeSpan.FromMilliseconds(500));
+    if(running is not null && !running.Join(ShutdownTimeout)) {
+      this.log.LogWarning(
+        "The beat scheduler thread was still running {Timeout} ms after being asked to stop.",
+        ShutdownTimeout.TotalMilliseconds);
     }
   }
 
@@ -149,9 +162,11 @@ public sealed class BeatScheduler: IHostedService, IDisposable {
       return;
     }
 
+    long index = BeatGrid.IndexOf(beat);
+
     BeatEvent occurred = new BeatEvent(
-      (long)Math.Round(beat),
-      BeatGrid.PositionInBar((long)Math.Round(beat), this.quantum),
+      index,
+      BeatGrid.PositionInBar(index, this.quantum),
 
       // Phase 2 anchors this from a cue press or a tap. Until then the bar
       // position is an arbitrary rotation and says so.
@@ -171,17 +186,13 @@ public sealed class BeatScheduler: IHostedService, IDisposable {
   /// Chooses the beat to aim at next.
   ///
   /// The distinction that matters is between <em>slightly late</em> and
-  /// <em>missed</em>, and getting it wrong is not a rounding detail. Waking a
-  /// few milliseconds past the target is the normal case, not an exception:
-  /// <c>Thread.Sleep</c> quantises to ~15.6 ms whenever the timer resolution has
-  /// not been raised. Treating any overshoot as a miss makes the loop resync to
-  /// the <em>following</em> beat every time it wakes, and a scheduler that
-  /// perpetually chases the next beat never fires a single one.
-  ///
-  /// So: fire a beat that is a little late, and only give up on one that is late
-  /// enough to look wrong on stage. A flash 15 ms behind the kick is invisible;
-  /// a quarter of a beat behind it is a mistake, and skipping is then the better
-  /// of two bad options.
+  /// <em>missed</em>. Waking a few milliseconds past the target is the normal
+  /// case, not an exception: <c>Thread.Sleep</c> quantises to ~15.6 ms whenever
+  /// the timer resolution has not been raised. Treating any overshoot as a miss
+  /// makes the loop resync to the <em>following</em> beat every time it wakes,
+  /// and a scheduler that perpetually chases the next beat never fires a single
+  /// one. So a late beat still fires, and only <see cref="LateToleranceBeats"/>
+  /// decides when one is too late to be worth it.
   ///
   /// The upper guard catches the opposite case - a replacement timeline that
   /// renumbers the beats and leaves the target stranded in the future.
