@@ -18,7 +18,10 @@ export default defineConfig({
       // changeOrigin is deliberately left off: rewriting the Host header while
       // leaving Origin alone is exactly the mismatch the backend's origin check
       // rejects.
-      '/ws': { target: 'ws://localhost:5050', ws: true },
+      //
+      // The default mirrors Web:Port in src/Flux.App/appsettings.json; when that
+      // changes, set FLUX_PORT rather than editing this file.
+      '/ws': { target: `ws://localhost:${process.env.FLUX_PORT ?? '5050'}`, ws: true },
     },
   },
 });

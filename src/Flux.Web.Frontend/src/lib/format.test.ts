@@ -28,10 +28,19 @@ test('a round trip is whole milliseconds and never negative', () => {
 });
 
 test('the reconnect delay doubles and then stops growing', () => {
-  assert.equal(reconnectDelay(0), 500);
-  assert.equal(reconnectDelay(1), 1000);
-  assert.equal(reconnectDelay(2), 2000);
-  assert.equal(reconnectDelay(20), 10_000);
+  // Jitter puts each delay between half a step and the full step, so the
+  // assertions pin the envelope rather than a point.
+  const steps: Array<[attempt: number, step: number]> = [
+    [0, 500],
+    [1, 1000],
+    [2, 2000],
+    [20, 10_000],
+  ];
+
+  for (const [attempt, step] of steps) {
+    const delay = reconnectDelay(attempt);
+    assert.ok(delay >= step / 2 && delay <= step, `attempt ${attempt} waited ${delay} ms`);
+  }
 });
 
 test('a frame is read as far as its type tag', () => {

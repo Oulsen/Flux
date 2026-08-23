@@ -56,6 +56,14 @@ export class FluxStore {
   }
 
   apply(message: RawMessage): void {
+    // The protocol's escalation rule: on a version mismatch the fields may have
+    // moved, so nothing is ingested and the stage freezes behind the banner. A
+    // hello still passes - it is what clears the mismatch after Flux is rolled
+    // back or the page reloads mid-session.
+    if (this.protocolMismatch && message.type !== 'hello') {
+      return;
+    }
+
     switch (message.type) {
       case 'hello': {
         const hello = message.data as HelloData;

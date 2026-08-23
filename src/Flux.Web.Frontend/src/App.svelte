@@ -46,7 +46,7 @@
   {#if store.protocolMismatch}
     <p class="mismatch">
       This page speaks protocol {PROTOCOL_VERSION} and Flux speaks {store.protocol}. Reload to pick up the
-      current page; until then the readings below may not mean what they say.
+      current page; until then the readings below are frozen at the last values this page could trust.
     </p>
   {/if}
 

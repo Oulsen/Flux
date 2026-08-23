@@ -12,6 +12,12 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <!-- The origin check is internal rather than public: it is the socket's one
+       security gate, and the tests pin its behaviour without it becoming API. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Flux.Web.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
   </ItemGroup>

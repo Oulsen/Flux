@@ -22,6 +22,16 @@ internal sealed class FakeWebSocket: WebSocket {
   private string? closeDescription;
   private WebSocketState state = WebSocketState.Open;
 
+  private Frame? receiving;
+  private int delivered;
+
+  /// <summary>
+  /// The most bytes one ReceiveAsync call hands over. A real socket fragments
+  /// messages at the network's whim; lowering this makes a test do it on
+  /// purpose, so reassembly is exercised rather than assumed.
+  /// </summary>
+  public int MaxChunk { get; init; } = int.MaxValue;
+
   public override WebSocketCloseStatus? CloseStatus => this.closeStatus;
 
   public override string? CloseStatusDescription => this.closeDescription;
@@ -51,23 +61,45 @@ internal sealed class FakeWebSocket: WebSocket {
     return await this.outbound.Reader.ReadAsync(giveUp.Token).ConfigureAwait(false);
   }
 
+  /// <summary>
+  /// Hands over at most the caller's buffer (and at most <see cref="MaxChunk"/>)
+  /// per call, reporting end-of-message only with a frame's final byte - the
+  /// contract a real socket honours and a naive fake silently doesn't. The
+  /// server's too-big close depends on it: a message that outgrows the buffer is
+  /// only ever seen as full-buffer reads that never end.
+  /// </summary>
   public override async Task<WebSocketReceiveResult> ReceiveAsync(
     ArraySegment<byte> buffer,
     CancellationToken cancellationToken) {
-    Frame frame = await this.inbound.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+    if(this.receiving is null) {
+      Frame frame = await this.inbound.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
 
-    if(frame.Type == WebSocketMessageType.Close) {
-      this.state = WebSocketState.CloseReceived;
-      return new WebSocketReceiveResult(
-        0,
-        WebSocketMessageType.Close,
-        endOfMessage: true,
-        WebSocketCloseStatus.NormalClosure,
-        "Client closed.");
+      if(frame.Type == WebSocketMessageType.Close) {
+        this.state = WebSocketState.CloseReceived;
+        return new WebSocketReceiveResult(
+          0,
+          WebSocketMessageType.Close,
+          endOfMessage: true,
+          WebSocketCloseStatus.NormalClosure,
+          "Client closed.");
+      }
+
+      this.receiving = frame;
+      this.delivered = 0;
     }
 
-    frame.Payload.CopyTo(buffer.AsSpan());
-    return new WebSocketReceiveResult(frame.Payload.Length, frame.Type, endOfMessage: true);
+    Frame current = this.receiving.Value;
+    int count = Math.Min(Math.Min(buffer.Count, this.MaxChunk), current.Payload.Length - this.delivered);
+
+    current.Payload.AsSpan(this.delivered, count).CopyTo(buffer.AsSpan());
+    this.delivered += count;
+
+    bool endOfMessage = this.delivered == current.Payload.Length;
+    if(endOfMessage) {
+      this.receiving = null;
+    }
+
+    return new WebSocketReceiveResult(count, current.Type, endOfMessage);
   }
 
   public override Task SendAsync(

@@ -89,6 +89,73 @@ public sealed class SocketHubTests {
     Assert.True(error.Length < 200, $"The error quoted {error.Length} characters back at the client.");
   }
 
+  /// <summary>
+  /// The receive buffer is the documented maximum, so a message that outgrows it
+  /// can never be read whole: the connection is closed with the status the RFC
+  /// reserves for exactly this.
+  /// </summary>
+  [Fact]
+  public async Task ClosesAMessageThatOutgrowsTheBuffer() {
+    FakeWebSocket socket = new FakeWebSocket();
+    SocketHub hub = NewHub();
+
+    Task serving = hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+
+    socket.Client(new string('x', Frames.MaxInboundBytes + 1));
+    await serving;
+
+    Assert.Equal(WebSocketCloseStatus.MessageTooBig, socket.CloseStatus);
+  }
+
+  /// <summary>
+  /// A message at exactly the limit is within the protocol's promise and is
+  /// still answered; one byte past it is the close above.
+  /// </summary>
+  [Fact]
+  public async Task AcceptsAMessageExactlyAtTheLimit() {
+    const string skeleton = """{"type":"ping","data":{"t":1},"pad":""}""";
+    string message = skeleton.Replace("\"pad\":\"\"", $"\"pad\":\"{new string('x', Frames.MaxInboundBytes - skeleton.Length)}\"", StringComparison.Ordinal);
+    Assert.Equal(Frames.MaxInboundBytes, message.Length);
+
+    FakeWebSocket socket = new FakeWebSocket();
+    SocketHub hub = NewHub();
+
+    Task serving = hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+
+    socket.Client(message);
+
+    using JsonDocument pong = JsonDocument.Parse(await socket.NextAsync());
+    Assert.Equal("pong", pong.RootElement.GetProperty("type").GetString());
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// A real socket delivers a message in as many fragments as it likes; the
+  /// receive loop has to reassemble them before acting. Five bytes at a time is
+  /// enough to force the path a whole-message fake never touches.
+  /// </summary>
+  [Fact]
+  public async Task ReassemblesAFragmentedMessage() {
+    FakeWebSocket socket = new FakeWebSocket { MaxChunk = 5 };
+    SocketHub hub = NewHub();
+
+    Task serving = hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+
+    socket.Client("""{"type":"ping","data":{"t":42}}""");
+
+    using JsonDocument pong = JsonDocument.Parse(await socket.NextAsync());
+    Assert.Equal("pong", pong.RootElement.GetProperty("type").GetString());
+    Assert.Equal(42, pong.RootElement.GetProperty("data").GetProperty("t").GetInt64());
+
+    socket.ClientClose();
+    await serving;
+  }
+
   [Fact]
   public async Task ClosesOnABinaryFrame() {
     FakeWebSocket socket = new FakeWebSocket();

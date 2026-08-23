@@ -47,7 +47,14 @@ public static class WebHostExtensions {
     // Listening is configured rather than described in a URL string: the address
     // has just been parsed and checked, and handing Kestrel the parsed value
     // keeps it from being re-parsed under different rules.
-    builder.WebHost.ConfigureKestrel(kestrel => kestrel.Listen(IPAddress.Parse(options.BindAddress), options.Port));
+    builder.WebHost.ConfigureKestrel(kestrel => {
+      // Bounded because the socket is unauthenticated on the LAN and Kestrel's
+      // default is unlimited: each upgraded connection pins a receive buffer and
+      // a queue, and far fewer than this many screens is already every phone in
+      // the room.
+      kestrel.Limits.MaxConcurrentUpgradedConnections = 64;
+      kestrel.Listen(IPAddress.Parse(options.BindAddress), options.Port);
+    });
 
     return builder;
   }
@@ -142,7 +149,7 @@ public static class WebHostExtensions {
   /// could forge the header regardless - the header is a defence against pages,
   /// and only pages are obliged to send it honestly.
   /// </summary>
-  private static bool IsOwnOrigin(HttpRequest request) {
+  internal static bool IsOwnOrigin(HttpRequest request) {
     string? origin = request.Headers.Origin;
     if(string.IsNullOrEmpty(origin)) {
       return true;

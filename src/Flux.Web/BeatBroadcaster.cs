@@ -68,8 +68,11 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
   }
 
   public async Task StopAsync(CancellationToken cancellationToken) {
+    // The channel is never completed. Unsubscribing does not wait for an
+    // in-flight Enqueue on the scheduler thread, so a TryComplete here could run
+    // concurrently with its TryWrite - the very thing SingleWriter promises the
+    // channel won't see. Cancellation ends the pump instead.
     this.scheduler.Beat -= this.Enqueue;
-    this.beats.Writer.TryComplete();
 
     if(this.stopping is not null) {
       await this.stopping.CancelAsync().ConfigureAwait(false);
