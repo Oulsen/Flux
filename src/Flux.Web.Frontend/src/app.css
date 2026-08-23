@@ -1,0 +1,62 @@
+/*
+ * The room this runs in is dark and the phone is at arm's length on a booth
+ * shelf, so: dark surfaces, few of them, and numbers large enough to read
+ * without looking directly at them.
+ */
+
+:root {
+  --ink: #e8ecf4;
+  --ink-dim: #8b93a7;
+  --ink-faint: #5b6274;
+
+  --surface: #0b0d12;
+  --panel: #141824;
+  --edge: #232838;
+
+  --live: #4ade80;
+  --quiet: #fbbf24;
+  --dead: #64748b;
+  --alarm: #f87171;
+  --accent: #60a5fa;
+
+  --gap: 1rem;
+  --radius: 0.75rem;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+
+  /* The phone is held, not clicked: nothing here is meant to be selected, and a
+     stray long-press selecting the BPM is only ever in the way. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Numbers that change several times a second must not reflow the layout around
+   them, which proportional digits would do on every tick. */
+.numeric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}

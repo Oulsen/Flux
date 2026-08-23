@@ -2,8 +2,10 @@
   <Folder Name="/src/">
     <Project Path="src/Flux.App/Flux.App.csproj" />
     <Project Path="src/Flux.Beat/Flux.Beat.csproj" />
+    <Project Path="src/Flux.Web/Flux.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Flux.Beat.Tests/Flux.Beat.Tests.csproj" />
+    <Project Path="tests/Flux.Web.Tests/Flux.Web.Tests.csproj" />
   </Folder>
 </Solution>
