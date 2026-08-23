@@ -1,0 +1,10 @@
+import { mount } from 'svelte';
+import App from './App.svelte';
+import './app.css';
+
+const target = document.getElementById('app');
+if (target === null) {
+  throw new Error('The page is missing its #app element.');
+}
+
+export default mount(App, { target });

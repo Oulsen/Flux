@@ -1,0 +1,49 @@
+# Flux - agent notes
+
+Flux drives lights from music, built in phases. `README.md` says what works
+right now; `docs/protocol.md` is the WebSocket wire contract and wins over any
+other description of a message, including code comments.
+
+## Building and testing
+
+- The build is two steps in a fixed order: `npm run build` in
+  `src/Flux.Web.Frontend` writes the SPA into `src/Flux.Web/wwwroot`, then the
+  .NET build copies it along. After frontend changes, rebuild both.
+- Solution-level `dotnet test` currently reports zero tests (xunit v3 on
+  Microsoft.Testing.Platform). Run the test projects directly instead:
+  `dotnet run --project tests/Flux.Beat.Tests` and
+  `dotnet run --project tests/Flux.Web.Tests`.
+- Frontend checks, from `src/Flux.Web.Frontend`: `npm run check`
+  (svelte-check) and `npm test` (node --test). Both must pass; `npm run check`
+  is the frontend's only type gate.
+- After C# edits are complete, run
+  `dotnet format style --severity warn --verbosity quiet` (this repo opts in;
+  it strips unused usings), then build, then run the tests.
+
+## Conventions
+
+- Everything committed is written as if the repo were already public: commit
+  messages, branch names, PR bodies, comments, docs. No internal chatter, no
+  jokes on disk.
+- Commit messages: imperative mood, specific about what changed.
+- Branches: `type/short-description`, lowercase. Every change reaches
+  `develop` through a PR, squash-merged; the PR body becomes the commit
+  message, so write it as one.
+- Comments explain why, not what. Match the existing register: file-level
+  summaries argue the design decision the code cannot show.
+- Prose on disk uses " - " or a colon, never an em dash.
+- The version lives only in `Directory.Build.props`, bumped by hand, one minor
+  per completed phase. The frontend `package.json` stays at `0.0.0` on
+  purpose.
+- When the version bumps, review `README.md` and this file in the same change:
+  each bump is a phase completing, which changes what a user can do and what
+  an agent needs to know here.
+- Any protocol change updates `docs/protocol.md` in the same change, and bumps
+  the protocol version when an existing client could misread the change.
+
+## Working notes
+
+If a `.plan/` folder exists locally, it holds gitignored working notes: read
+`.plan/PROGRESS.md` first and update it last (dated log entry, absolute
+dates). It is intentionally never committed; do not reference its contents in
+committed text.

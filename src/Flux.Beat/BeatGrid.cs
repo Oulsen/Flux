@@ -10,7 +10,7 @@ namespace Flux.Beat;
 /// <param name="IsBarAligned">Whether <paramref name="PositionInBar"/> means anything musically.</param>
 /// <param name="IsStale">True once ALIVE packets stop arriving.</param>
 /// <param name="Packets">ALIVE packets accepted so far.</param>
-/// <param name="MaxReanchorJumpBeats">Largest drift seen between an old timeline's prediction and its replacement, counting only packets that did not change tempo.</param>
+/// <param name="MaxReanchorJumpBeats">Largest drift seen between an old timeline's prediction and its replacement, counting only same-session packets that did not change tempo.</param>
 public readonly record struct BeatGridSnapshot(
   double Bpm,
   double Beat,
@@ -83,8 +83,14 @@ public sealed class BeatGrid {
   /// and kept as the running maximum. It is the one number that says whether
   /// extrapolation is still sound: it should stay near zero forever, and a
   /// growing value means the grid is being corrected rather than confirmed.
+  ///
+  /// <paramref name="newSession"/> says the timeline belongs to a different Link
+  /// session than the previous one. A new session renumbers the beat wholesale
+  /// exactly as a tempo change does - the two timelines are not claims about the
+  /// same thing - so it is announced for the same reason and never counted as
+  /// drift, even when the tempi happen to match.
   /// </summary>
-  public void Apply(LinkTimeline received) {
+  public void Apply(LinkTimeline received, bool newSession = false) {
     TempoChange? announcement = null;
 
     lock(this.gate) {
@@ -93,18 +99,18 @@ public sealed class BeatGrid {
       if(this.timeline is LinkTimeline previous) {
         double shift = received.BeatAt(nowMicros) - previous.BeatAt(nowMicros);
 
-        if(previous.MicrosPerBeat == received.MicrosPerBeat) {
-          // Same tempo republished, so the two timelines are claims about the
-          // same thing and any disagreement is real error. This is the only
-          // case the health metric may count.
+        if(!newSession && previous.MicrosPerBeat == received.MicrosPerBeat) {
+          // Same tempo republished by the same session, so the two timelines
+          // are claims about the same thing and any disagreement is real error.
+          // This is the only case the health metric may count.
           if(Math.Abs(shift) > this.maxReanchorJumpBeats) {
             this.maxReanchorJumpBeats = Math.Abs(shift);
           }
         } else {
-          // A tempo change renumbers the timeline wholesale - measured against
-          // rekordbox at thousands of beats - so folding it into the drift
-          // metric would pin that metric at a huge value for the rest of the
-          // session and destroy the one signal it exists to give.
+          // A tempo change or a session switch renumbers the timeline wholesale
+          // - measured against rekordbox at thousands of beats - so folding it
+          // into the drift metric would pin that metric at a huge value for the
+          // rest of the session and destroy the one signal it exists to give.
           announcement = new TempoChange(received, shift);
         }
       } else {
