@@ -22,9 +22,17 @@ namespace Flux.Web;
 /// slow client loses its oldest queued messages rather than slowing anyone down.
 /// And because exactly one loop per connection writes to the socket, no send can
 /// ever overlap another on the same socket, which <see cref="WebSocket"/> does
-/// not permit and does not check.
+/// not permit and does not check. The close frame honours the same rule: a close
+/// decided on the receive side is not written until the send loop has exited.
 /// </summary>
 public sealed class SocketHub {
+  /// <summary>
+  /// How long a closing connection may spend draining its queue before it is
+  /// torn down without the parting close frame. A live LAN client drains in
+  /// milliseconds; this exists so a stalled one cannot hold its slot open.
+  /// </summary>
+  private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(5);
+
   private readonly ConcurrentDictionary<Guid, Client> clients = new ConcurrentDictionary<Guid, Client>();
   private readonly WebOptions options;
   private readonly ILogger<SocketHub> log;
@@ -85,14 +93,26 @@ public sealed class SocketHub {
 
     try {
       Task sending = SendAsync(socket, client, connection.Token);
-      Task receiving = this.ReceiveAsync(socket, client, connection.Token);
+      Task<CloseIntent?> receiving = this.ReceiveAsync(socket, client, connection.Token);
 
       // Either half finishing means the connection is over: a closed socket ends
       // the receive, and a dead one ends the send.
       await Task.WhenAny(sending, receiving).ConfigureAwait(false);
-      await connection.CancelAsync().ConfigureAwait(false);
       client.Complete();
 
+      // A close decided by the receive loop is written only once the send loop
+      // has drained and exited: WebSocket permits one outstanding send, and the
+      // close frame is a send. A client too stalled to drain within DrainTimeout
+      // forfeits the parting frame it could not have received anyway.
+      if(receiving.IsCompletedSuccessfully && receiving.Result is CloseIntent close) {
+        await Task.WhenAny(sending, Task.Delay(DrainTimeout, stoppingToken)).ConfigureAwait(false);
+
+        if(sending.IsCompletedSuccessfully) {
+          await CloseAsync(socket, close.Status, close.Reason, stoppingToken).ConfigureAwait(false);
+        }
+      }
+
+      await connection.CancelAsync().ConfigureAwait(false);
       await Task.WhenAll(sending, receiving).ConfigureAwait(false);
     } catch(OperationCanceledException) {
       // Shutdown, or the other half of the connection ending first.
@@ -115,14 +135,16 @@ public sealed class SocketHub {
   }
 
   /// <summary>
-  /// Reads client messages until the connection ends.
+  /// Reads client messages until the connection ends, and returns the close the
+  /// connection has earned rather than sending it: the send loop owns the
+  /// socket, so <see cref="ServeAsync"/> writes the close once that loop is done.
   ///
   /// The buffer is exactly the documented maximum and is reused for the life of
   /// the connection, so a client cannot make Flux allocate by talking - the
   /// oldest trick against a socket that accepts unauthenticated input, and this
   /// one accepts it from anything on the LAN by design.
   /// </summary>
-  private async Task ReceiveAsync(WebSocket socket, Client client, CancellationToken token) {
+  private async Task<CloseIntent?> ReceiveAsync(WebSocket socket, Client client, CancellationToken token) {
     byte[] message = new byte[Frames.MaxInboundBytes];
     int length = 0;
 
@@ -132,25 +154,20 @@ public sealed class SocketHub {
         .ConfigureAwait(false);
 
       if(received.MessageType == WebSocketMessageType.Close) {
-        await CloseAsync(socket, WebSocketCloseStatus.NormalClosure, "Goodbye.", token).ConfigureAwait(false);
-        return;
+        return new CloseIntent(WebSocketCloseStatus.NormalClosure, "Goodbye.");
       }
 
       if(received.MessageType == WebSocketMessageType.Binary) {
         // The protocol is text-only. Saying so with the status code the RFC
         // reserves for it beats letting a binary client watch its frames vanish.
-        await CloseAsync(socket, WebSocketCloseStatus.InvalidMessageType, "Flux speaks JSON text frames.", token)
-          .ConfigureAwait(false);
-        return;
+        return new CloseIntent(WebSocketCloseStatus.InvalidMessageType, "Flux speaks JSON text frames.");
       }
 
       length += received.Count;
 
       if(!received.EndOfMessage) {
         if(length == message.Length) {
-          await CloseAsync(socket, WebSocketCloseStatus.MessageTooBig, "Message exceeds 4096 bytes.", token)
-            .ConfigureAwait(false);
-          return;
+          return new CloseIntent(WebSocketCloseStatus.MessageTooBig, "Message exceeds 4096 bytes.");
         }
 
         continue;
@@ -159,6 +176,8 @@ public sealed class SocketHub {
       this.Dispatch(client, message.AsSpan(0, length));
       length = 0;
     }
+
+    return null;
   }
 
   /// <summary>
@@ -200,6 +219,11 @@ public sealed class SocketHub {
       await socket.CloseAsync(status, reason, token).ConfigureAwait(false);
     }
   }
+
+  /// <summary>
+  /// A close the receive loop has decided on but must not send itself.
+  /// </summary>
+  private readonly record struct CloseIntent(WebSocketCloseStatus Status, string Reason);
 
   /// <summary>
   /// One connected browser: a bounded queue and nothing else.

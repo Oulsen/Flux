@@ -161,7 +161,9 @@ public static class WebHostExtensions {
 
     // The dev server is a second origin by definition - Vite serves the page on
     // its own port and proxies this socket - so loopback is allowed outright
-    // rather than by matching a port that changes.
+    // rather than by matching a port that changes. That trusts pages served by
+    // any local process, which is proportionate while the socket only carries
+    // beats: tighten this before Phase 3 puts bridge pairing on it.
     if(IPAddress.TryParse(parsed.Host, out IPAddress? address) && IPAddress.IsLoopback(address)) {
       return true;
     }
