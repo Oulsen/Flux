@@ -7,12 +7,11 @@ using System.Threading.Channels;
 namespace Flux.App;
 
 /// <summary>
-/// Prints one line per beat, so the Link grid can be watched before there is a
-/// browser to watch it in.
+/// Prints one line per beat, so the Link grid can be watched without a browser.
 ///
-/// This is the Phase 1 stand-in for the visualizer, not a feature: once the web
-/// layer lands, the same beat events go out over the WebSocket instead and this
-/// stays only as a console-side sanity check.
+/// This was Phase 1's stand-in for the visualizer; the web layer has taken that
+/// job, so it is registered only when Console:BeatLog is set and stays as a
+/// console-side sanity check for debugging the grid itself.
 /// </summary>
 public sealed class ConsoleBeatMonitor: IHostedService, IDisposable {
   /// <summary>
@@ -48,8 +47,6 @@ public sealed class ConsoleBeatMonitor: IHostedService, IDisposable {
     this.printer = this.PrintAsync(this.stopping.Token);
     this.scheduler.Beat += this.Enqueue;
 
-    Console.WriteLine("Waiting for Ableton Link. Enable LINK in rekordbox and play a track. Ctrl+C to stop.");
-    Console.WriteLine();
     return Task.CompletedTask;
   }
 

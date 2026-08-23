@@ -86,6 +86,13 @@ export class FluxStore {
         // "waiting" label.
         if (state.grid === null) {
           this.beat = null;
+        } else if (this.beat !== null && state.grid.beatIndex > this.beat.index) {
+          // The snapshot has moved past the last beat frame, which means that
+          // frame's successor was dropped or is stuck behind bad Wi-Fi. Falling
+          // back to the snapshot lets the dot self-heal within one state frame
+          // instead of sitting a step behind until the next beat arrives. No
+          // flash is faked for it: a snapshot places a position, not an instant.
+          this.beat = null;
         }
 
         break;

@@ -165,6 +165,53 @@ public class BeatGridTests {
   }
 
   /// <summary>
+  /// Regression: switching LINK off and on starts a new Link session whose
+  /// timeline shares the tempo but not the beat numbering - observed against
+  /// rekordbox at ~710 beats. Counting that as drift would pin the running
+  /// maximum at a huge value forever, exactly like counting a tempo change.
+  /// </summary>
+  [Fact]
+  public void DoesNotCountASessionSwitchAsExtrapolationDrift() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+
+    grid.Apply(AtOneTwenty);
+    clock.Advance(TimeSpan.FromMilliseconds(250));
+    grid.Apply(AtOneTwenty with { BeatOrigin = 710 }, newSession: true);
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(0, snapshot.MaxReanchorJumpBeats, precision: 9);
+
+    // The new session's own republications are claims about the same thing
+    // again, so the metric resumes counting from there.
+    clock.Advance(TimeSpan.FromMilliseconds(250));
+    grid.Apply(AtOneTwenty with { BeatOrigin = 710.25 });
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot afterDrift));
+    Assert.Equal(0.25, afterDrift.MaxReanchorJumpBeats, precision: 6);
+  }
+
+  /// <summary>
+  /// A same-tempo session switch renumbers the beat exactly as a tempo change
+  /// does, so it is announced the same way: anything anchored to a beat index,
+  /// bar alignment above all, has to re-arm.
+  /// </summary>
+  [Fact]
+  public void AnnouncesASessionSwitchWithItsNumberingShift() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+    List<TempoChange> announced = new List<TempoChange>();
+    grid.TempoChanged += change => announced.Add(change);
+
+    grid.Apply(AtOneTwenty);
+    clock.Advance(TimeSpan.FromMilliseconds(250));
+    grid.Apply(AtOneTwenty with { BeatOrigin = 710 }, newSession: true);
+
+    Assert.Equal(2, announced.Count);
+    Assert.Equal(710, announced[1].BeatNumberingShift, precision: 6);
+  }
+
+  /// <summary>
   /// Phase 1 has no downbeat source, and Link carries none. Reporting the bar
   /// position as unanchored is the honest answer; claiming alignment would make
   /// bar-scoped effects fire confidently on the wrong beat.

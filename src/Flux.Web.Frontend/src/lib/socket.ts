@@ -1,6 +1,17 @@
 import { reconnectDelay } from './backoff.ts';
 import { parseMessage, type ClientMessage, type RawMessage } from './protocol.ts';
 
+/**
+ * How long the feed may fall silent before the connection is declared dead.
+ *
+ * The state stream arrives twenty times a second, so five seconds of nothing is
+ * a hundred missing frames - the feed is its own heartbeat. This exists because
+ * the browser's close event cannot be relied on: when Flux goes away, a phone
+ * with its Wi-Fi radio in power save routinely never receives the closing
+ * packet, and without it the socket looks open forever over a frozen page.
+ */
+const DEAD_AFTER_MS = 5_000;
+
 export type ConnectionState = 'connecting' | 'open' | 'closed';
 
 export interface SocketEvents {
@@ -23,6 +34,7 @@ export class FluxSocket {
   #socket: WebSocket | null = null;
   #attempt = 0;
   #retry: ReturnType<typeof setTimeout> | null = null;
+  #watchdog: ReturnType<typeof setTimeout> | null = null;
   #stopped = false;
 
   constructor(url: string, events: SocketEvents) {
@@ -50,6 +62,7 @@ export class FluxSocket {
       this.#retry = null;
     }
 
+    this.#clearWatchdog();
     this.#socket?.close();
     this.#socket = null;
   }
@@ -60,12 +73,19 @@ export class FluxSocket {
     const socket = new WebSocket(this.#url);
     this.#socket = socket;
 
+    // Armed from the attempt itself, not from 'open': the server greets every
+    // connection immediately, so an attempt that produces no frame within the
+    // window is just as dead as an established socket that fell silent.
+    this.#armWatchdog(socket);
+
     socket.addEventListener('open', () => {
       this.#attempt = 0;
       this.#events.connection('open');
     });
 
     socket.addEventListener('message', (event: MessageEvent<string>) => {
+      this.#armWatchdog(socket);
+
       const message = parseMessage(event.data);
       if (message !== null) {
         this.#events.message(message);
@@ -74,11 +94,43 @@ export class FluxSocket {
 
     // Only 'close' schedules the retry: an error is always followed by a close,
     // and handling both would reconnect twice and halve the backoff.
-    socket.addEventListener('close', () => {
-      this.#socket = null;
-      this.#events.connection('closed');
-      this.#scheduleRetry();
-    });
+    socket.addEventListener('close', () => this.#dead(socket));
+  }
+
+  /**
+   * Ends one connection, however its death was noticed - the browser's close
+   * event or the watchdog. Guarded by identity so a zombie's late close event
+   * cannot tear down the replacement connection.
+   */
+  #dead(socket: WebSocket): void {
+    if (this.#socket !== socket) {
+      return;
+    }
+
+    this.#clearWatchdog();
+    this.#socket = null;
+    this.#events.connection('closed');
+    this.#scheduleRetry();
+  }
+
+  #armWatchdog(socket: WebSocket): void {
+    this.#clearWatchdog();
+
+    this.#watchdog = setTimeout(() => {
+      this.#watchdog = null;
+      this.#dead(socket);
+
+      // Told to go away as well: the browser may keep a half-dead TCP
+      // connection in CLOSING for a long time, and it is no longer ours.
+      socket.close();
+    }, DEAD_AFTER_MS);
+  }
+
+  #clearWatchdog(): void {
+    if (this.#watchdog !== null) {
+      clearTimeout(this.#watchdog);
+      this.#watchdog = null;
+    }
   }
 
   #scheduleRetry(): void {

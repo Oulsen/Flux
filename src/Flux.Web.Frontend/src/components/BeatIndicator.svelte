@@ -78,13 +78,12 @@
     }
   }
 
-  /* A pulsing dot is decoration for anyone who asked the browser to stop
-     animating; the lit position still says everything it needs to. */
-  @media (prefers-reduced-motion: reduce) {
-    .lit {
-      animation: none;
-    }
-  }
+  /* prefers-reduced-motion is deliberately not honoured here. The flash is the
+     page's core function - it is the only element that can show the beat
+     instant - and Windows raises the flag machine-wide from a generic
+     "animation effects" toggle, muting a beat visualizer the user opened on
+     purpose. Anyone who genuinely wants a still page has the moving dot row
+     saying the same thing. */
 
   .caption {
     margin: 0;

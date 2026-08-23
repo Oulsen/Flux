@@ -66,6 +66,14 @@ public sealed class AbletonLinkListener: BackgroundService {
   /// </summary>
   private CancellationTokenSource? membership;
 
+  /// <summary>
+  /// The session the grid was last fed from, kept across receive cycles: a
+  /// timeline from a different session is a wholesale renumbering, not a
+  /// correction, and the grid must be told which one it is getting. Cycle-local
+  /// state cannot answer that after a rejoin.
+  /// </summary>
+  private ulong? lastAppliedSession;
+
   public AbletonLinkListener(
     BeatGrid grid,
     IMonotonicClock clock,
@@ -363,7 +371,18 @@ public sealed class AbletonLinkListener: BackgroundService {
 
       following = session;
       lastAcceptedMicros = nowMicros;
-      this.grid.Apply(timeline);
+
+      // Only a datagram that names its session can prove the session changed; an
+      // anonymous one is already credited to the session being followed above.
+      bool sessionChanged = announced is ulong id
+        && this.lastAppliedSession is ulong last
+        && id != last;
+
+      this.grid.Apply(timeline, sessionChanged);
+
+      if(announced is ulong applied) {
+        this.lastAppliedSession = applied;
+      }
     }
   }
 

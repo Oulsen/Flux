@@ -2,6 +2,7 @@ using Flux.App;
 using Flux.Beat;
 using Flux.Web;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 // The host process, from Phase 1 to release. It is a console today and grows a
@@ -20,13 +21,21 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationO
 });
 
 Console.WriteLine($"Flux {FluxVersion.Current} - music in, light out.");
+Console.WriteLine("Waiting for Ableton Link. Enable LINK in rekordbox and play a track. Ctrl+C to stop.");
 Console.WriteLine();
 
 // Registration order is start order, and the timer resolution has to be up
 // before the beat scheduler starts sleeping against it.
 builder.Services.AddHostedService<TimerResolutionService>();
 builder.Services.AddAbletonLink(builder.Configuration);
-builder.Services.AddHostedService<ConsoleBeatMonitor>();
+
+// The per-beat console line was Phase 1's stand-in for the visualizer; the web
+// app has taken that job, so it is opt-in diagnostics now - three lines a
+// second, for nobody, on a default night.
+if(builder.Configuration.GetValue("Console:BeatLog", defaultValue: false)) {
+  builder.Services.AddHostedService<ConsoleBeatMonitor>();
+}
+
 builder.AddFluxWeb();
 
 WebApplication app = builder.Build();

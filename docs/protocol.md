@@ -235,3 +235,9 @@ lose its `hello` is slow enough to be losing everything else too.
 The client reconnects on its own with a capped backoff and gets a fresh `hello`.
 Because the server holds no per-client state, a reconnect needs no resumption
 token, no replay and no sequence numbers.
+
+The feed is its own heartbeat: `state` arrives `stateHz` times a second, so a
+client treats several seconds without any frame as a dead connection and
+reconnects, without waiting for a close event. The close event cannot be relied
+on - a phone with its radio in power save routinely never receives the server's
+closing packet - and no separate keepalive message is needed.
