@@ -29,7 +29,10 @@ export class FluxStore {
   source = $state('link');
   sourceState = $state<SourceState>('waiting');
   grid = $state<GridData | null>(null);
-  diagnostics = $state<DiagnosticsData>({ packets: 0, reanchorMaxBeats: 0 });
+  // Only the grid's own metric starts at a number. Every other counter belongs
+  // to whichever source is active, and a zero before the first frame would
+  // claim a measurement nobody has made.
+  diagnostics = $state<DiagnosticsData>({ reanchorMaxBeats: 0 });
 
   beat = $state<BeatData | null>(null);
 

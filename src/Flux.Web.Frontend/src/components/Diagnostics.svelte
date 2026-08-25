@@ -24,7 +24,7 @@
   </div>
   <div>
     <dt>packets</dt>
-    <dd>{diagnostics.packets}</dd>
+    <dd>{diagnostics.packets ?? UNKNOWN}</dd>
   </div>
   <div>
     <dt>re-anchor</dt>

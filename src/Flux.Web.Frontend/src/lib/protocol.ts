@@ -11,11 +11,23 @@ export const PROTOCOL_VERSION = 1;
 
 export type SourceState = 'waiting' | 'live' | 'quiet';
 
+/** What put the bar where it is, or null while the bar is only a count. */
+export type AlignmentMethod = 'cue' | 'tap' | 'drop';
+
+/** What the detector made of one analyzer frame. */
+export type SpectrumBeat = 'none' | 'beat' | 'strong';
+
+export type DeviceKind = 'capture' | 'loopback';
+
+export type DeviceState = 'signal' | 'digitalSilence' | 'noData' | 'failed';
+
 export interface HelloData {
   protocol: number;
   app: string;
   quantum: number;
   stateHz: number;
+  spectrumHz: number;
+  devicesHz: number;
 }
 
 export interface GridData {
@@ -26,17 +38,68 @@ export interface GridData {
   barAligned: boolean;
 }
 
+/** One source's own view of itself, whether or not it is the active one. */
+export interface SourceReportData {
+  name: string;
+  state: SourceState;
+  confidence: number;
+}
+
+export interface AlignmentData {
+  aligned: boolean;
+  method: AlignmentMethod | null;
+}
+
+/**
+ * Health counters for the active source.
+ *
+ * Every field but `reanchorMaxBeats` is optional because the server omits what
+ * does not apply to the current source, rather than sending a zero. A missing
+ * field means "not a thing this source has", so render a blank and never a 0.
+ */
 export interface DiagnosticsData {
-  packets: number;
   reanchorMaxBeats: number;
+  packets?: number;
+  fps?: number;
+  beatsDetected?: number;
+  bpmLocked?: boolean;
+  lastBeatAgoMs?: number;
+  taps?: number;
+  lastTapAgoMs?: number;
 }
 
 export interface StateData {
   source: string;
   sourceState: SourceState;
+  sources: SourceReportData[];
   /** Null exactly when nothing has been received yet. Never render it as zero. */
   grid: GridData | null;
+  alignment: AlignmentData;
   diagnostics: DiagnosticsData;
+}
+
+export interface SpectrumData {
+  /** 64 display columns, low frequency first, each 0 to 255. */
+  bins: number[];
+  kick: number;
+  mids: number;
+  highs: number;
+  flux: number;
+  beat: SpectrumBeat;
+}
+
+export interface DeviceData {
+  id: string;
+  name: string;
+  kind: DeviceKind;
+  state: DeviceState;
+  selected: boolean;
+  rms: number;
+  peak: number;
+}
+
+export interface DevicesData {
+  devices: DeviceData[];
 }
 
 export interface BeatData {
@@ -55,7 +118,40 @@ export interface ErrorData {
   message: string;
 }
 
-export type ClientMessage = { type: 'ping'; data: EchoData };
+/**
+ * A complete statement of what this client wants, never a delta.
+ *
+ * Both fields go out every time on purpose: there is no unsubscribe message, so
+ * a client and a server can never end up disagreeing about what is switched on.
+ */
+export interface SubscribeData {
+  spectrum: boolean;
+  deviceLevels: boolean;
+}
+
+export interface SelectSourceData {
+  source: string;
+}
+
+export interface SelectAudioDeviceData {
+  deviceId: string;
+}
+
+export interface SetBpmData {
+  /** Null clears the manual tempo, which is not the same as setting it to zero. */
+  bpm: number | null;
+}
+
+export type ClientMessage =
+  | { type: 'ping'; data: EchoData }
+  | { type: 'subscribe'; data: SubscribeData }
+  | { type: 'selectSource'; data: SelectSourceData }
+  | { type: 'selectAudioDevice'; data: SelectAudioDeviceData }
+  // A tap carries no payload: the server times it on arrival, because the two
+  // clocks are unrelated and a timestamp from this one would place the beat
+  // somewhere arbitrary.
+  | { type: 'tap'; data: Record<string, never> }
+  | { type: 'setBpm'; data: SetBpmData };
 
 /**
  * An inbound message decoded only as far as its type tag.
