@@ -2,8 +2,8 @@
  * The client half of `docs/protocol.md`.
  *
  * This file is a mirror, not a source: the document is authoritative and the
- * backend's `Flux.Web.Protocol` is the other reflection of it. When one of the
- * three changes, all three change.
+ * backend's `Flux.Web.Server.Protocol` is the other reflection of it. When one
+ * of the three changes, all three change.
  */
 
 /** The protocol version this page was built against. */

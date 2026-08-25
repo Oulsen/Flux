@@ -1,4 +1,4 @@
-namespace Flux.Web;
+namespace Flux.Web.Server;
 
 /// <summary>
 /// Configuration for the web layer: where it listens, how often it talks, and

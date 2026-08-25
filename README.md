@@ -71,7 +71,7 @@ The .NET test projects are xunit v3 executables:
 
 ```
 dotnet run --project tests/Flux.Beat.Tests
-dotnet run --project tests/Flux.Web.Tests
+dotnet run --project tests/Flux.Web.Server.Tests
 ```
 
 Frontend checks, from `src/Flux.Web.Frontend`:
@@ -86,7 +86,7 @@ npm test
 | Path | Holds |
 |---|---|
 | `src/Flux.Beat` | Ableton Link listener, packet decoding, beat grid, beat scheduler |
-| `src/Flux.Web` | WebSocket hub, beat broadcaster, web hosting |
+| `src/Flux.Web.Server` | WebSocket hub, beat broadcaster, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable |
 | `docs/protocol.md` | The WebSocket wire contract; where it and anything else disagree, it wins |

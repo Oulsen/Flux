@@ -8,7 +8,7 @@ export default defineConfig({
     // Step one of the two-step build: Vite writes the SPA into the backend's
     // wwwroot, then `dotnet build` copies it beside the executable. The folder is
     // gitignored - it is output, not source.
-    outDir: '../Flux.Web/wwwroot',
+    outDir: '../Flux.Web.Server/wwwroot',
     emptyOutDir: true,
   },
 

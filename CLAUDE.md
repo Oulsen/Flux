@@ -7,12 +7,12 @@ other description of a message, including code comments.
 ## Building and testing
 
 - The build is two steps in a fixed order: `npm run build` in
-  `src/Flux.Web.Frontend` writes the SPA into `src/Flux.Web/wwwroot`, then the
-  .NET build copies it along. After frontend changes, rebuild both.
+  `src/Flux.Web.Frontend` writes the SPA into `src/Flux.Web.Server/wwwroot`,
+  then the .NET build copies it along. After frontend changes, rebuild both.
 - Solution-level `dotnet test` currently reports zero tests (xunit v3 on
   Microsoft.Testing.Platform). Run the test projects directly instead:
   `dotnet run --project tests/Flux.Beat.Tests` and
-  `dotnet run --project tests/Flux.Web.Tests`.
+  `dotnet run --project tests/Flux.Web.Server.Tests`.
 - Frontend checks, from `src/Flux.Web.Frontend`: `npm run check`
   (svelte-check) and `npm test` (node --test). Both must pass; `npm run check`
   is the frontend's only type gate.
@@ -23,7 +23,8 @@ other description of a message, including code comments.
   adds three rules the local commands do not enforce: the restore is
   `--locked-mode`, so a changed package reference needs its `packages.lock.json`
   committed in the same change; the build is `-warnaserror`; and the run fails
-  if the frontend build did not leave an `index.html` in `src/Flux.Web/wwwroot`.
+  if the frontend build did not leave an `index.html` in
+  `src/Flux.Web.Server/wwwroot`.
 
 ## Conventions
 

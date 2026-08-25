@@ -26,9 +26,10 @@ jobs:
       - uses: actions/checkout@v4
 
       # The frontend runs first because the build is two steps in a fixed order:
-      # Vite writes into src/Flux.Web/wwwroot, then the .NET build copies it along.
-      # A pipeline without this half builds green and produces a backend with no
-      # web app in it, which is worse than having no pipeline at all.
+      # Vite writes into src/Flux.Web.Server/wwwroot, then the .NET build copies
+      # it along. A pipeline without this half builds green and produces a
+      # backend with no web app in it, which is worse than having no pipeline at
+      # all.
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -57,7 +58,7 @@ jobs:
       # point rather than the folder also catches a build that wrote only assets.
       - name: Verify the web app reached the backend
         shell: bash
-        run: test -f src/Flux.Web/wwwroot/index.html
+        run: test -f src/Flux.Web.Server/wwwroot/index.html
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -78,5 +79,5 @@ jobs:
       - name: Test Flux.Beat
         run: dotnet run --no-build --project tests/Flux.Beat.Tests
 
-      - name: Test Flux.Web
-        run: dotnet run --no-build --project tests/Flux.Web.Tests
+      - name: Test Flux.Web.Server
+        run: dotnet run --no-build --project tests/Flux.Web.Server.Tests

@@ -12,7 +12,7 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 
-namespace Flux.Web;
+namespace Flux.Web.Server;
 
 /// <summary>Wires the web layer into the host.</summary>
 public static class WebHostExtensions {
@@ -94,7 +94,7 @@ public static class WebHostExtensions {
       await hub.ServeAsync(socket, closing.Token).ConfigureAwait(false);
     });
 
-    ILogger log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Flux.Web");
+    ILogger log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Flux.Web.Server");
     WarnIfFrontendMissing(app, log);
     app.Lifetime.ApplicationStarted.Register(() => AnnounceUrls(app, log));
 

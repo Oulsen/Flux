@@ -1,12 +1,12 @@
 using Flux.Beat;
-using Flux.Web.Protocol;
+using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Threading.Channels;
 
-namespace Flux.Web;
+namespace Flux.Web.Server;
 
 /// <summary>
 /// Every connected browser, and the one place frames are written to them.

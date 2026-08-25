@@ -15,7 +15,7 @@
   <!-- The origin check is internal rather than public: it is the socket's one
        security gate, and the tests pin its behaviour without it becoming API. -->
   <ItemGroup>
-    <InternalsVisibleTo Include="Flux.Web.Tests" />
+    <InternalsVisibleTo Include="Flux.Web.Server.Tests" />
   </ItemGroup>
 
   <ItemGroup>

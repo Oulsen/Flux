@@ -1,12 +1,12 @@
 using Flux.Beat;
-using Flux.Web.Protocol;
+using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using System.Net.WebSockets;
 using System.Text.Json;
 using Xunit;
 
-namespace Flux.Web.Tests;
+namespace Flux.Web.Server.Tests;
 
 /// <summary>
 /// What the hub does with a connection, observed from the socket's side.

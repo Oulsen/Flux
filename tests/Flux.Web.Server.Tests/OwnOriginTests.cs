@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Xunit;
 
-namespace Flux.Web.Tests;
+namespace Flux.Web.Server.Tests;
 
 /// <summary>
 /// Pins the origin check, which is the socket's one security gate: any page open

@@ -1,6 +1,6 @@
 using Flux.App;
 using Flux.Beat;
-using Flux.Web;
+using Flux.Web.Server;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

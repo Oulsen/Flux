@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Flux.Web.Protocol;
+namespace Flux.Web.Server.Protocol;
 
 /// <summary>
 /// The wrapper every message in both directions wears: a type tag and its

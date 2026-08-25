@@ -2,7 +2,7 @@ using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.Sockets;
 
-namespace Flux.Web;
+namespace Flux.Web.Server;
 
 /// <summary>
 /// Checks the web settings before Kestrel is handed them.

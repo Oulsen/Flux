@@ -295,10 +295,10 @@
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.11, )"
         }
       },
-      "flux.web": {
+      "flux.web.server": {
         "type": "Project",
         "dependencies": {
-          "Flux.Beat": "[0.0.1, )"
+          "Flux.Beat": "[0.1.0, )"
         }
       }
     }

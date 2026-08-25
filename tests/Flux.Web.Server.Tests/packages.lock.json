@@ -132,10 +132,10 @@
       "flux.beat": {
         "type": "Project"
       },
-      "flux.web": {
+      "flux.web.server": {
         "type": "Project",
         "dependencies": {
-          "Flux.Beat": "[0.0.1, )"
+          "Flux.Beat": "[0.1.0, )"
         }
       }
     }

@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace Flux.Web;
+namespace Flux.Web.Server;
 
 /// <summary>
 /// The running build's version, as a string fit for a screen.

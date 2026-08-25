@@ -1,10 +1,10 @@
 using Flux.Beat;
-using Flux.Web.Protocol;
+using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using System.Threading.Channels;
 
-namespace Flux.Web;
+namespace Flux.Web.Server;
 
 /// <summary>
 /// Feeds the sync source to every connected browser: a state snapshot on a

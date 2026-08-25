@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
-namespace Flux.Web.Protocol;
+namespace Flux.Web.Server.Protocol;
 
 /// <summary>
 /// Turns messages into wire frames and inbound bytes back into a type tag.

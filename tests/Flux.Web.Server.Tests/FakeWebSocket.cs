@@ -2,7 +2,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading.Channels;
 
-namespace Flux.Web.Tests;
+namespace Flux.Web.Server.Tests;
 
 /// <summary>
 /// A WebSocket with no network under it: messages are pushed in from a test and

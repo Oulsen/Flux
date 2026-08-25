@@ -22,7 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
-    <ProjectReference Include="..\Flux.Web\Flux.Web.csproj" />
+    <ProjectReference Include="..\Flux.Web.Server\Flux.Web.Server.csproj" />
   </ItemGroup>
 
 </Project>

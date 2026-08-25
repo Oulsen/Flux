@@ -1,8 +1,8 @@
-using Flux.Web.Protocol;
+using Flux.Web.Server.Protocol;
 using System.Text.Json;
 using Xunit;
 
-namespace Flux.Web.Tests;
+namespace Flux.Web.Server.Tests;
 
 /// <summary>
 /// Guards the wire shape against <c>docs/protocol.md</c>.

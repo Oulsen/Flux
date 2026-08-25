@@ -4,8 +4,8 @@
 
 Flux keeps all state on the server. Browsers are dumb terminals: they render what
 arrives and send control messages back. This document is the contract between
-`Flux.Web` and `Flux.Web.Frontend`, which are separate projects that have to
-agree byte for byte.
+`Flux.Web.Server` and `Flux.Web.Frontend`, which are separate projects that have
+to agree byte for byte.
 
 Where this document and any other description of a message disagree, this
 document wins.
