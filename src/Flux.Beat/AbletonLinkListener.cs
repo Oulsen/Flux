@@ -9,8 +9,8 @@ using System.Net.Sockets;
 namespace Flux.Beat;
 
 /// <summary>
-/// Listens for Ableton Link ALIVE datagrams and feeds the timeline into the
-/// <see cref="BeatGrid"/>.
+/// Listens for Ableton Link ALIVE datagrams and publishes the timeline as the
+/// <c>link</c> sync source.
 ///
 /// Passive by design: Flux joins the multicast group, reads, and transmits
 /// nothing at all. It never announces itself, so it is invisible to the session
@@ -23,7 +23,7 @@ namespace Flux.Beat;
 /// network that is not up yet, an adapter that flaps mid-set - none of those end
 /// the listener, and none of them take the host process down.
 /// </summary>
-public sealed class AbletonLinkListener: BackgroundService {
+public sealed class AbletonLinkListener: BackgroundService, ISyncSource {
   /// <summary>Big enough for any Link datagram; the observed ALIVE packet is 107 bytes.</summary>
   private const int ReceiveBufferBytes = 2048;
 
@@ -55,10 +55,22 @@ public sealed class AbletonLinkListener: BackgroundService {
   /// </summary>
   private static readonly TimeSpan SessionHandoverAfter = TimeSpan.FromSeconds(5);
 
-  private readonly BeatGrid grid;
+  /// <summary>This source's name in the protocol.</summary>
+  public const string SourceName = "link";
+
+  private readonly ITimelineSink sink;
   private readonly IMonotonicClock clock;
   private readonly LinkOptions options;
+  private readonly double staleAfterMicros;
   private readonly ILogger<AbletonLinkListener> log;
+
+  /// <summary>
+  /// Guards the fields the receive loop writes and <see cref="Status"/> reads.
+  /// Two different threads at four and twenty hertz respectively, so the lock is
+  /// never contended and the alternative - volatile reads of a double - would
+  /// only be harder to read.
+  /// </summary>
+  private readonly object statusGate = new object();
 
   /// <summary>
   /// Cancels the bind-join-receive cycle currently running, so a network change
@@ -67,24 +79,77 @@ public sealed class AbletonLinkListener: BackgroundService {
   private CancellationTokenSource? membership;
 
   /// <summary>
-  /// The session the grid was last fed from, kept across receive cycles: a
-  /// timeline from a different session is a wholesale renumbering, not a
-  /// correction, and the grid must be told which one it is getting. Cycle-local
-  /// state cannot answer that after a rejoin.
+  /// The session last published, kept across receive cycles: a timeline from a
+  /// different session is a wholesale renumbering, not a correction, and the grid
+  /// must be told which one it is getting. Cycle-local state cannot answer that
+  /// after a rejoin.
   /// </summary>
-  private ulong? lastAppliedSession;
+  private ulong? lastPublishedSession;
+
+  /// <summary>
+  /// Packets this listener has accepted, counted here rather than read back from
+  /// the grid.
+  ///
+  /// That distinction is load-bearing now that the grid only hears the active
+  /// source. Reading the grid's count would leave this listener's own watchdog
+  /// blind whenever Link is not selected: the count would sit still, the watchdog
+  /// would read that as a lost multicast membership, and it would rejoin the group
+  /// every thirty seconds to fix a problem that does not exist. A source has to be
+  /// able to report its own health while something else drives the lights, which
+  /// is also exactly what the source selector needs from it.
+  /// </summary>
+  private long acceptedPackets;
+
+  private double lastAcceptedMicros;
+
+  private BeatTimeline? lastPublishedTimeline;
 
   public AbletonLinkListener(
-    BeatGrid grid,
+    SyncSourceManager sources,
     IMonotonicClock clock,
     IOptions<LinkOptions> options,
+    IOptions<BeatOptions> beat,
     ILogger<AbletonLinkListener> log) {
+    ArgumentNullException.ThrowIfNull(sources);
     ArgumentNullException.ThrowIfNull(options);
+    ArgumentNullException.ThrowIfNull(beat);
 
-    this.grid = grid ?? throw new ArgumentNullException(nameof(grid));
     this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
     this.options = options.Value;
+    this.staleAfterMicros = beat.Value.StaleAfter.TotalMilliseconds * 1000.0;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
+
+    // Registered last, so every field this object needs is set before the manager
+    // can hand the reference to anyone. Status() reads only fields and answers
+    // Waiting from their defaults, so even a call arriving mid-construction gets
+    // the truth about a listener that has not started.
+    this.sink = sources.Register(this);
+  }
+
+  /// <inheritdoc/>
+  public string Name => SourceName;
+
+  /// <summary>
+  /// What this listener knows, whether or not it is the active source.
+  ///
+  /// Confidence is 1 the moment a single packet has been accepted, and that is not
+  /// laziness. Link <em>transmits</em> the tempo rather than estimating it, so
+  /// there is no uncertainty here to describe - the honest signal about a session
+  /// that has stopped publishing is the Quiet state, not a tempo reported as
+  /// half-believed. Audio detection is where confidence earns its keep.
+  /// </summary>
+  public SyncSourceStatus Status() {
+    lock(this.statusGate) {
+      if(this.acceptedPackets == 0) {
+        return new SyncSourceStatus(SyncSourceState.Waiting, Confidence: 0);
+      }
+
+      bool quiet = this.clock.NowMicros - this.lastAcceptedMicros > this.staleAfterMicros;
+
+      return new SyncSourceStatus(
+        quiet ? SyncSourceState.Quiet : SyncSourceState.Live,
+        Confidence: 1);
+    }
   }
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
@@ -102,8 +167,6 @@ public sealed class AbletonLinkListener: BackgroundService {
       return;
     }
 
-    this.grid.TempoChanged += this.OnTempoChanged;
-
     bool watchingNetwork = false;
     try {
       NetworkChange.NetworkAddressChanged += this.OnNetworkAddressChanged;
@@ -118,8 +181,6 @@ public sealed class AbletonLinkListener: BackgroundService {
       if(watchingNetwork) {
         NetworkChange.NetworkAddressChanged -= this.OnNetworkAddressChanged;
       }
-
-      this.grid.TempoChanged -= this.OnTempoChanged;
     }
   }
 
@@ -208,7 +269,13 @@ public sealed class AbletonLinkListener: BackgroundService {
   }
 
   /// <summary>
-  /// Reports every tempo the session publishes, including the first.
+  /// Reports every tempo this session publishes, including the first.
+  ///
+  /// Driven by the listener's own decode rather than by
+  /// <see cref="BeatGrid.TempoChanged"/>, which it used to subscribe to. The grid
+  /// now hears whichever source is active, so a line saying "Link tempo" would
+  /// eventually be printed for an audio tempo change - a log that names the wrong
+  /// source is worse than no log, because it is believed.
   ///
   /// The raw microseconds-per-beat is logged next to the BPM deliberately. When
   /// the displayed tempo looks wrong or looks stuck, the question is always
@@ -216,7 +283,7 @@ public sealed class AbletonLinkListener: BackgroundService {
   /// value never moved at all - and only the number off the packet separates
   /// those two.
   /// </summary>
-  private void OnTempoChanged(TempoChange change) {
+  private void LogTempo(BeatTimeline timeline, double numberingShift) {
     // A fractional shift is just the two timelines disagreeing about the current
     // instant by a rounding error. Whole beats mean the numbering was rebased,
     // which is the part worth putting in the log.
@@ -224,16 +291,16 @@ public sealed class AbletonLinkListener: BackgroundService {
     // Formatted invariantly, because ILogger renders its own parameters that way
     // and a locale-formatted fragment spliced in beside them produces a single
     // line carrying two different decimal separators.
-    string renumbering = Math.Abs(change.BeatNumberingShift) >= 0.5
+    string renumbering = Math.Abs(numberingShift) >= 0.5
       ? string.Create(
         CultureInfo.InvariantCulture,
-        $" Beat numbering shifted by {change.BeatNumberingShift:F1} beats.")
+        $" Beat numbering shifted by {numberingShift:F1} beats.")
       : string.Empty;
 
     this.log.LogInformation(
       "Link tempo is now {Bpm:F2} BPM ({MicrosPerBeat} us/beat).{Renumbering}",
-      change.Timeline.Bpm,
-      change.Timeline.MicrosPerBeat,
+      timeline.Bpm,
+      timeline.MicrosPerBeat,
       renumbering);
   }
 
@@ -314,7 +381,7 @@ public sealed class AbletonLinkListener: BackgroundService {
     EndPoint sender = new IPEndPoint(IPAddress.Any, 0);
 
     ulong? following = null;
-    double lastAcceptedMicros = 0;
+    double lastFollowedMicros = 0;
     bool warnedAboutRival = false;
 
     while(!cycleToken.IsCancellationRequested) {
@@ -342,7 +409,7 @@ public sealed class AbletonLinkListener: BackgroundService {
       double nowMicros = this.clock.NowMicros;
 
       if(following is ulong current && session != current) {
-        double quietMicros = nowMicros - lastAcceptedMicros;
+        double quietMicros = nowMicros - lastFollowedMicros;
         if(quietMicros < SessionHandoverAfter.TotalMilliseconds * 1000.0) {
           if(!warnedAboutRival) {
             this.log.LogWarning(
@@ -370,19 +437,35 @@ public sealed class AbletonLinkListener: BackgroundService {
       }
 
       following = session;
-      lastAcceptedMicros = nowMicros;
+      lastFollowedMicros = nowMicros;
 
       // Only a datagram that names its session can prove the session changed; an
       // anonymous one is already credited to the session being followed above.
       bool sessionChanged = announced is ulong id
-        && this.lastAppliedSession is ulong last
+        && this.lastPublishedSession is ulong last
         && id != last;
 
-      this.grid.Apply(timeline, sessionChanged);
+      BeatTimeline? previous;
+      lock(this.statusGate) {
+        previous = this.lastPublishedTimeline;
+        this.acceptedPackets++;
+        this.lastAcceptedMicros = nowMicros;
+        this.lastPublishedTimeline = timeline;
+      }
 
       if(announced is ulong applied) {
-        this.lastAppliedSession = applied;
+        this.lastPublishedSession = applied;
       }
+
+      if(previous is not BeatTimeline earlier
+        || earlier.MicrosPerBeat != timeline.MicrosPerBeat
+        || sessionChanged) {
+        this.LogTempo(
+          timeline,
+          previous is BeatTimeline was ? timeline.BeatAt(nowMicros) - was.BeatAt(nowMicros) : 0);
+      }
+
+      this.sink.Publish(timeline, sessionChanged);
     }
   }
 
@@ -428,8 +511,17 @@ public sealed class AbletonLinkListener: BackgroundService {
 
     try {
       while(await timer.WaitForNextTickAsync(cycle.Token).ConfigureAwait(false)) {
-        bool known = this.grid.TryGetSnapshot(out BeatGridSnapshot snapshot);
-        long packets = known ? snapshot.Packets : 0;
+        // This listener's own counters, not the grid's. The grid only hears the
+        // active source, so reading it here would make the watchdog fire on a
+        // perfectly healthy session that simply is not the selected one.
+        SyncSourceStatus status = this.Status();
+
+        long packets;
+        double bpm;
+        lock(this.statusGate) {
+          packets = this.acceptedPackets;
+          bpm = this.lastPublishedTimeline?.Bpm ?? 0;
+        }
 
         if(packets == lastPackets) {
           silence += WatchdogInterval;
@@ -438,16 +530,19 @@ public sealed class AbletonLinkListener: BackgroundService {
           silence = TimeSpan.Zero;
         }
 
-        if(!known) {
+        if(status.State == SyncSourceState.Waiting) {
           this.log.LogWarning(
             "No Ableton Link packets yet on {Address}. Is LINK enabled in rekordbox?{Alternatives}",
             joined.Address,
             DescribeAlternatives(joined));
-        } else if(snapshot.IsStale) {
+        } else if(status.State == SyncSourceState.Quiet) {
+          // Says "last published" rather than "still extrapolating", because
+          // whether anything is extrapolating this tempo depends on whether Link
+          // is the selected source, which this listener deliberately cannot see.
           this.log.LogWarning(
-            "Ableton Link has gone quiet after {Packets} packets. Still extrapolating at {Bpm:F2} BPM.",
-            snapshot.Packets,
-            snapshot.Bpm);
+            "Ableton Link has gone quiet after {Packets} packets. Its last published tempo was {Bpm:F2} BPM.",
+            packets,
+            bpm);
         }
 
         if(silence >= RejoinAfterSilence) {

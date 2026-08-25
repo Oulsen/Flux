@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Flux.Beat.Tests;
@@ -66,11 +65,7 @@ public class BeatSchedulerTests {
     // 300 BPM: fast enough to count several beats without a slow test.
     grid.Apply(new BeatTimeline(MicrosPerBeat: 200_000, BeatOrigin: 0, TimeOriginMicros: (long)clock.NowMicros));
 
-    using BeatScheduler scheduler = new BeatScheduler(
-      grid,
-      clock,
-      Options.Create(new LinkOptions()),
-      NullLogger<BeatScheduler>.Instance);
+    using BeatScheduler scheduler = new BeatScheduler(grid, clock, NullLogger<BeatScheduler>.Instance);
 
     List<BeatEvent> fired = new List<BeatEvent>();
     scheduler.Beat += occurred => {

@@ -38,14 +38,6 @@ internal sealed class LinkOptionsValidator: IValidateOptions<LinkOptions> {
       failures.Add($"Link:Port must be between 1 and 65535, not {options.Port}.");
     }
 
-    if(options.Quantum < 1) {
-      failures.Add($"Link:Quantum must be at least 1 beat per bar, not {options.Quantum}.");
-    }
-
-    if(options.StaleAfter <= TimeSpan.Zero) {
-      failures.Add($"Link:StaleAfter must be greater than zero, not {options.StaleAfter}.");
-    }
-
     // A non-finite offset would otherwise reach the decoder, where it turns every
     // timeline anchor into a rejected packet and reads as a dead Link session.
     if(!double.IsFinite(options.ClockOffsetMicros)) {

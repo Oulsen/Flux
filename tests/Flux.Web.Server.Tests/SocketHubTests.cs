@@ -242,7 +242,7 @@ public sealed class SocketHubTests {
   private static SocketHub NewHub() {
     return new SocketHub(
       Options.Create(new WebOptions()),
-      Options.Create(new LinkOptions()),
+      Options.Create(new BeatOptions()),
       NullLogger<SocketHub>.Instance);
   }
 }

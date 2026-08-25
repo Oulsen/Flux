@@ -39,21 +39,22 @@ public sealed class SocketHub {
   private readonly ReadOnlyMemory<byte> greeting;
 
   /// <summary>
-  /// The quantum comes from the Link source rather than from the web settings
-  /// because it is a property of the music, not of the transport. Phase 2 makes
-  /// it whatever the active source says; until there is more than one source,
-  /// reading it here is the honest version of that.
+  /// The quantum comes from the beat settings rather than from the web settings
+  /// because it is a property of the music, not of the transport. It is also the
+  /// one part of the beat that no source can supply: bar <em>position</em> gets
+  /// anchored by a cue press or a tap, but bar <em>length</em> is only ever
+  /// configuration, which is why switching sources cannot change this greeting.
   /// </summary>
-  public SocketHub(IOptions<WebOptions> options, IOptions<LinkOptions> link, ILogger<SocketHub> log) {
+  public SocketHub(IOptions<WebOptions> options, IOptions<BeatOptions> beat, ILogger<SocketHub> log) {
     ArgumentNullException.ThrowIfNull(options);
-    ArgumentNullException.ThrowIfNull(link);
+    ArgumentNullException.ThrowIfNull(beat);
 
     this.options = options.Value;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
 
     // Every field in the greeting is fixed for the lifetime of the process, so
     // it is encoded once here rather than per connection.
-    this.greeting = Frames.Hello(FluxVersion.Current, link.Value.Quantum, this.options.StateHz);
+    this.greeting = Frames.Hello(FluxVersion.Current, beat.Value.Quantum, this.options.StateHz);
   }
 
   /// <summary>

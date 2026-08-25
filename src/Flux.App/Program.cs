@@ -25,8 +25,10 @@ Console.WriteLine("Waiting for Ableton Link. Enable LINK in rekordbox and play a
 Console.WriteLine();
 
 // Registration order is start order, and the timer resolution has to be up
-// before the beat scheduler starts sleeping against it.
+// before the beat scheduler starts sleeping against it. The grid and scheduler
+// come next, then the sources that feed them.
 builder.Services.AddHostedService<TimerResolutionService>();
+builder.Services.AddBeatCore(builder.Configuration);
 builder.Services.AddAbletonLink(builder.Configuration);
 
 // The per-beat console line was Phase 1's stand-in for the visualizer; the web

@@ -212,12 +212,12 @@ public class BeatGridTests {
   }
 
   /// <summary>
-  /// Phase 1 has no downbeat source, and Link carries none. Reporting the bar
-  /// position as unanchored is the honest answer; claiming alignment would make
-  /// bar-scoped effects fire confidently on the wrong beat.
+  /// No source transmits a downbeat, so a fresh grid is counting from an
+  /// arbitrary starting point. Reporting that honestly is the point; claiming
+  /// alignment would make bar-scoped effects fire confidently on the wrong beat.
   /// </summary>
   [Fact]
-  public void NeverClaimsBarAlignment() {
+  public void StartsUnalignedBecauseNoSourceTransmitsADownbeat() {
     FakeClock clock = new FakeClock();
     BeatGrid grid = NewGrid(clock);
 
@@ -225,6 +225,148 @@ public class BeatGridTests {
 
     Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
     Assert.False(snapshot.IsBarAligned);
+    Assert.Equal(BarAlignmentMethod.None, snapshot.AlignmentMethod);
+  }
+
+  [Fact]
+  public void CountsTheBarFromTheAnchorOnceAligned() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+
+    grid.Apply(AtOneTwenty);
+
+    // 2.5 s at 120 BPM is exactly beat 5, so the anchor lands there.
+    clock.Advance(TimeSpan.FromSeconds(2.5));
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Tap));
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(5, snapshot.Beat, precision: 6);
+    Assert.Equal(1, snapshot.PositionInBar);
+    Assert.True(snapshot.IsBarAligned);
+    Assert.Equal(BarAlignmentMethod.Tap, snapshot.AlignmentMethod);
+
+    // And the count runs on from there rather than from beat 0.
+    Assert.Equal(1, grid.PositionOf(5).PositionInBar);
+    Assert.Equal(2, grid.PositionOf(6).PositionInBar);
+    Assert.Equal(4, grid.PositionOf(8).PositionInBar);
+    Assert.Equal(1, grid.PositionOf(9).PositionInBar);
+    Assert.Equal(4, grid.PositionOf(4).PositionInBar);
+  }
+
+  /// <summary>
+  /// A human tapping along lands either side of the beat they mean, so the anchor
+  /// is the <em>nearest</em> beat rather than the one currently sounding.
+  /// Flooring would put every slightly early tap a whole beat out, which is the
+  /// one error that makes the feature useless.
+  /// </summary>
+  [Theory]
+  [InlineData(2.4)]
+  [InlineData(2.6)]
+  public void AnchorsTheNearestBeatRatherThanTheCurrentOne(double tappedAtSeconds) {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+
+    grid.Apply(AtOneTwenty);
+    clock.Advance(TimeSpan.FromSeconds(tappedAtSeconds));
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Tap));
+
+    // Either tap meant beat 5, so beat 5 is the downbeat in both cases.
+    Assert.Equal(1, grid.PositionOf(5).PositionInBar);
+  }
+
+  [Fact]
+  public void CannotAlignTheBarBeforeAnyTimelineIsKnown() {
+    BeatGrid grid = NewGrid(new FakeClock());
+
+    Assert.False(grid.TryAlignBar(BarAlignmentMethod.Tap));
+    Assert.False(grid.PositionOf(0).IsAligned);
+  }
+
+  /// <summary>
+  /// A source republishing a smoothed tempo moves the numbering by a rounding
+  /// error. Discarding a hand-made alignment over a wobble nobody can hear would
+  /// mean asking the user to tap again every few seconds.
+  /// </summary>
+  [Fact]
+  public void KeepsTheBarAnchorThroughASubBeatReanchor() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+
+    grid.Apply(AtOneTwenty);
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Cue));
+
+    clock.Advance(TimeSpan.FromMilliseconds(250));
+    grid.Apply(AtOneTwenty with { BeatOrigin = 0.1 });
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.True(snapshot.IsBarAligned);
+    Assert.Equal(BarAlignmentMethod.Cue, snapshot.AlignmentMethod);
+  }
+
+  /// <summary>
+  /// The other half of the same rule. A tempo change renumbers the Link timeline
+  /// by thousands of beats, so the anchor's beat index now names a different
+  /// moment in the music: keeping it would put the downbeat somewhere arbitrary
+  /// while still claiming to be aligned, which is worse than admitting it needs
+  /// re-arming.
+  /// </summary>
+  [Fact]
+  public void ReArmsTheBarAnchorWhenTheNumberingIsRebased() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+
+    grid.Apply(AtOneTwenty);
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Tap));
+
+    clock.Advance(TimeSpan.FromMilliseconds(250));
+    grid.Apply(AtOneTwenty with { MicrosPerBeat = 342_857, BeatOrigin = 100 });
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.False(snapshot.IsBarAligned);
+    Assert.Equal(BarAlignmentMethod.None, snapshot.AlignmentMethod);
+  }
+
+  [Fact]
+  public void ReArmsTheBarAnchorOnASessionSwitch() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+
+    grid.Apply(AtOneTwenty);
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Tap));
+
+    clock.Advance(TimeSpan.FromMilliseconds(250));
+    grid.Apply(AtOneTwenty with { BeatOrigin = 710 }, newSession: true);
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.False(snapshot.IsBarAligned);
+  }
+
+  /// <summary>
+  /// Reset is what a switch to a source that has never published uses. It has to
+  /// leave nothing behind: a tempo surviving the switch would be shown under the
+  /// arriving source's name, and a re-anchor maximum surviving it would blame the
+  /// arriving source for the departing one's drift.
+  /// </summary>
+  [Fact]
+  public void ResetLeavesNothingBehind() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+
+    grid.Apply(AtOneTwenty);
+    clock.Advance(TimeSpan.FromMilliseconds(250));
+    grid.Apply(AtOneTwenty with { BeatOrigin = 2 });
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Tap));
+
+    grid.Reset();
+
+    Assert.False(grid.TryGetSnapshot(out _));
+    Assert.Null(grid.Timeline);
+
+    grid.Apply(AtOneTwenty);
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot afterReset));
+    Assert.Equal(1, afterReset.Packets);
+    Assert.Equal(0, afterReset.MaxReanchorJumpBeats, precision: 9);
+    Assert.False(afterReset.IsBarAligned);
   }
 
   [Fact]

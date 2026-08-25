@@ -34,7 +34,7 @@ public sealed class ConsoleBeatMonitor: IHostedService, IDisposable {
   private Task? printer;
   private CancellationTokenSource? stopping;
 
-  public ConsoleBeatMonitor(BeatScheduler scheduler, BeatGrid grid, IOptions<LinkOptions> options) {
+  public ConsoleBeatMonitor(BeatScheduler scheduler, BeatGrid grid, IOptions<BeatOptions> options) {
     ArgumentNullException.ThrowIfNull(options);
 
     this.scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));

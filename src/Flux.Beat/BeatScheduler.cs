@@ -1,12 +1,11 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Flux.Beat;
 
 /// <summary>One beat, fired at the instant it lands.</summary>
-/// <param name="Index">The Link session beat number.</param>
-/// <param name="PositionInBar">1-based position in the bar; meaningless while <paramref name="IsBarAligned"/> is false.</param>
+/// <param name="Index">The active source's beat number. Renumbered wholesale by a tempo change or a source switch, so it is not a stable identity.</param>
+/// <param name="PositionInBar">1-based position in the bar; an arbitrary rotation while <paramref name="IsBarAligned"/> is false.</param>
 /// <param name="IsBarAligned">Whether the bar position has been anchored by a cue press or a tap.</param>
 /// <param name="Bpm">Tempo at the moment of the beat.</param>
 /// <param name="ScheduledMicros">The local timestamp the beat was aimed at, not the one it fired at.</param>
@@ -68,18 +67,14 @@ public sealed class BeatScheduler: IHostedService, IDisposable {
 
   private readonly BeatGrid grid;
   private readonly IMonotonicClock clock;
-  private readonly int quantum;
   private readonly ILogger<BeatScheduler> log;
   private readonly CancellationTokenSource stopping = new CancellationTokenSource();
 
   private Thread? thread;
 
-  public BeatScheduler(BeatGrid grid, IMonotonicClock clock, IOptions<LinkOptions> options, ILogger<BeatScheduler> log) {
-    ArgumentNullException.ThrowIfNull(options);
-
+  public BeatScheduler(BeatGrid grid, IMonotonicClock clock, ILogger<BeatScheduler> log) {
     this.grid = grid ?? throw new ArgumentNullException(nameof(grid));
     this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
-    this.quantum = options.Value.Quantum;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
   }
 
@@ -164,13 +159,16 @@ public sealed class BeatScheduler: IHostedService, IDisposable {
 
     long index = BeatGrid.IndexOf(beat);
 
+    // The grid owns the anchor and the quantum, so it is asked rather than
+    // reimplemented here. A beat event and the state snapshot disagreeing about
+    // which beat is the downbeat would be invisible in tests and obvious on
+    // stage.
+    BarPosition bar = this.grid.PositionOf(index);
+
     BeatEvent occurred = new BeatEvent(
       index,
-      BeatGrid.PositionInBar(index, this.quantum),
-
-      // Phase 2 anchors this from a cue press or a tap. Until then the bar
-      // position is an arbitrary rotation and says so.
-      IsBarAligned: false,
+      bar.PositionInBar,
+      bar.IsAligned,
       timeline.Bpm,
       timeline.MicrosOfBeat(beat));
 
