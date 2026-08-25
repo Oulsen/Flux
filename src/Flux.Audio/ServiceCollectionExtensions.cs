@@ -47,4 +47,37 @@ public static class ServiceCollectionExtensions {
 
     return services;
   }
+
+  /// <summary>
+  /// Adds the analyzer that turns captured samples into a spectrum, and the
+  /// recorder that can write those frames to a file.
+  ///
+  /// Separate from <see cref="AddAudioCapture"/> and required to follow it. Capture
+  /// has a customer with no interest in analysis - the device picker and its level
+  /// meters, which have to work before anyone has chosen a device worth analyzing -
+  /// so a host that wants a level meter and no FFT thread is a real configuration
+  /// rather than a hypothetical one.
+  ///
+  /// The analyzer is registered twice, resolving to one instance: as itself for the
+  /// things that read its frames, and as the hosted service that runs its thread. A
+  /// second copy would transform the same audio again and publish to a slot nobody
+  /// reads.
+  ///
+  /// <see cref="FrameRecorder"/> is registered unconditionally and does nothing
+  /// unless <see cref="AudioOptions.RecordFramesPath"/> is set. Deciding here
+  /// instead would mean reading configuration twice, in two places that can
+  /// disagree about what "set" means.
+  /// </summary>
+  public static IServiceCollection AddAudioAnalysis(this IServiceCollection services) {
+    ArgumentNullException.ThrowIfNull(services);
+
+    services.AddSingleton<SpectrumAnalyzer>(provider => new SpectrumAnalyzer(
+      provider.GetRequiredService<AudioCaptureService>(),
+      provider.GetRequiredService<IMonotonicClock>(),
+      provider.GetRequiredService<ILogger<SpectrumAnalyzer>>()));
+    services.AddHostedService(provider => provider.GetRequiredService<SpectrumAnalyzer>());
+    services.AddHostedService<FrameRecorder>();
+
+    return services;
+  }
 }

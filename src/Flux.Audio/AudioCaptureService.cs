@@ -18,7 +18,7 @@ namespace Flux.Audio;
 /// with a backoff, and never lets any of that reach the host: a machine with no
 /// usable input still has Link and still has a DJ who can tap.
 /// </summary>
-public sealed class AudioCaptureService: BackgroundService {
+public sealed class AudioCaptureService: BackgroundService, IAudioSamples {
   /// <summary>
   /// Mono samples kept for the analyzer.
   ///
@@ -110,6 +110,21 @@ public sealed class AudioCaptureService: BackgroundService {
     this.options = options.Value;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
     this.meter = new AudioMeter(clock);
+  }
+
+  /// <summary>
+  /// The rate the open device is running at, or zero while nothing is open.
+  ///
+  /// The device's choice rather than a setting, so the analyzer reads it every frame
+  /// and derives its band edges from it: a kick band computed for 48 kHz sits an
+  /// octave out on a device that opened at 96.
+  /// </summary>
+  public int SampleRate {
+    get {
+      lock(this.statusGate) {
+        return this.open is null ? 0 : this.sampleRate;
+      }
+    }
   }
 
   /// <summary>

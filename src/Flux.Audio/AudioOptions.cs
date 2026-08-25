@@ -35,4 +35,34 @@ public sealed class AudioOptions {
   /// wrong while DJing.
   /// </summary>
   public string PreferDeviceNamed { get; set; } = "DDJ-FLX10";
+
+  /// <summary>
+  /// How eagerly beats are detected, from 1 to 100.
+  ///
+  /// The only tuning knob audio detection has, and deliberately the only one: every
+  /// other threshold in <see cref="AudioConstants"/> was arrived at against real
+  /// music and they interact, so a knob per threshold would be twenty ways to make
+  /// detection worse. This one scales the bar an onset has to clear, from nearly
+  /// four times the recent average flux at 1 down to one and a half at 100.
+  ///
+  /// Turn it up for music with a soft kick, down for a track where the detector
+  /// finds beats in the hi-hats. Halving or doubling a reported tempo is a
+  /// different problem and this is not the setting for it.
+  /// </summary>
+  public int Sensitivity { get; set; } = AudioConstants.DefaultSensitivity;
+
+  /// <summary>
+  /// A file to write analyzed frames to, or null for the normal case of not
+  /// recording anything.
+  ///
+  /// It exists to make test fixtures out of real music, which is the only honest way
+  /// to test a beat detector: synthetic clicks prove the arithmetic, and a recording
+  /// of an actual track played through the actual controller proves the tuning. A
+  /// run with this set produces a file that replays through the detector at any
+  /// speed, so a defect found on stage becomes a test rather than a memory.
+  ///
+  /// Off by default because it writes continuously for as long as the app runs, and
+  /// nobody wants to discover it during a set.
+  /// </summary>
+  public string? RecordFramesPath { get; set; }
 }

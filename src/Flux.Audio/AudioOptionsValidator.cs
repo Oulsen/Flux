@@ -31,6 +31,19 @@ internal sealed class AudioOptionsValidator: IValidateOptions<AudioOptions> {
       failures.Add("Audio:DeviceId must be an endpoint id, or null to select by name.");
     }
 
+    // Refused rather than clamped, because both ends of the range are already
+    // extreme: a zero here reads as "off" and silently gets the most eager
+    // detection there is, which is the opposite of what anyone typing it meant.
+    if(options.Sensitivity < AudioConstants.MinSensitivity
+      || options.Sensitivity > AudioConstants.MaxSensitivity) {
+      failures.Add($"Audio:Sensitivity must be between {AudioConstants.MinSensitivity} and "
+        + $"{AudioConstants.MaxSensitivity}. It was {options.Sensitivity}.");
+    }
+
+    if(options.RecordFramesPath is { Length: > 0 } path && string.IsNullOrWhiteSpace(path)) {
+      failures.Add("Audio:RecordFramesPath must be a file path, or null to record nothing.");
+    }
+
     return failures.Count == 0
       ? ValidateOptionsResult.Success
       : ValidateOptionsResult.Fail(failures);

@@ -65,6 +65,8 @@ backend.
 | `Link:InterfaceAddress` | `null` | IP address of the network adapter to listen for Link on; `null` picks one automatically |
 | `Audio:DeviceId` | `null` | Exact endpoint id of the audio device to capture; `null` goes by name instead |
 | `Audio:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the audio device to capture, inputs before outputs; empty captures nothing until one is picked |
+| `Audio:Sensitivity` | `50` | How eagerly audio beat detection triggers, 1 to 100; the only tuning knob it has |
+| `Audio:RecordFramesPath` | `null` | File to write analyzed audio frames to, for turning a real track into a test fixture; off unless set |
 | `Console:BeatLog` | `false` | Print one console line per beat, for debugging the beat grid without a browser |
 | `Console:AudioMeter` | `false` | Print the capture level four times a second, for identifying an audio device without a browser |
 
@@ -90,8 +92,9 @@ npm test
 | Path | Holds |
 |---|---|
 | `src/Flux.Beat` | Ableton Link listener, packet decoding, beat grid, beat scheduler |
-| `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter |
+| `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Web.Server` | WebSocket hub, beat broadcaster, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable |
 | `docs/protocol.md` | The WebSocket wire contract; where it and anything else disagree, it wins |
+| `docs/audio-constants.md` | Every number audio beat detection runs on, where it came from, and how the frequency bands are derived |

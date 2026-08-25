@@ -30,6 +30,35 @@ public class AudioOptionsValidatorTests {
     Assert.True(Validate(new AudioOptions { DeviceId = " " }).Failed);
   }
 
+  [Theory]
+  [InlineData(AudioConstants.MinSensitivity)]
+  [InlineData(AudioConstants.DefaultSensitivity)]
+  [InlineData(AudioConstants.MaxSensitivity)]
+  public void AcceptsEveryLegalSensitivity(int sensitivity) {
+    Assert.True(Validate(new AudioOptions { Sensitivity = sensitivity }).Succeeded);
+  }
+
+  [Theory]
+  [InlineData(0)]
+  [InlineData(101)]
+  [InlineData(-5)]
+  public void RejectsASensitivityOutsideTheScale(int sensitivity) {
+    // Refused rather than clamped, and zero is why: it reads as "off" and would
+    // silently get the most eager detection there is, which is the opposite of what
+    // anybody typing it meant.
+    ValidateOptionsResult result = Validate(new AudioOptions { Sensitivity = sensitivity });
+
+    Assert.True(result.Failed);
+    Assert.NotNull(result.FailureMessage);
+    Assert.Contains("Audio:Sensitivity", result.FailureMessage, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void RejectsABlankRecordingPathButAcceptsNone() {
+    Assert.True(Validate(new AudioOptions { RecordFramesPath = null }).Succeeded);
+    Assert.True(Validate(new AudioOptions { RecordFramesPath = " " }).Failed);
+  }
+
   private static ValidateOptionsResult Validate(AudioOptions options) =>
     new AudioOptionsValidator().Validate(Options.DefaultName, options);
 }
