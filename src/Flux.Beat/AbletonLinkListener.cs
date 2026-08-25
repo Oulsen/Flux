@@ -331,7 +331,7 @@ public sealed class AbletonLinkListener: BackgroundService {
       }
 
       if(!TryDecode(buffer, received.ReceivedBytes, this.options.ClockOffsetMicros,
-        out LinkTimeline timeline, out ulong? announced)) {
+        out BeatTimeline timeline, out ulong? announced)) {
         continue;
       }
 
@@ -394,7 +394,7 @@ public sealed class AbletonLinkListener: BackgroundService {
     byte[] buffer,
     int length,
     double clockOffsetMicros,
-    out LinkTimeline timeline,
+    out BeatTimeline timeline,
     out ulong? sessionId) {
     ReadOnlySpan<byte> datagram = buffer.AsSpan(0, length);
     sessionId = null;

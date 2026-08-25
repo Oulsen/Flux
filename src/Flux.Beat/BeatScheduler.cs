@@ -132,7 +132,7 @@ public sealed class BeatScheduler: IHostedService, IDisposable {
     double? scheduled = null;
 
     while(!stop.IsCancellationRequested) {
-      if(this.grid.Timeline is not LinkTimeline timeline) {
+      if(this.grid.Timeline is not BeatTimeline timeline) {
         scheduled = null;
         Thread.Sleep(IdlePollMillis);
         continue;
@@ -156,7 +156,7 @@ public sealed class BeatScheduler: IHostedService, IDisposable {
     }
   }
 
-  private void Fire(LinkTimeline timeline, double beat) {
+  private void Fire(BeatTimeline timeline, double beat) {
     Action<BeatEvent>? handler = this.Beat;
     if(handler is null) {
       return;

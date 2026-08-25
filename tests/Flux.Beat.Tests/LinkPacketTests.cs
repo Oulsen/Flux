@@ -16,7 +16,7 @@ public class LinkPacketTests {
   public void DecodesTempiThatWereVerifiedAgainstRekordbox(long microsPerBeat, double expectedBpm) {
     byte[] packet = new AliveDatagram { MicrosPerBeat = microsPerBeat }.ToBytes();
 
-    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out LinkTimeline timeline));
+    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out BeatTimeline timeline));
     Assert.Equal(expectedBpm, timeline.Bpm, precision: 2);
   }
 
@@ -32,7 +32,7 @@ public class LinkPacketTests {
   public void ScalesTheBeatOriginOutOfMicroBeats() {
     byte[] packet = new AliveDatagram { BeatOriginMicroBeats = 12_500_000 }.ToBytes();
 
-    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out LinkTimeline timeline));
+    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out BeatTimeline timeline));
     Assert.Equal(12.5, timeline.BeatOrigin, precision: 6);
   }
 
@@ -50,7 +50,7 @@ public class LinkPacketTests {
       TimeOriginMicros = 1_000_000,
     }.ToBytes();
 
-    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out LinkTimeline timeline));
+    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out BeatTimeline timeline));
 
     Assert.Equal(8.0, timeline.BeatOrigin, precision: 6);
     Assert.Equal(1_000_000, timeline.TimeOriginMicros);
@@ -63,7 +63,7 @@ public class LinkPacketTests {
   public void ShiftsTheTimeOriginByTheClockOffset() {
     byte[] packet = new AliveDatagram { TimeOriginMicros = 1_000_000 }.ToBytes();
 
-    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 250_000, out LinkTimeline timeline));
+    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 250_000, out BeatTimeline timeline));
     Assert.Equal(1_250_000, timeline.TimeOriginMicros);
   }
 
@@ -97,8 +97,8 @@ public class LinkPacketTests {
   [InlineData(0)]
   [InlineData(-342_857)]
   [InlineData(long.MaxValue)]
-  [InlineData(LinkTimeline.MaxMicrosPerBeat + 1)]
-  [InlineData(LinkTimeline.MinMicrosPerBeat - 1)]
+  [InlineData(BeatTimeline.MaxMicrosPerBeat + 1)]
+  [InlineData(BeatTimeline.MinMicrosPerBeat - 1)]
   public void RejectsAnImplausibleTempo(long microsPerBeat) {
     byte[] packet = new AliveDatagram { MicrosPerBeat = microsPerBeat }.ToBytes();
 
@@ -117,7 +117,7 @@ public class LinkPacketTests {
       MicrosPerBeat = 342_857,
     }.ToBytes();
 
-    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out LinkTimeline timeline));
+    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out BeatTimeline timeline));
     Assert.Equal(175.00, timeline.Bpm, precision: 2);
   }
 
@@ -136,7 +136,7 @@ public class LinkPacketTests {
 
     byte[] packet = new AliveDatagram { HeaderNoise = decoy, MicrosPerBeat = 342_857 }.ToBytes();
 
-    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out LinkTimeline timeline));
+    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out BeatTimeline timeline));
     Assert.Equal(175.00, timeline.Bpm, precision: 2);
   }
 
@@ -156,7 +156,7 @@ public class LinkPacketTests {
 
     byte[] packet = new AliveDatagram { HeaderNoise = decoy, MicrosPerBeat = 342_857 }.ToBytes();
 
-    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out LinkTimeline timeline));
+    Assert.True(LinkPacket.TryParseTimeline(packet, clockOffsetMicros: 0, out BeatTimeline timeline));
     Assert.Equal(175.00, timeline.Bpm, precision: 2);
   }
 

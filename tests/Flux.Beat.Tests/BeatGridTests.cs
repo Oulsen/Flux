@@ -4,7 +4,7 @@ namespace Flux.Beat.Tests;
 
 public class BeatGridTests {
   /// <summary>120 BPM anchored at beat 0, time 0 - round numbers so the arithmetic is checkable by eye.</summary>
-  private static readonly LinkTimeline AtOneTwenty = new LinkTimeline(
+  private static readonly BeatTimeline AtOneTwenty = new BeatTimeline(
     MicrosPerBeat: 500_000,
     BeatOrigin: 0,
     TimeOriginMicros: 0);

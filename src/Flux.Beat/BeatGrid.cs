@@ -34,7 +34,7 @@ public readonly record struct BeatGridSnapshot(
 /// </summary>
 /// <param name="Timeline">The timeline now in force.</param>
 /// <param name="BeatNumberingShift">How far the beat number moved at the instant of the change; zero for the first timeline.</param>
-public readonly record struct TempoChange(LinkTimeline Timeline, double BeatNumberingShift);
+public readonly record struct TempoChange(BeatTimeline Timeline, double BeatNumberingShift);
 
 /// <summary>
 /// Holds the current Link timeline and answers "where is the beat right now?".
@@ -58,7 +58,7 @@ public sealed class BeatGrid {
   private readonly double staleAfterMicros;
   private readonly object gate = new object();
 
-  private LinkTimeline? timeline;
+  private BeatTimeline? timeline;
   private double lastPacketMicros;
   private long packets;
   private double maxReanchorJumpBeats;
@@ -90,13 +90,13 @@ public sealed class BeatGrid {
   /// same thing - so it is announced for the same reason and never counted as
   /// drift, even when the tempi happen to match.
   /// </summary>
-  public void Apply(LinkTimeline received, bool newSession = false) {
+  public void Apply(BeatTimeline received, bool newSession = false) {
     TempoChange? announcement = null;
 
     lock(this.gate) {
       double nowMicros = this.clock.NowMicros;
 
-      if(this.timeline is LinkTimeline previous) {
+      if(this.timeline is BeatTimeline previous) {
         double shift = received.BeatAt(nowMicros) - previous.BeatAt(nowMicros);
 
         if(!newSession && previous.MicrosPerBeat == received.MicrosPerBeat) {
@@ -128,7 +128,7 @@ public sealed class BeatGrid {
   }
 
   /// <summary>The current timeline, or null before the first packet arrives.</summary>
-  public LinkTimeline? Timeline {
+  public BeatTimeline? Timeline {
     get {
       lock(this.gate) {
         return this.timeline;
@@ -147,7 +147,7 @@ public sealed class BeatGrid {
   /// </summary>
   public bool TryGetSnapshot(out BeatGridSnapshot snapshot) {
     lock(this.gate) {
-      if(this.timeline is not LinkTimeline known) {
+      if(this.timeline is not BeatTimeline known) {
         snapshot = default;
         return false;
       }

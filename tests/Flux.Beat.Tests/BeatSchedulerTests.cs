@@ -64,7 +64,7 @@ public class BeatSchedulerTests {
     BeatGrid grid = new BeatGrid(clock, quantum: 4, TimeSpan.FromSeconds(2.5));
 
     // 300 BPM: fast enough to count several beats without a slow test.
-    grid.Apply(new LinkTimeline(MicrosPerBeat: 200_000, BeatOrigin: 0, TimeOriginMicros: (long)clock.NowMicros));
+    grid.Apply(new BeatTimeline(MicrosPerBeat: 200_000, BeatOrigin: 0, TimeOriginMicros: (long)clock.NowMicros));
 
     using BeatScheduler scheduler = new BeatScheduler(
       grid,

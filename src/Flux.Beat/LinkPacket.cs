@@ -58,7 +58,7 @@ public static class LinkPacket {
   public static bool TryParseTimeline(
     ReadOnlySpan<byte> packet,
     double clockOffsetMicros,
-    out LinkTimeline timeline) {
+    out BeatTimeline timeline) {
     timeline = default;
 
     if(!packet.StartsWith(ProtocolHeader)) {
@@ -113,6 +113,14 @@ public static class LinkPacket {
   /// <summary>
   /// Turns a timeline chunk body into a timeline, or rejects it.
   ///
+  /// The three fields are read in Link's own struct order - tempo, beat origin,
+  /// time origin - and that order was verified by ear rather than by inspection.
+  /// It had to be: swapping the last two yields an identical tempo while silently
+  /// corrupting phase, so a BPM cross-check against rekordbox's own readout
+  /// passes either way and proves nothing. This is the one place in Flux where
+  /// the order lives, now that the timeline type itself is shared with sources
+  /// that have no wire format at all.
+  ///
   /// The clock offset is added under <c>checked</c> deliberately. Left unchecked,
   /// a time origin near <c>long.MaxValue</c> wraps to a large negative anchor,
   /// and the plausibility bounds then judge a number that was never on the wire.
@@ -120,7 +128,7 @@ public static class LinkPacket {
   private static bool TryReadTimeline(
     ReadOnlySpan<byte> body,
     double clockOffsetMicros,
-    out LinkTimeline timeline) {
+    out BeatTimeline timeline) {
     timeline = default;
 
     long microsPerBeat = BinaryPrimitives.ReadInt64BigEndian(body);
@@ -134,7 +142,7 @@ public static class LinkPacket {
       return false;
     }
 
-    LinkTimeline parsed = new LinkTimeline(
+    BeatTimeline parsed = new BeatTimeline(
       microsPerBeat,
       beatOriginMicroBeats / MicroBeatsPerBeat,
       anchorMicros);
