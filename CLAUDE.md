@@ -19,6 +19,11 @@ other description of a message, including code comments.
 - After C# edits are complete, run
   `dotnet format style --severity warn --verbosity quiet` (this repo opts in;
   it strips unused usings), then build, then run the tests.
+- `.github/workflows/ci.yml` runs all of the above on every pull request, and
+  adds three rules the local commands do not enforce: the restore is
+  `--locked-mode`, so a changed package reference needs its `packages.lock.json`
+  committed in the same change; the build is `-warnaserror`; and the run fails
+  if the frontend build did not leave an `index.html` in `src/Flux.Web/wwwroot`.
 
 ## Conventions
 
