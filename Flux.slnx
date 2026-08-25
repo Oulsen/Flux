@@ -1,10 +1,12 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Flux.App/Flux.App.csproj" />
+    <Project Path="src/Flux.Audio/Flux.Audio.csproj" />
     <Project Path="src/Flux.Beat/Flux.Beat.csproj" />
     <Project Path="src/Flux.Web.Server/Flux.Web.Server.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Flux.Audio.Tests/Flux.Audio.Tests.csproj" />
     <Project Path="tests/Flux.Beat.Tests/Flux.Beat.Tests.csproj" />
     <Project Path="tests/Flux.Web.Server.Tests/Flux.Web.Server.Tests.csproj" />
   </Folder>

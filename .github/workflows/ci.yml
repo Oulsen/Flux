@@ -79,5 +79,11 @@ jobs:
       - name: Test Flux.Beat
         run: dotnet run --no-build --project tests/Flux.Beat.Tests
 
+      # Nothing here opens a device: the runner has no sound card, and the parts
+      # worth testing are the format conversion, the ring buffer, the meter and
+      # the device choice, all of which are pure by design.
+      - name: Test Flux.Audio
+        run: dotnet run --no-build --project tests/Flux.Audio.Tests
+
       - name: Test Flux.Web.Server
         run: dotnet run --no-build --project tests/Flux.Web.Server.Tests

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- WASAPI is a Windows API and there is no portable second implementation to
+       keep a door open for, so this project is honestly Windows-only. The pure
+       parts - format conversion, the ring buffer, the meter, device selection -
+       are still separated from the NAudio boundary, because those are the parts
+       worth testing and hardware makes a poor test fixture. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+  </PropertyGroup>
+
+  <!-- The pure parts are internal: they exist for the analyzer in this assembly,
+       not for callers, and the only outside caller they need is the test project. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Flux.Audio.Tests" />
+  </ItemGroup>
+
+  <!-- NAudio.Wasapi rather than the NAudio metapackage: it carries the endpoint
+       enumeration and the two capture classes this project uses, plus the FFT in
+       NAudio.Core, and leaves out WinMM, ASIO, MIDI and WinForms. Version 2.2.1
+       is the one the Phase 0 audio spike measured, and this is a smaller subset
+       of the same release rather than a different library. -->
+  <ItemGroup>
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -21,6 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Flux.Audio\Flux.Audio.csproj" />
     <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
     <ProjectReference Include="..\Flux.Web.Server\Flux.Web.Server.csproj" />
   </ItemGroup>

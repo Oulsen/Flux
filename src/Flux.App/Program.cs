@@ -1,4 +1,5 @@
 using Flux.App;
+using Flux.Audio;
 using Flux.Beat;
 using Flux.Web.Server;
 using Microsoft.AspNetCore.Builder;
@@ -31,11 +32,25 @@ builder.Services.AddHostedService<TimerResolutionService>();
 builder.Services.AddBeatCore(builder.Configuration);
 builder.Services.AddAbletonLink(builder.Configuration);
 
+// Capture runs whichever source is driving the beat, because the spectrum it
+// feeds is the instrument every later phase is checked against. Nothing consumes
+// the samples yet: the analyzer and the audio sync source arrive with the rest of
+// Phase 2.
+builder.Services.AddAudioCapture(builder.Configuration);
+
 // The per-beat console line was Phase 1's stand-in for the visualizer; the web
 // app has taken that job, so it is opt-in diagnostics now - three lines a
 // second, for nobody, on a default night.
 if(builder.Configuration.GetValue("Console:BeatLog", defaultValue: false)) {
   builder.Services.AddHostedService<ConsoleBeatMonitor>();
+}
+
+// The same arrangement for the capture level, and for a sharper reason: a device
+// list can only show names, and on this rig the endpoint carrying the master mix
+// is called "Microfoon". Only a level that falls when the channel fader does can
+// tell the right device from the thirteen silent ones beside it.
+if(builder.Configuration.GetValue("Console:AudioMeter", defaultValue: false)) {
+  builder.Services.AddHostedService<ConsoleAudioMonitor>();
 }
 
 builder.AddFluxWeb();
