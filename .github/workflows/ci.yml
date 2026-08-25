@@ -1,0 +1,82 @@
+# The gate every pull request has to pass. It exists to enforce three things that
+# were previously only habits: the committed lock files actually resolve, the
+# build holds at zero warnings, and the web app is really inside the backend.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop]
+
+# A second push to the same branch makes the first run's answer worthless, and
+# Windows minutes bill at twice the Linux rate.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Windows and not Linux because Flux.App targets net10.0-windows and grows a
+    # WinForms shell later. Building that TFM on Linux needs EnableWindowsTargeting
+    # and would then run the tests on the one platform the app never ships to.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The frontend runs first because the build is two steps in a fixed order:
+      # Vite writes into src/Flux.Web/wwwroot, then the .NET build copies it along.
+      # A pipeline without this half builds green and produces a backend with no
+      # web app in it, which is worse than having no pipeline at all.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: src/Flux.Web.Frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: src/Flux.Web.Frontend
+        run: npm ci
+
+      # svelte-check is the frontend's only type gate.
+      - name: Check frontend types
+        working-directory: src/Flux.Web.Frontend
+        run: npm run check
+
+      - name: Test frontend
+        working-directory: src/Flux.Web.Frontend
+        run: npm test
+
+      - name: Build frontend
+        working-directory: src/Flux.Web.Frontend
+        run: npm run build
+
+      # The content glob that carries wwwroot into the backend is conditional on
+      # the folder existing, so an empty one fails silently. Naming the entry
+      # point rather than the folder also catches a build that wrote only assets.
+      - name: Verify the web app reached the backend
+        shell: bash
+        run: test -f src/Flux.Web/wwwroot/index.html
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # The lock files are committed precisely so a restore cannot quietly resolve
+      # something other than what was reviewed. This is the only place that rule
+      # is enforced rather than merely intended.
+      - name: Restore
+        run: dotnet restore --locked-mode
+
+      - name: Build
+        run: dotnet build --no-restore -warnaserror
+
+      # The test projects are xunit v3 executables on Microsoft.Testing.Platform,
+      # where a solution-level dotnet test reports zero tests and passes. Running
+      # each project directly is the only invocation that actually runs anything.
+      - name: Test Flux.Beat
+        run: dotnet run --no-build --project tests/Flux.Beat.Tests
+
+      - name: Test Flux.Web
+        run: dotnet run --no-build --project tests/Flux.Web.Tests
