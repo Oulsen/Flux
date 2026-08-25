@@ -140,15 +140,22 @@ public sealed class AbletonLinkListener: BackgroundService, ISyncSource {
   /// </summary>
   public SyncSourceStatus Status() {
     lock(this.statusGate) {
+      // This listener's own count, which is what the diagnostics row has always
+      // meant by "packets". The grid's count would be a different number: it
+      // stops moving whenever Link is not the selected source, and starts again
+      // from zero when it is reselected.
+      SyncSourceDiagnostics diagnostics = new SyncSourceDiagnostics(Packets: this.acceptedPackets);
+
       if(this.acceptedPackets == 0) {
-        return new SyncSourceStatus(SyncSourceState.Waiting, Confidence: 0);
+        return new SyncSourceStatus(SyncSourceState.Waiting, Confidence: 0, diagnostics);
       }
 
       bool quiet = this.clock.NowMicros - this.lastAcceptedMicros > this.staleAfterMicros;
 
       return new SyncSourceStatus(
         quiet ? SyncSourceState.Quiet : SyncSourceState.Live,
-        Confidence: 1);
+        Confidence: 1,
+        diagnostics);
     }
   }
 

@@ -33,8 +33,11 @@ public static class Frames {
   /// <summary>How much of a rejected type name is quoted back, so a client cannot have its own input amplified at it.</summary>
   private const int MaxQuotedTypeLength = 40;
 
-  public static ReadOnlyMemory<byte> Hello(string app, int quantum, int stateHz) {
-    return Encode("hello", new HelloData(Version, app, quantum, stateHz), ProtocolJson.Default.EnvelopeHelloData);
+  public static ReadOnlyMemory<byte> Hello(string app, int quantum, int stateHz, int spectrumHz, int devicesHz) {
+    return Encode(
+      "hello",
+      new HelloData(Version, app, quantum, stateHz, spectrumHz, devicesHz),
+      ProtocolJson.Default.EnvelopeHelloData);
   }
 
   public static ReadOnlyMemory<byte> State(StateData state) {
@@ -43,6 +46,14 @@ public static class Frames {
 
   public static ReadOnlyMemory<byte> Beat(BeatData beat) {
     return Encode("beat", beat, ProtocolJson.Default.EnvelopeBeatData);
+  }
+
+  public static ReadOnlyMemory<byte> Spectrum(SpectrumData spectrum) {
+    return Encode("spectrum", spectrum, ProtocolJson.Default.EnvelopeSpectrumData);
+  }
+
+  public static ReadOnlyMemory<byte> Devices(DevicesData devices) {
+    return Encode("devices", devices, ProtocolJson.Default.EnvelopeDevicesData);
   }
 
   public static ReadOnlyMemory<byte> Pong(long t) {
@@ -90,6 +101,62 @@ public static class Frames {
   }
 
   /// <summary>
+  /// Reads a <c>subscribe</c> payload.
+  ///
+  /// Both flags are required, because the message is defined as a complete
+  /// statement of what the client wants rather than a delta. Defaulting a
+  /// missing one to false would turn a misspelled field name into a silent
+  /// unsubscribe, and the symptom of that is a visualiser that mysteriously
+  /// never draws.
+  /// </summary>
+  public static bool TryReadSubscribe(JsonElement data, out bool spectrum, out bool deviceLevels) {
+    spectrum = false;
+    deviceLevels = false;
+
+    return data.ValueKind == JsonValueKind.Object
+      && TryReadBool(data, "spectrum", out spectrum)
+      && TryReadBool(data, "deviceLevels", out deviceLevels);
+  }
+
+  /// <summary>Reads the source name out of a <c>selectSource</c> payload.</summary>
+  public static bool TryReadSource(JsonElement data, out string source) {
+    return TryReadString(data, "source", out source);
+  }
+
+  /// <summary>Reads the device id out of a <c>selectAudioDevice</c> payload.</summary>
+  public static bool TryReadDeviceId(JsonElement data, out string deviceId) {
+    return TryReadString(data, "deviceId", out deviceId);
+  }
+
+  /// <summary>
+  /// Reads a <c>setBpm</c> payload, where the field is present and may be null.
+  ///
+  /// Null is a value here rather than an absence: it clears the manual tempo.
+  /// So a missing <c>bpm</c> is refused instead of being read as null, which
+  /// would let a typo'd field name silently switch the tempo off.
+  /// </summary>
+  /// <param name="data">The <c>data</c> object of the inbound message.</param>
+  /// <param name="bpm">The tempo asked for, or null to clear it.</param>
+  public static bool TryReadSetBpm(JsonElement data, out double? bpm) {
+    bpm = null;
+
+    if(data.ValueKind != JsonValueKind.Object || !data.TryGetProperty("bpm", out JsonElement value)) {
+      return false;
+    }
+
+    if(value.ValueKind == JsonValueKind.Null) {
+      return true;
+    }
+
+    if(value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out double number)) {
+      bpm = number;
+      return true;
+    }
+
+    return false;
+  }
+
+  /// <summary>
   /// Shortens a client-supplied string before it is quoted back in an error.
   /// </summary>
   public static string Quote(string value) {
@@ -98,6 +165,49 @@ public static class Frames {
     return value.Length <= MaxQuotedTypeLength
       ? value
       : string.Concat(value.AsSpan(0, MaxQuotedTypeLength), "...");
+  }
+
+  /// <summary>Reads a required boolean field.</summary>
+  private static bool TryReadBool(JsonElement data, string name, out bool value) {
+    value = false;
+
+    if(!data.TryGetProperty(name, out JsonElement field)) {
+      return false;
+    }
+
+    switch(field.ValueKind) {
+      case JsonValueKind.True:
+        value = true;
+        return true;
+
+      case JsonValueKind.False:
+        return true;
+
+      default:
+        // Deliberately not accepting 0, 1 or "true". The client half of this
+        // protocol is one TypeScript file, so anything else is a bug in it and
+        // is worth an error rather than a guess.
+        return false;
+    }
+  }
+
+  /// <summary>Reads a required, non-empty string field.</summary>
+  private static bool TryReadString(JsonElement data, string name, out string value) {
+    value = string.Empty;
+
+    if(data.ValueKind != JsonValueKind.Object
+      || !data.TryGetProperty(name, out JsonElement field)
+      || field.ValueKind != JsonValueKind.String) {
+      return false;
+    }
+
+    string? text = field.GetString();
+    if(string.IsNullOrWhiteSpace(text)) {
+      return false;
+    }
+
+    value = text;
+    return true;
   }
 
   private static ReadOnlyMemory<byte> Encode<TData>(
@@ -119,6 +229,8 @@ public static class Frames {
 [JsonSerializable(typeof(Envelope<HelloData>))]
 [JsonSerializable(typeof(Envelope<StateData>))]
 [JsonSerializable(typeof(Envelope<BeatData>))]
+[JsonSerializable(typeof(Envelope<SpectrumData>))]
+[JsonSerializable(typeof(Envelope<DevicesData>))]
 [JsonSerializable(typeof(Envelope<EchoData>))]
 [JsonSerializable(typeof(Envelope<ErrorData>))]
 [JsonSerializable(typeof(ClientEnvelope))]

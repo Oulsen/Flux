@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Flux.Web.Server.Protocol;
 
@@ -23,7 +24,9 @@ public sealed record Envelope<TData>(string Type, TData Data);
 /// <param name="App">Flux's own version, for the page footer.</param>
 /// <param name="Quantum">Beats per bar, so the client sizes its indicator instead of assuming four.</param>
 /// <param name="StateHz">Nominal state rate, so the client can size its own smoothing.</param>
-public sealed record HelloData(int Protocol, string App, int Quantum, int StateHz);
+/// <param name="SpectrumHz">Nominal spectrum rate for a subscriber, so a canvas can size its own decay per frame.</param>
+/// <param name="DevicesHz">Nominal device list rate for a subscriber.</param>
+public sealed record HelloData(int Protocol, string App, int Quantum, int StateHz, int SpectrumHz, int DevicesHz);
 
 /// <summary>
 /// Where the beat is, as a snapshot rather than a delta.
@@ -36,20 +39,120 @@ public sealed record HelloData(int Protocol, string App, int Quantum, int StateH
 public sealed record GridData(double Bpm, double Beat, long BeatIndex, int PositionInBar, bool BarAligned);
 
 /// <summary>
-/// Health counters for the current sync source.
+/// One registered source's own view of itself, active or not.
+///
+/// Every source reports on every snapshot because that is what the selector has
+/// to show: which sources have a signal right now. The alternative is a user
+/// discovering that audio was hearing nothing by switching to it mid-set.
 /// </summary>
-/// <param name="Packets">ALIVE packets accepted so far.</param>
-/// <param name="ReanchorMaxBeats">Largest disagreement between an outgoing timeline and its replacement. Should stay at zero forever.</param>
-public sealed record DiagnosticsData(long Packets, double ReanchorMaxBeats);
+/// <param name="Name">The source's protocol name: "link", "audio" or "manual".</param>
+/// <param name="State">"waiting", "live" or "quiet".</param>
+/// <param name="Confidence">0 to 1. Only meaningful for a source that estimates the tempo rather than being told it.</param>
+public sealed record SourceReportData(string Name, string State, double Confidence);
+
+/// <summary>
+/// Whether the bar has been anchored, and by what.
+/// </summary>
+/// <param name="Aligned">Whether the bar position means anything musically.</param>
+/// <param name="Method">"cue", "tap" or "drop"; null exactly when <paramref name="Aligned"/> is false.</param>
+public sealed record AlignmentData(bool Aligned, string? Method);
+
+/// <summary>
+/// Health counters for the active source, and the one number that belongs to the
+/// grid itself.
+///
+/// One record with per-source nullable fields rather than a union type, because
+/// the source generator cannot serialise a polymorphic payload and reflection is
+/// not on the table here. A field that does not apply is omitted from the frame
+/// entirely, so a client renders a blank rather than a zero that looks like a
+/// measurement. The ignore condition is per property rather than global on
+/// purpose: the mandatory <c>grid: null</c> in a state frame has to survive.
+/// </summary>
+/// <param name="ReanchorMaxBeats">Largest disagreement between an outgoing timeline and its replacement. The grid's own metric, so it is sent for every source and should stay at zero forever.</param>
+/// <param name="Packets">Link: ALIVE packets accepted so far.</param>
+/// <param name="Fps">Audio: measured analyzer frames a second.</param>
+/// <param name="BeatsDetected">Audio: beats the detector has accepted.</param>
+/// <param name="BpmLocked">Audio: whether the tempo estimate has settled.</param>
+/// <param name="LastBeatAgoMs">Audio: milliseconds since the last accepted beat.</param>
+/// <param name="Taps">Manual: taps in the current sequence.</param>
+/// <param name="LastTapAgoMs">Manual: milliseconds since the last tap.</param>
+public sealed record DiagnosticsData(
+  double ReanchorMaxBeats,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Packets = null,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Fps = null,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? BeatsDetected = null,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? BpmLocked = null,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? LastBeatAgoMs = null,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Taps = null,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? LastTapAgoMs = null);
 
 /// <summary>
 /// The continuous picture, sent at a fixed rate whether or not anything moved.
 /// </summary>
-/// <param name="Source">The sync source in use. Only "link" exists in version 1.</param>
-/// <param name="SourceState">"waiting", "live" or "quiet".</param>
+/// <param name="Source">The sync source driving the grid, or "none" in a build that has no sources at all.</param>
+/// <param name="SourceState">"waiting", "live" or "quiet", for <paramref name="Source"/>.</param>
+/// <param name="Sources">Every registered source and its health, for the selector.</param>
 /// <param name="Grid">Null exactly when nothing has ever been received, so a client cannot render an absent tempo as 0.00 BPM.</param>
-/// <param name="Diagnostics">Source-specific counters for the diagnostics row.</param>
-public sealed record StateData(string Source, string SourceState, GridData? Grid, DiagnosticsData Diagnostics);
+/// <param name="Alignment">Whether the bar is anchored, and by what.</param>
+/// <param name="Diagnostics">Counters for the active source, plus the grid's own drift metric.</param>
+public sealed record StateData(
+  string Source,
+  string SourceState,
+  IReadOnlyList<SourceReportData> Sources,
+  GridData? Grid,
+  AlignmentData Alignment,
+  DiagnosticsData Diagnostics);
+
+/// <summary>
+/// One analyzer frame, for the visualiser.
+///
+/// The bands and the flux ride together because the visualiser is a test
+/// instrument rather than decoration: it exists to show a beat marker against
+/// the sound that produced it, and without <paramref name="Flux"/> and
+/// <paramref name="Beat"/> the picture shows what was heard but not what was
+/// decided.
+/// </summary>
+/// <param name="Bins">64 log-spaced display columns, low frequency first, each 0 to 255.</param>
+/// <param name="Kick">Bass band energy, 0 to 1.</param>
+/// <param name="Mids">Mid band energy, 0 to 1.</param>
+/// <param name="Highs">High band energy, 0 to 1.</param>
+/// <param name="Flux">Spectral flux against the previous frame: what the detector triggers on.</param>
+/// <param name="Beat">"none", "beat" or "strong".</param>
+public sealed record SpectrumData(
+  IReadOnlyList<int> Bins,
+  double Kick,
+  double Mids,
+  double Highs,
+  double Flux,
+  string Beat);
+
+/// <summary>
+/// One audio endpoint Flux can see, and what it is currently hearing from it.
+/// </summary>
+/// <param name="Id">Opaque and stable while the device exists. The only value selectAudioDevice accepts.</param>
+/// <param name="Name">What the operating system calls it, for a human to recognise.</param>
+/// <param name="Kind">"capture" for an input, "loopback" for what a render device is playing.</param>
+/// <param name="State">"signal", "digitalSilence", "noData" or "failed".</param>
+/// <param name="Selected">Whether audio analysis is listening to this one.</param>
+/// <param name="Rms">Recent average level, 0 to 1.</param>
+/// <param name="Peak">Recent peak level, 0 to 1. Sent beside the average because a clipping signal and a quiet one differ in exactly this pair.</param>
+public sealed record DeviceData(
+  string Id,
+  string Name,
+  string Kind,
+  string State,
+  bool Selected,
+  double Rms,
+  double Peak);
+
+/// <summary>
+/// The complete list of audio devices, never a delta.
+///
+/// Wrapped in an object rather than sent as a bare array because the envelope
+/// promises <c>data</c> is an object, and because a list that later needs a
+/// companion field should not have to become one.
+/// </summary>
+public sealed record DevicesData(IReadOnlyList<DeviceData> Devices);
 
 /// <summary>
 /// One beat, sent at the instant it lands. What a flash renders from.

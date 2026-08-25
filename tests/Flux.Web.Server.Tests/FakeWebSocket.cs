@@ -25,6 +25,9 @@ internal sealed class FakeWebSocket: WebSocket {
   private Frame? receiving;
   private int delivered;
 
+  private TaskCompletionSource? gate;
+  private TaskCompletionSource? held;
+
   /// <summary>
   /// The most bytes one ReceiveAsync call hands over. A real socket fragments
   /// messages at the network's whim; lowering this makes a test do it on
@@ -102,13 +105,40 @@ internal sealed class FakeWebSocket: WebSocket {
     return new WebSocketReceiveResult(count, current.Type, endOfMessage);
   }
 
-  public override Task SendAsync(
+  /// <summary>
+  /// Holds every send until <see cref="Release"/>, and hands back a task that
+  /// completes once a send is actually being held.
+  ///
+  /// The returned task is what makes a backpressure test deterministic rather
+  /// than a race with a sleep in it: awaiting it means the send loop is
+  /// provably inside a send, so whatever is queued next is queued behind a
+  /// client that cannot keep up.
+  /// </summary>
+  public Task StallAsync() {
+    this.held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    this.gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    return this.held.Task;
+  }
+
+  /// <summary>Lets the stalled send, and everything queued behind it, through.</summary>
+  public void Release() {
+    TaskCompletionSource? blocked = this.gate;
+    this.gate = null;
+    blocked?.TrySetResult();
+  }
+
+  public override async Task SendAsync(
     ArraySegment<byte> buffer,
     WebSocketMessageType messageType,
     bool endOfMessage,
     CancellationToken cancellationToken) {
+    if(this.gate is TaskCompletionSource blocked) {
+      this.held?.TrySetResult();
+      await blocked.Task.ConfigureAwait(false);
+    }
+
     this.outbound.Writer.TryWrite(Encoding.UTF8.GetString(buffer));
-    return Task.CompletedTask;
   }
 
   public override Task CloseAsync(

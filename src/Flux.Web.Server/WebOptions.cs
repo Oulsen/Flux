@@ -39,6 +39,25 @@ public sealed class WebOptions {
   public int StateHz { get; set; } = 20;
 
   /// <summary>
+  /// How often a subscribed client is sent a spectrum frame, in hertz.
+  ///
+  /// Deliberately below the analyzer's own frame rate. The visualiser is sampled
+  /// from the analyzer's latest frame rather than fed by it, so downsampling
+  /// costs nothing, and the alternative - matching the two - would put a
+  /// browser's ability to keep up in charge of how often audio is analysed.
+  /// </summary>
+  public int SpectrumHz { get; set; } = 30;
+
+  /// <summary>
+  /// How often a subscribed client is sent the device list, in hertz.
+  ///
+  /// Low because the list itself changes rarely; what moves at this rate is the
+  /// level meters beside it, and ten a second is already smoother than a meter
+  /// needs to look honest.
+  /// </summary>
+  public int DevicesHz { get; set; } = 10;
+
+  /// <summary>
   /// How many messages may queue for one client before the oldest are dropped.
   ///
   /// A little over a second of state at the default rate. The queue exists so a

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
+using System.Text.Json;
 using System.Threading.Channels;
 
 namespace Flux.Web.Server;
@@ -35,6 +36,8 @@ public sealed class SocketHub {
 
   private readonly ConcurrentDictionary<Guid, Client> clients = new ConcurrentDictionary<Guid, Client>();
   private readonly WebOptions options;
+  private readonly SyncSourceManager sources;
+  private readonly ManualSource manual;
   private readonly ILogger<SocketHub> log;
   private readonly ReadOnlyMemory<byte> greeting;
 
@@ -44,17 +47,34 @@ public sealed class SocketHub {
   /// one part of the beat that no source can supply: bar <em>position</em> gets
   /// anchored by a cue press or a tap, but bar <em>length</em> is only ever
   /// configuration, which is why switching sources cannot change this greeting.
+  ///
+  /// <see cref="ManualSource"/> arrives as itself rather than through the
+  /// manager, because tapping and typing a tempo are that one source's own
+  /// operations: routing them through a registry that deliberately knows nothing
+  /// about any particular source would mean teaching it about this one.
   /// </summary>
-  public SocketHub(IOptions<WebOptions> options, IOptions<BeatOptions> beat, ILogger<SocketHub> log) {
+  public SocketHub(
+    IOptions<WebOptions> options,
+    IOptions<BeatOptions> beat,
+    SyncSourceManager sources,
+    ManualSource manual,
+    ILogger<SocketHub> log) {
     ArgumentNullException.ThrowIfNull(options);
     ArgumentNullException.ThrowIfNull(beat);
 
     this.options = options.Value;
+    this.sources = sources ?? throw new ArgumentNullException(nameof(sources));
+    this.manual = manual ?? throw new ArgumentNullException(nameof(manual));
     this.log = log ?? throw new ArgumentNullException(nameof(log));
 
     // Every field in the greeting is fixed for the lifetime of the process, so
     // it is encoded once here rather than per connection.
-    this.greeting = Frames.Hello(FluxVersion.Current, beat.Value.Quantum, this.options.StateHz);
+    this.greeting = Frames.Hello(
+      FluxVersion.Current,
+      beat.Value.Quantum,
+      this.options.StateHz,
+      this.options.SpectrumHz,
+      this.options.DevicesHz);
   }
 
   /// <summary>
@@ -66,10 +86,42 @@ public sealed class SocketHub {
   /// </summary>
   public bool HasClients => !this.clients.IsEmpty;
 
+  /// <summary>Whether anyone has asked for spectrum frames.</summary>
+  public bool HasSpectrumSubscribers => this.clients.Values.Any(client => client.WantsSpectrum);
+
+  /// <summary>Whether anyone has asked for the device list.</summary>
+  public bool HasDeviceSubscribers => this.clients.Values.Any(client => client.WantsDeviceLevels);
+
   /// <summary>Sends one already-encoded frame to every connected client.</summary>
   public void Broadcast(ReadOnlyMemory<byte> frame) {
     foreach(Client client in this.clients.Values) {
       client.Enqueue(frame);
+    }
+  }
+
+  /// <summary>
+  /// Sends a spectrum frame to the clients that asked for one.
+  /// </summary>
+  public void BroadcastSpectrum(ReadOnlyMemory<byte> frame) {
+    foreach(Client client in this.clients.Values) {
+      if(client.WantsSpectrum) {
+        client.EnqueueSpectrum(frame);
+      }
+    }
+  }
+
+  /// <summary>
+  /// Sends the device list to the clients that asked for it.
+  ///
+  /// This goes through the ordinary queue rather than the spectrum slot: it is
+  /// small, it is rare, and a device list that arrived out of date would leave a
+  /// picker showing a device that is no longer there.
+  /// </summary>
+  public void BroadcastDevices(ReadOnlyMemory<byte> frame) {
+    foreach(Client client in this.clients.Values) {
+      if(client.WantsDeviceLevels) {
+        client.Enqueue(frame);
+      }
     }
   }
 
@@ -127,11 +179,53 @@ public sealed class SocketHub {
   }
 
   /// <summary>
-  /// Drains one client's queue into its socket. The only writer to that socket.
+  /// Drains one client's two queues into its socket. The only writer to that
+  /// socket, still: two queues, one loop, so no send can overlap another.
+  ///
+  /// The ordinary queue is always emptied before a spectrum frame is looked at.
+  /// That is the whole reason the spectrum has a queue of its own - a 30 Hz
+  /// picture sharing the main queue would fill it in about a second and push the
+  /// beats out of it, and a beat lost to make room for a picture of a beat is
+  /// the wrong trade in a lighting app.
+  ///
+  /// The two pending waits are held across iterations rather than created fresh
+  /// each time. Creating a wait on both channels every pass and abandoning the
+  /// loser would leave one dangling waiter per frame on whichever channel is
+  /// quiet, which over a long set is a leak with no symptom until it is a large
+  /// one.
   /// </summary>
   private static async Task SendAsync(WebSocket socket, Client client, CancellationToken token) {
-    await foreach(ReadOnlyMemory<byte> frame in client.Reader.ReadAllAsync(token).ConfigureAwait(false)) {
-      await socket.SendAsync(frame, WebSocketMessageType.Text, endOfMessage: true, token).ConfigureAwait(false);
+    Task<bool>? ordinary = null;
+    Task<bool>? spectrum = null;
+
+    while(true) {
+      if(client.Reader.TryRead(out ReadOnlyMemory<byte> frame)
+        || client.SpectrumReader.TryRead(out frame)) {
+        await socket.SendAsync(frame, WebSocketMessageType.Text, endOfMessage: true, token).ConfigureAwait(false);
+        continue;
+      }
+
+      ordinary ??= client.Reader.WaitToReadAsync(token).AsTask();
+      spectrum ??= client.SpectrumReader.WaitToReadAsync(token).AsTask();
+
+      Task<bool> ready = await Task.WhenAny(ordinary, spectrum).ConfigureAwait(false);
+
+      // Awaited rather than inspected, so a cancelled wait throws here and ends
+      // the connection the same way every other cancellation does.
+      bool more = await ready.ConfigureAwait(false);
+
+      if(ReferenceEquals(ready, ordinary)) {
+        ordinary = null;
+
+        // Only the ordinary queue is ever completed, so this is the connection
+        // ending with its queue drained. The spectrum wait left pending here is
+        // abandoned with the client it belongs to.
+        if(!more) {
+          return;
+        }
+      } else {
+        spectrum = null;
+      }
     }
   }
 
@@ -203,11 +297,100 @@ public sealed class SocketHub {
 
         break;
 
+      case "subscribe":
+        if(Frames.TryReadSubscribe(envelope.Data, out bool spectrum, out bool deviceLevels)) {
+          client.Subscribe(spectrum, deviceLevels);
+        } else {
+          client.Enqueue(Frames.Error(
+            "invalid_data",
+            "A subscribe needs boolean 'data.spectrum' and 'data.deviceLevels'."));
+        }
+
+        break;
+
+      case "selectSource":
+        this.SelectSource(client, envelope.Data);
+        break;
+
+      case "selectAudioDevice":
+        if(Frames.TryReadDeviceId(envelope.Data, out string deviceId)) {
+          // Rejected rather than ignored, and rejected for a build with no audio
+          // support for the same reason as for an unplugged device: from the
+          // page's side both are "that device is not there", and both leave the
+          // selection where it was.
+          client.Enqueue(Frames.Error(
+            "rejected",
+            $"No audio device with id '{Frames.Quote(deviceId)}'."));
+        } else {
+          client.Enqueue(Frames.Error("invalid_data", "Selecting a device needs a string 'data.deviceId'."));
+        }
+
+        break;
+
+      case "tap":
+        // Timed inside ManualSource, on arrival. Nothing in the payload is read:
+        // the two clocks are unrelated, so a timestamp from the browser would
+        // place the beat somewhere arbitrary.
+        this.manual.Tap();
+        break;
+
+      case "setBpm":
+        this.SetBpm(client, envelope.Data);
+        break;
+
       default:
         // Answered rather than ignored: the client half of this protocol is one
         // codebase, so an unrecognised type is a bug in it and should be loud.
         client.Enqueue(Frames.Error("unknown_type", $"Unknown message type '{Frames.Quote(type)}'."));
         break;
+    }
+  }
+
+  /// <summary>
+  /// Switches the sync source, or says why it did not.
+  ///
+  /// There is no acknowledgement on success: the next state frame carries the
+  /// active source, and that is the only confirmation worth having, because it
+  /// comes from the thing that actually made the change.
+  /// </summary>
+  private void SelectSource(Client client, JsonElement data) {
+    if(!Frames.TryReadSource(data, out string source)) {
+      client.Enqueue(Frames.Error("invalid_data", "Selecting a source needs a string 'data.source'."));
+      return;
+    }
+
+    if(!this.sources.TrySelect(source)) {
+      client.Enqueue(Frames.Error(
+        "rejected",
+        $"No sync source named '{Frames.Quote(source)}' in this build."));
+      return;
+    }
+
+    this.log.LogInformation("A web client selected the {Source} sync source.", source);
+  }
+
+  /// <summary>
+  /// Sets or clears the manual tempo.
+  ///
+  /// An out-of-range tempo is refused rather than clamped. The values just
+  /// outside 20..200 are typos, and clamping a typo produces a plausible wrong
+  /// answer, which is worse than a rejection the user can see.
+  /// </summary>
+  private void SetBpm(Client client, JsonElement data) {
+    if(!Frames.TryReadSetBpm(data, out double? bpm)) {
+      client.Enqueue(Frames.Error("invalid_data", "Setting a tempo needs 'data.bpm' as a number or null."));
+      return;
+    }
+
+    if(bpm is not double value) {
+      this.manual.ClearBpm();
+      return;
+    }
+
+    if(!this.manual.TrySetBpm(value)) {
+      client.Enqueue(Frames.Error(
+        "rejected",
+        $"A manual tempo must be between {ManualSource.MinBpm:F0} and {ManualSource.MaxBpm:F0} BPM."));
     }
   }
 
@@ -227,10 +410,25 @@ public sealed class SocketHub {
   private readonly record struct CloseIntent(WebSocketCloseStatus Status, string Reason);
 
   /// <summary>
-  /// One connected browser: a bounded queue and nothing else.
+  /// One connected browser: two bounded queues and what it has asked to be sent.
   /// </summary>
   private sealed class Client {
     private readonly Channel<ReadOnlyMemory<byte>> outbound;
+
+    /// <summary>
+    /// The one spectrum frame waiting to go out.
+    ///
+    /// Capacity one, dropping the oldest, which together mean the queued frame
+    /// is always the newest one produced. A visualiser is worth exactly one
+    /// frame of latency: an older frame is not a smaller version of the picture,
+    /// it is the wrong picture.
+    /// </summary>
+    private readonly Channel<ReadOnlyMemory<byte>> spectrum = Channel.CreateBounded<ReadOnlyMemory<byte>>(
+      new BoundedChannelOptions(1) {
+        FullMode = BoundedChannelFullMode.DropOldest,
+        SingleReader = true,
+        SingleWriter = false,
+      });
 
     public Client(int capacity) {
       this.outbound = Channel.CreateBounded<ReadOnlyMemory<byte>>(
@@ -248,12 +446,47 @@ public sealed class SocketHub {
         });
     }
 
+    /// <summary>
+    /// Whether this client asked for spectrum frames. Written by its own receive
+    /// loop and read by the broadcasters, so it is volatile rather than locked:
+    /// a broadcaster reading the previous answer sends or skips one frame at
+    /// 30 Hz, which is not worth a lock on the path a beat also takes.
+    /// </summary>
+    public volatile bool WantsSpectrum;
+
+    /// <summary>Whether this client asked for the device list.</summary>
+    public volatile bool WantsDeviceLevels;
+
     public ChannelReader<ReadOnlyMemory<byte>> Reader => this.outbound.Reader;
+
+    public ChannelReader<ReadOnlyMemory<byte>> SpectrumReader => this.spectrum.Reader;
 
     public void Enqueue(ReadOnlyMemory<byte> frame) {
       this.outbound.Writer.TryWrite(frame);
     }
 
+    public void EnqueueSpectrum(ReadOnlyMemory<byte> frame) {
+      this.spectrum.Writer.TryWrite(frame);
+    }
+
+    /// <summary>
+    /// Records a complete statement of what this client wants. Never a delta:
+    /// the protocol has no unsubscribe, so each message replaces the last answer.
+    /// </summary>
+    public void Subscribe(bool wantsSpectrum, bool wantsDeviceLevels) {
+      this.WantsSpectrum = wantsSpectrum;
+      this.WantsDeviceLevels = wantsDeviceLevels;
+    }
+
+    /// <summary>
+    /// Ends the connection's send loop once its ordinary queue has drained.
+    ///
+    /// The spectrum channel is deliberately never completed. It is the loop's
+    /// second wait, and completing it would make that wait return "no more"
+    /// immediately and forever - a wait that never blocks, in a loop that has
+    /// nothing else to do, is a spinning core. The loop ends on the ordinary
+    /// queue, which is the one every message that matters travels through.
+    /// </summary>
     public void Complete() {
       this.outbound.Writer.TryComplete();
     }

@@ -242,6 +242,64 @@ public class SyncSourceManagerTests {
     Assert.Equal(1, snapshot.PositionInBar);
   }
 
+  /// <summary>
+  /// Withdrawing is the opposite of publishing rather than a way of reporting
+  /// silence. A quiet source still has a last tempo worth extrapolating; a
+  /// source that has retracted its tempo has nothing, and extrapolating it
+  /// anyway would put a number on stage that nothing stands behind.
+  /// </summary>
+  [Fact]
+  public void WithdrawingLeavesTheActiveSourceWithNothingToReport() {
+    BeatGrid grid = NewGrid(new FakeClock());
+    SyncSourceManager manager = NewManager(grid, defaultSource: "manual");
+
+    ITimelineSink manual = manager.Register(new FakeSource("manual"));
+
+    manual.Publish(AtOneTwenty);
+    Assert.True(grid.TryGetSnapshot(out _));
+
+    manual.Withdraw();
+
+    Assert.False(grid.TryGetSnapshot(out _));
+  }
+
+  [Fact]
+  public void WithdrawingAnInactiveSourceLeavesTheGridAlone() {
+    BeatGrid grid = NewGrid(new FakeClock());
+    SyncSourceManager manager = NewManager(grid, defaultSource: "link");
+
+    ITimelineSink link = manager.Register(new FakeSource("link"));
+    ITimelineSink manual = manager.Register(new FakeSource("manual"));
+
+    manual.Publish(AtOneSeventyFive);
+    link.Publish(AtOneTwenty);
+
+    manual.Withdraw();
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(120, snapshot.Bpm, precision: 2);
+  }
+
+  /// <summary>
+  /// The cached timeline goes with the withdrawal, so selecting that source
+  /// later finds nothing rather than resurrecting the tempo the user retracted.
+  /// </summary>
+  [Fact]
+  public void SelectingASourceThatWithdrewFindsNothing() {
+    BeatGrid grid = NewGrid(new FakeClock());
+    SyncSourceManager manager = NewManager(grid, defaultSource: "link");
+
+    ITimelineSink link = manager.Register(new FakeSource("link"));
+    ITimelineSink manual = manager.Register(new FakeSource("manual"));
+
+    manual.Publish(AtOneSeventyFive);
+    manual.Withdraw();
+    link.Publish(AtOneTwenty);
+
+    Assert.True(manager.TrySelect("manual"));
+    Assert.False(grid.TryGetSnapshot(out _));
+  }
+
   [Fact]
   public void HasNoActiveSourceUntilOneRegisters() {
     SyncSourceManager manager = NewManager(NewGrid(new FakeClock()), defaultSource: "link");

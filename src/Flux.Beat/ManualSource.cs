@@ -88,9 +88,13 @@ public sealed class ManualSource: ISyncSource {
   /// </summary>
   public SyncSourceStatus Status() {
     lock(this.gate) {
+      SyncSourceDiagnostics diagnostics = new SyncSourceDiagnostics(
+        Taps: this.taps.Count,
+        LastTapAgoMs: this.taps.Count > 0 ? (this.clock.NowMicros - this.taps[^1]) / 1000.0 : null);
+
       return this.bpm is null
-        ? new SyncSourceStatus(SyncSourceState.Waiting, Confidence: 0)
-        : new SyncSourceStatus(SyncSourceState.Live, Confidence: 1);
+        ? new SyncSourceStatus(SyncSourceState.Waiting, Confidence: 0, diagnostics)
+        : new SyncSourceStatus(SyncSourceState.Live, Confidence: 1, diagnostics);
     }
   }
 
@@ -178,6 +182,28 @@ public sealed class ManualSource: ISyncSource {
     this.PublishTempo(value, now);
 
     return true;
+  }
+
+  /// <summary>
+  /// Forgets the tempo entirely, as the protocol's <c>setBpm</c> with a null
+  /// asks.
+  ///
+  /// Not the same as setting zero, and not the same as going quiet. The source
+  /// goes back to reporting <see cref="SyncSourceState.Waiting"/>, and if it is
+  /// the active one the grid stops reporting a tempo at all rather than
+  /// extrapolating a number the user has just retracted.
+  ///
+  /// The taps go too. Keeping them would let the next single tap resurrect the
+  /// cleared tempo by median, which is precisely the tempo that was just thrown
+  /// away.
+  /// </summary>
+  public void ClearBpm() {
+    lock(this.gate) {
+      this.bpm = null;
+      this.taps.Clear();
+    }
+
+    this.sink.Withdraw();
   }
 
   /// <summary>

@@ -255,6 +255,69 @@ public class ManualSourceTests {
   }
 
   /// <summary>
+  /// Clearing is not setting zero and not going quiet. The tempo was retracted,
+  /// so the grid has to stop reporting one rather than extrapolating a number
+  /// the user has just taken back.
+  /// </summary>
+  [Fact]
+  public void ClearingTheTempoStopsTheGridReportingOne() {
+    (ManualSource manual, BeatGrid grid, _) = NewSource();
+
+    Assert.True(manual.TrySetBpm(128));
+    Assert.True(grid.TryGetSnapshot(out _));
+
+    manual.ClearBpm();
+
+    Assert.Null(manual.Bpm);
+    Assert.False(grid.TryGetSnapshot(out _));
+    Assert.Equal(SyncSourceState.Waiting, manual.Status().State);
+  }
+
+  /// <summary>
+  /// The taps go with the tempo. Keeping them would let the next single tap
+  /// resurrect the cleared tempo by median, which is exactly the tempo that was
+  /// just thrown away.
+  /// </summary>
+  [Fact]
+  public void ClearingTheTempoForgetsTheTapsBehindIt() {
+    (ManualSource manual, _, FakeClock clock) = NewSource();
+
+    manual.Tap();
+    clock.Advance(TimeSpan.FromMilliseconds(500));
+    manual.Tap();
+
+    Assert.Equal(2, manual.Status().Diagnostics.Taps);
+
+    manual.ClearBpm();
+
+    Assert.Equal(0, manual.Status().Diagnostics.Taps);
+    Assert.Null(manual.Status().Diagnostics.LastTapAgoMs);
+  }
+
+  /// <summary>
+  /// The diagnostics row is how a user tells a tap that registered from one that
+  /// did not, so the count and the age of the last tap have to be real.
+  /// </summary>
+  [Fact]
+  public void ReportsHowManyTapsAndHowLongAgo() {
+    (ManualSource manual, _, FakeClock clock) = NewSource();
+
+    manual.Tap();
+    clock.Advance(TimeSpan.FromMilliseconds(500));
+    manual.Tap();
+    clock.Advance(TimeSpan.FromMilliseconds(120));
+
+    SyncSourceDiagnostics diagnostics = manual.Status().Diagnostics;
+
+    Assert.Equal(2, diagnostics.Taps);
+    Assert.Equal(120, diagnostics.LastTapAgoMs!.Value, precision: 3);
+
+    // Not this source's counters, and they are left out rather than zeroed.
+    Assert.Null(diagnostics.Packets);
+    Assert.Null(diagnostics.Fps);
+  }
+
+  /// <summary>
   /// Manual is active in these tests so its timelines reach the grid, which is
   /// what makes the tap arithmetic observable.
   /// </summary>

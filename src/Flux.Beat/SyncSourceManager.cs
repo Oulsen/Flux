@@ -196,6 +196,31 @@ public sealed class SyncSourceManager {
     }
   }
 
+  /// <summary>
+  /// Drops a source's cached timeline, and clears the grid if that source is the
+  /// active one.
+  /// </summary>
+  private void Withdraw(string name) {
+    bool clear;
+
+    lock(this.gate) {
+      if(!this.sources.TryGetValue(name, out Registration? registration) || registration.Last is null) {
+        return;
+      }
+
+      registration.Last = null;
+      clear = string.Equals(this.active, name, StringComparison.OrdinalIgnoreCase);
+    }
+
+    if(clear) {
+      // Reset rather than leaving the last timeline running: the source has
+      // retracted its tempo, so continuing to extrapolate it would put a number
+      // on stage that nothing behind it stands behind any more.
+      this.grid.Reset();
+      this.log.LogInformation("Sync source {Source} has withdrawn its tempo.", name);
+    }
+  }
+
   private sealed class Registration(ISyncSource source) {
     public ISyncSource Source { get; } = source;
 
@@ -214,6 +239,10 @@ public sealed class SyncSourceManager {
   private sealed class Sink(SyncSourceManager manager, string name): ITimelineSink {
     public void Publish(BeatTimeline timeline, bool newSession = false) {
       manager.Publish(name, timeline, newSession);
+    }
+
+    public void Withdraw() {
+      manager.Withdraw(name);
     }
 
     public void AlignBar(BarAlignmentMethod method) {

@@ -28,7 +28,38 @@ public enum SyncSourceState {
 /// reports 1 whenever it knows one at all, because it has no uncertainty to
 /// describe and inventing a number would only make the honest ones look worse.
 /// </param>
-public readonly record struct SyncSourceStatus(SyncSourceState State, double Confidence);
+/// <param name="Diagnostics">The counters this source publishes for the diagnostics row.</param>
+public readonly record struct SyncSourceStatus(
+  SyncSourceState State,
+  double Confidence,
+  SyncSourceDiagnostics Diagnostics = default);
+
+/// <summary>
+/// The health counters a source has to show, as the union of what every source
+/// can report.
+///
+/// A union of nullable fields rather than a type per source, and it lives here
+/// rather than in each source's own project, because the one consumer is the web
+/// layer: it renders these straight into a state frame and cannot reference the
+/// projects the sources live in. A field left null is one this source does not
+/// have, and it is left out of the frame entirely rather than sent as a zero -
+/// a blank on screen says "not a thing here", a zero says "measured, and none".
+/// </summary>
+/// <param name="Packets">Link: ALIVE packets accepted so far.</param>
+/// <param name="Fps">Audio: measured analyzer frames a second.</param>
+/// <param name="BeatsDetected">Audio: beats the detector has accepted.</param>
+/// <param name="BpmLocked">Audio: whether the tempo estimate has settled.</param>
+/// <param name="LastBeatAgoMs">Audio: milliseconds since the last accepted beat.</param>
+/// <param name="Taps">Manual: taps in the current sequence.</param>
+/// <param name="LastTapAgoMs">Manual: milliseconds since the last tap.</param>
+public readonly record struct SyncSourceDiagnostics(
+  long? Packets = null,
+  double? Fps = null,
+  long? BeatsDetected = null,
+  bool? BpmLocked = null,
+  double? LastBeatAgoMs = null,
+  int? Taps = null,
+  double? LastTapAgoMs = null);
 
 /// <summary>
 /// One way of knowing where the beat is: an Ableton Link session, audio
@@ -76,6 +107,22 @@ public interface ITimelineSink {
   /// anchored to a beat index has to re-arm when this is set.
   /// </param>
   void Publish(BeatTimeline timeline, bool newSession = false);
+
+  /// <summary>
+  /// Takes back everything this source has published: it no longer has a tempo
+  /// at all.
+  ///
+  /// The opposite of <see cref="Publish"/> rather than a way of reporting
+  /// silence, and the distinction matters. A source that goes quiet still has a
+  /// last known tempo worth extrapolating, and says so with
+  /// <see cref="SyncSourceState.Quiet"/>. A source that withdraws is saying the
+  /// tempo was retracted - a manual tempo cleared by the user - and leaving that
+  /// on screen would be reporting a number nobody stands behind any more.
+  ///
+  /// The cached timeline goes with it, so selecting this source later finds
+  /// nothing rather than resurrecting the retracted tempo.
+  /// </summary>
+  void Withdraw();
 
   /// <summary>
   /// Marks the beat nearest to now as the downbeat.

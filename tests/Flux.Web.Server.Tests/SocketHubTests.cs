@@ -215,6 +215,247 @@ public sealed class SocketHubTests {
     Assert.False(hub.HasClients);
   }
 
+  [Fact]
+  public async Task SubscribingSwitchesTheSpectrumFeedOnForThatClientOnly() {
+    FakeWebSocket socket = new FakeWebSocket();
+    SocketHub hub = NewHub();
+
+    Task serving = hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+
+    Assert.False(hub.HasSpectrumSubscribers);
+
+    await SettleAsync(socket, """{"type":"subscribe","data":{"spectrum":true,"deviceLevels":false}}""");
+
+    Assert.True(hub.HasSpectrumSubscribers);
+    Assert.False(hub.HasDeviceSubscribers);
+
+    // The message is a complete statement of what the client wants, so sending
+    // it again with false is the only unsubscribe there is.
+    await SettleAsync(socket, """{"type":"subscribe","data":{"spectrum":false,"deviceLevels":true}}""");
+
+    Assert.False(hub.HasSpectrumSubscribers);
+    Assert.True(hub.HasDeviceSubscribers);
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// Both flags are required. A missing one read as false would turn a
+  /// misspelled field into a silent unsubscribe, whose only symptom is a
+  /// visualiser that never draws.
+  /// </summary>
+  [Fact]
+  public async Task RefusesASubscribeThatOmitsAFlag() {
+    await AssertErrorAsync("""{"type":"subscribe","data":{"spectrum":true}}""", "invalid_data");
+  }
+
+  [Fact]
+  public async Task RefusesASubscribeWithANumberForAFlag() {
+    await AssertErrorAsync("""{"type":"subscribe","data":{"spectrum":1,"deviceLevels":0}}""", "invalid_data");
+  }
+
+  [Fact]
+  public async Task SpectrumReachesOnlyTheClientsThatAskedForIt() {
+    FakeWebSocket watching = new FakeWebSocket();
+    FakeWebSocket listening = new FakeWebSocket();
+    SocketHub hub = NewHub();
+
+    Task servingWatcher = hub.ServeAsync(watching, CancellationToken.None);
+    Task servingListener = hub.ServeAsync(listening, CancellationToken.None);
+    await watching.NextAsync();
+    await listening.NextAsync();
+
+    await SettleAsync(watching, """{"type":"subscribe","data":{"spectrum":true,"deviceLevels":false}}""");
+
+    hub.BroadcastSpectrum(Frames.Spectrum(new SpectrumData([1], 0.1, 0.1, 0.1, 0.1, "none")));
+    hub.Broadcast(Frames.Beat(new BeatData(9, 1, BarAligned: false, 128.0)));
+
+    // The phone in the booth never subscribed, so the next thing it sees is the
+    // beat: the spectrum was not queued for it at all.
+    using JsonDocument beat = JsonDocument.Parse(await listening.NextAsync());
+    Assert.Equal("beat", beat.RootElement.GetProperty("type").GetString());
+
+    List<string> seen = [
+      JsonDocument.Parse(await watching.NextAsync()).RootElement.GetProperty("type").GetString() ?? string.Empty,
+      JsonDocument.Parse(await watching.NextAsync()).RootElement.GetProperty("type").GetString() ?? string.Empty,
+    ];
+
+    Assert.Contains("spectrum", seen);
+    Assert.Contains("beat", seen);
+
+    watching.ClientClose();
+    listening.ClientClose();
+    await Task.WhenAll(servingWatcher, servingListener);
+  }
+
+  /// <summary>
+  /// The spectrum slot holds one frame, so a client that cannot keep up sees
+  /// fewer frames and never an older one. An out-of-date picture of a spectrum
+  /// is not a smaller version of the picture, it is the wrong one.
+  /// </summary>
+  [Fact]
+  public async Task ANewSpectrumFrameReplacesTheOneWaiting() {
+    FakeWebSocket socket = new FakeWebSocket();
+    SocketHub hub = NewHub();
+
+    Task serving = hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+    await SettleAsync(socket, """{"type":"subscribe","data":{"spectrum":true,"deviceLevels":false}}""");
+
+    Task stalled = socket.StallAsync();
+    hub.BroadcastSpectrum(Spectrum(1));
+    await stalled;
+
+    hub.BroadcastSpectrum(Spectrum(2));
+    hub.BroadcastSpectrum(Spectrum(3));
+    socket.Release();
+
+    Assert.Equal(1, await FirstBinAsync(socket));
+    Assert.Equal(3, await FirstBinAsync(socket));
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// The invariant the whole two-queue design exists for: a beat is never
+  /// delayed, let alone dropped, to make room for a picture of one.
+  /// </summary>
+  [Fact]
+  public async Task EverythingElseGoesOutBeforeAWaitingSpectrumFrame() {
+    FakeWebSocket socket = new FakeWebSocket();
+    SocketHub hub = NewHub();
+
+    Task serving = hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+    await SettleAsync(socket, """{"type":"subscribe","data":{"spectrum":true,"deviceLevels":false}}""");
+
+    Task stalled = socket.StallAsync();
+    hub.BroadcastSpectrum(Spectrum(1));
+    await stalled;
+
+    hub.BroadcastSpectrum(Spectrum(2));
+    hub.Broadcast(Frames.Beat(new BeatData(11, 3, BarAligned: false, 128.0)));
+    socket.Release();
+
+    // The frame already in flight, then the beat, then the spectrum that was
+    // queued before it.
+    Assert.Equal(1, await FirstBinAsync(socket));
+
+    using JsonDocument beat = JsonDocument.Parse(await socket.NextAsync());
+    Assert.Equal("beat", beat.RootElement.GetProperty("type").GetString());
+    Assert.Equal(11, beat.RootElement.GetProperty("data").GetProperty("index").GetInt64());
+
+    Assert.Equal(2, await FirstBinAsync(socket));
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  [Fact]
+  public async Task SelectingASourceMakesItActive() {
+    FakeWebSocket socket = new FakeWebSocket();
+    Rig rig = NewRig();
+    _ = new SilentSource("audio", rig.Sources);
+
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+
+    await SettleAsync(socket, """{"type":"selectSource","data":{"source":"audio"}}""");
+
+    Assert.Equal("audio", rig.Sources.ActiveSource);
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// A source this build does not have is a refusal rather than a silent no-op:
+  /// the page shows its button as pending until a state frame agrees, so a
+  /// server that said nothing would leave it pending forever.
+  /// </summary>
+  [Fact]
+  public async Task RejectsASourceThisBuildDoesNotHave() {
+    await AssertErrorAsync("""{"type":"selectSource","data":{"source":"turntable"}}""", "rejected");
+  }
+
+  [Fact]
+  public async Task RefusesASelectSourceWithNoName() {
+    await AssertErrorAsync("""{"type":"selectSource","data":{}}""", "invalid_data");
+  }
+
+  [Fact]
+  public async Task RejectsAnAudioDeviceThisBuildCannotSee() {
+    await AssertErrorAsync("""{"type":"selectAudioDevice","data":{"deviceId":"{0.0.1}"}}""", "rejected");
+  }
+
+  [Fact]
+  public async Task TapsAreCountedByTheManualSource() {
+    FakeWebSocket socket = new FakeWebSocket();
+    Rig rig = NewRig();
+
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+
+    await SettleAsync(socket, """{"type":"tap","data":{}}""");
+    await SettleAsync(socket, """{"type":"tap","data":{}}""");
+
+    Assert.Equal(2, rig.Manual.Status().Diagnostics.Taps);
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  [Fact]
+  public async Task SetsAndClearsTheManualTempo() {
+    FakeWebSocket socket = new FakeWebSocket();
+    Rig rig = NewRig();
+
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+
+    await SettleAsync(socket, """{"type":"setBpm","data":{"bpm":128.5}}""");
+    Assert.Equal(128.5, rig.Manual.Bpm);
+
+    // Null is a value here, not an absence: it retracts the tempo rather than
+    // setting it to zero.
+    await SettleAsync(socket, """{"type":"setBpm","data":{"bpm":null}}""");
+    Assert.Null(rig.Manual.Bpm);
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// Refused rather than clamped. The values just outside the range are typos,
+  /// and clamping a typo produces a plausible wrong answer.
+  /// </summary>
+  [Fact]
+  public async Task RejectsATempoOutsideTheAcceptedRange() {
+    await AssertErrorAsync("""{"type":"setBpm","data":{"bpm":900}}""", "rejected");
+  }
+
+  [Fact]
+  public async Task RefusesASetBpmWithNoTempoField() {
+    await AssertErrorAsync("""{"type":"setBpm","data":{}}""", "invalid_data");
+  }
+
+  /// <summary>An encoded spectrum frame whose first bin identifies it.</summary>
+  private static ReadOnlyMemory<byte> Spectrum(int mark) {
+    return Frames.Spectrum(new SpectrumData([mark], 0.1, 0.2, 0.3, 0.4, "none"));
+  }
+
+  /// <summary>Reads the next frame, insists it is a spectrum, and returns its mark.</summary>
+  private static async Task<int> FirstBinAsync(FakeWebSocket socket) {
+    using JsonDocument frame = JsonDocument.Parse(await socket.NextAsync());
+
+    Assert.Equal("spectrum", frame.RootElement.GetProperty("type").GetString());
+
+    return frame.RootElement.GetProperty("data").GetProperty("bins")[0].GetInt32();
+  }
+
   /// <summary>
   /// Sends one client message and returns the prose of the error it produced.
   /// </summary>
@@ -240,9 +481,67 @@ public sealed class SocketHubTests {
   }
 
   private static SocketHub NewHub() {
-    return new SocketHub(
+    return NewRig().Hub;
+  }
+
+  /// <summary>
+  /// A hub and the beat pipeline behind it, so a test can check what a client
+  /// message actually did rather than only what came back.
+  /// </summary>
+  private static Rig NewRig() {
+    MonotonicClock clock = new MonotonicClock();
+    BeatOptions beat = new BeatOptions();
+    BeatGrid grid = new BeatGrid(clock, beat.Quantum, beat.StaleAfter);
+
+    SyncSourceManager sources = new SyncSourceManager(
+      grid,
+      Options.Create(beat),
+      NullLogger<SyncSourceManager>.Instance);
+
+    ManualSource manual = new ManualSource(clock, sources);
+
+    SocketHub hub = new SocketHub(
       Options.Create(new WebOptions()),
-      Options.Create(new BeatOptions()),
+      Options.Create(beat),
+      sources,
+      manual,
       NullLogger<SocketHub>.Instance);
+
+    return new Rig(hub, sources, manual);
+  }
+
+  /// <summary>
+  /// Sends one client message and waits for it to have been acted on.
+  ///
+  /// The wait is a ping behind it rather than a delay: the receive loop handles
+  /// one message at a time in order, so a pong is proof that everything sent
+  /// before it has already happened. A test that slept instead would be a test
+  /// that fails on a busy machine.
+  /// </summary>
+  private static async Task SettleAsync(FakeWebSocket socket, string message) {
+    socket.Client(message);
+    socket.Client("""{"type":"ping","data":{"t":7}}""");
+
+    using JsonDocument pong = JsonDocument.Parse(await socket.NextAsync());
+    Assert.Equal("pong", pong.RootElement.GetProperty("type").GetString());
+  }
+
+  private sealed record Rig(SocketHub Hub, SyncSourceManager Sources, ManualSource Manual);
+
+  /// <summary>
+  /// A source that exists only to be selected. It never publishes, which is
+  /// exactly the case the selector has to survive.
+  /// </summary>
+  private sealed class SilentSource: ISyncSource {
+    public SilentSource(string name, SyncSourceManager sources) {
+      this.Name = name;
+      sources.Register(this);
+    }
+
+    public string Name { get; }
+
+    public SyncSourceStatus Status() {
+      return new SyncSourceStatus(SyncSourceState.Waiting, Confidence: 0);
+    }
   }
 }

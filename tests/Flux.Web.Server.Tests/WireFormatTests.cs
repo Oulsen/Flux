@@ -16,12 +16,16 @@ namespace Flux.Web.Server.Tests;
 public sealed class WireFormatTests {
   [Fact]
   public void HelloCarriesTheProtocolVersionAndTheBuild() {
-    JsonElement data = Payload(Frames.Hello("0.1.0", quantum: 4, stateHz: 20), "hello");
+    JsonElement data = Payload(
+      Frames.Hello("0.1.0", quantum: 4, stateHz: 20, spectrumHz: 30, devicesHz: 10),
+      "hello");
 
     Assert.Equal(Frames.Version, data.GetProperty("protocol").GetInt32());
     Assert.Equal("0.1.0", data.GetProperty("app").GetString());
     Assert.Equal(4, data.GetProperty("quantum").GetInt32());
     Assert.Equal(20, data.GetProperty("stateHz").GetInt32());
+    Assert.Equal(30, data.GetProperty("spectrumHz").GetInt32());
+    Assert.Equal(10, data.GetProperty("devicesHz").GetInt32());
   }
 
   [Fact]
@@ -29,8 +33,10 @@ public sealed class WireFormatTests {
     StateData state = new StateData(
       "link",
       "live",
+      [new SourceReportData("link", "live", 1.0), new SourceReportData("manual", "waiting", 0.0)],
       new GridData(128.5, 1024.25, 1024, 1, BarAligned: false),
-      new DiagnosticsData(4821, 0.0));
+      new AlignmentData(Aligned: false, Method: null),
+      new DiagnosticsData(0.0, Packets: 4821));
 
     JsonElement data = Payload(Frames.State(state), "state");
 
@@ -44,6 +50,17 @@ public sealed class WireFormatTests {
     Assert.Equal(1, grid.GetProperty("positionInBar").GetInt32());
     Assert.False(grid.GetProperty("barAligned").GetBoolean());
 
+    JsonElement sources = data.GetProperty("sources");
+    Assert.Equal(2, sources.GetArrayLength());
+    Assert.Equal("link", sources[0].GetProperty("name").GetString());
+    Assert.Equal("live", sources[0].GetProperty("state").GetString());
+    Assert.Equal(1.0, sources[0].GetProperty("confidence").GetDouble());
+    Assert.Equal("waiting", sources[1].GetProperty("state").GetString());
+
+    JsonElement alignment = data.GetProperty("alignment");
+    Assert.False(alignment.GetProperty("aligned").GetBoolean());
+    Assert.Equal(JsonValueKind.Null, alignment.GetProperty("method").ValueKind);
+
     JsonElement diagnostics = data.GetProperty("diagnostics");
     Assert.Equal(4821, diagnostics.GetProperty("packets").GetInt64());
     Assert.Equal(0.0, diagnostics.GetProperty("reanchorMaxBeats").GetDouble());
@@ -56,11 +73,82 @@ public sealed class WireFormatTests {
   /// </summary>
   [Fact]
   public void WaitingStateSendsANullGridRatherThanZeroes() {
-    StateData state = new StateData("link", "waiting", Grid: null, new DiagnosticsData(0, 0));
+    StateData state = new StateData(
+      "link",
+      "waiting",
+      [],
+      Grid: null,
+      new AlignmentData(Aligned: false, Method: null),
+      new DiagnosticsData(0));
 
     JsonElement data = Payload(Frames.State(state), "state");
 
     Assert.Equal(JsonValueKind.Null, data.GetProperty("grid").ValueKind);
+  }
+
+  /// <summary>
+  /// The two nulls in a state frame are not the same kind of null, and the
+  /// serializer has to keep them apart: <c>grid</c> is a documented value that
+  /// must survive, while a diagnostic belonging to another source is left out
+  /// entirely so a client renders a blank rather than a zero it will read as a
+  /// measurement.
+  /// </summary>
+  [Fact]
+  public void DiagnosticsOmitTheCountersTheActiveSourceDoesNotHave() {
+    StateData state = new StateData(
+      "manual",
+      "live",
+      [new SourceReportData("manual", "live", 1.0)],
+      new GridData(128.0, 4.0, 4, 1, BarAligned: true),
+      new AlignmentData(Aligned: true, Method: "tap"),
+      new DiagnosticsData(0.0, Taps: 4, LastTapAgoMs: 512.0));
+
+    JsonElement data = Payload(Frames.State(state), "state");
+    JsonElement diagnostics = data.GetProperty("diagnostics");
+
+    Assert.Equal(4, diagnostics.GetProperty("taps").GetInt32());
+    Assert.Equal(512.0, diagnostics.GetProperty("lastTapAgoMs").GetDouble());
+    Assert.Equal(0.0, diagnostics.GetProperty("reanchorMaxBeats").GetDouble());
+
+    Assert.False(diagnostics.TryGetProperty("packets", out _));
+    Assert.False(diagnostics.TryGetProperty("fps", out _));
+    Assert.False(diagnostics.TryGetProperty("bpmLocked", out _));
+
+    Assert.Equal("tap", data.GetProperty("alignment").GetProperty("method").GetString());
+  }
+
+  [Fact]
+  public void SpectrumCarriesTheBandsAndWhatTheDetectorMadeOfThem() {
+    SpectrumData spectrum = new SpectrumData([214, 198, 120], 0.62, 0.24, 0.11, 0.031, "strong");
+
+    JsonElement data = Payload(Frames.Spectrum(spectrum), "spectrum");
+
+    JsonElement bins = data.GetProperty("bins");
+    Assert.Equal(3, bins.GetArrayLength());
+    Assert.Equal(214, bins[0].GetInt32());
+    Assert.Equal(0.62, data.GetProperty("kick").GetDouble());
+    Assert.Equal(0.24, data.GetProperty("mids").GetDouble());
+    Assert.Equal(0.11, data.GetProperty("highs").GetDouble());
+    Assert.Equal(0.031, data.GetProperty("flux").GetDouble());
+    Assert.Equal("strong", data.GetProperty("beat").GetString());
+  }
+
+  [Fact]
+  public void DevicesCarryTheirIdentityAndTheirLevels() {
+    DevicesData devices = new DevicesData([
+      new DeviceData("{0.0.1}", "Microfoon (2- DDJ-FLX10)", "capture", "signal", Selected: true, 0.12, 0.44),
+    ]);
+
+    JsonElement data = Payload(Frames.Devices(devices), "devices");
+    JsonElement first = data.GetProperty("devices")[0];
+
+    Assert.Equal("{0.0.1}", first.GetProperty("id").GetString());
+    Assert.Equal("Microfoon (2- DDJ-FLX10)", first.GetProperty("name").GetString());
+    Assert.Equal("capture", first.GetProperty("kind").GetString());
+    Assert.Equal("signal", first.GetProperty("state").GetString());
+    Assert.True(first.GetProperty("selected").GetBoolean());
+    Assert.Equal(0.12, first.GetProperty("rms").GetDouble());
+    Assert.Equal(0.44, first.GetProperty("peak").GetDouble());
   }
 
   [Fact]

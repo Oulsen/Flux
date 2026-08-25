@@ -30,12 +30,19 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
   /// </summary>
   private const int BeatQueueCapacity = 16;
 
-  /// <summary>The only sync source in version 1. Phase 2 makes this the active source's name.</summary>
-  private const string SourceName = "link";
+  /// <summary>
+  /// What <c>state.source</c> says when the build has no sync sources at all.
+  ///
+  /// Not reachable through the standard registrations, which always include the
+  /// manual source, but the state frame has to say something and every other
+  /// answer would name a source that is not there.
+  /// </summary>
+  private const string NoSource = "none";
 
   private readonly SocketHub hub;
   private readonly BeatScheduler scheduler;
   private readonly BeatGrid grid;
+  private readonly SyncSourceManager sources;
   private readonly WebOptions options;
 
   private readonly Channel<BeatEvent> beats = Channel.CreateBounded<BeatEvent>(
@@ -49,12 +56,18 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
   private Task? pumping;
   private Task? sampling;
 
-  public BeatBroadcaster(SocketHub hub, BeatScheduler scheduler, BeatGrid grid, IOptions<WebOptions> options) {
+  public BeatBroadcaster(
+    SocketHub hub,
+    BeatScheduler scheduler,
+    BeatGrid grid,
+    SyncSourceManager sources,
+    IOptions<WebOptions> options) {
     ArgumentNullException.ThrowIfNull(options);
 
     this.hub = hub ?? throw new ArgumentNullException(nameof(hub));
     this.scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
     this.grid = grid ?? throw new ArgumentNullException(nameof(grid));
+    this.sources = sources ?? throw new ArgumentNullException(nameof(sources));
     this.options = options.Value;
   }
 
@@ -134,19 +147,41 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
   }
 
   /// <summary>
-  /// Reads the grid into the shape the protocol describes.
+  /// Reads the grid and the sources into the shape the protocol describes.
   ///
   /// The three states are kept distinct rather than collapsed into a boolean
   /// because they call for three different things on screen: nothing known yet,
-  /// a live tempo, and a tempo that is still being extrapolated after the
-  /// packets stopped. Sending a null grid for the first is what stops a client
+  /// a live tempo, and a tempo that is still being extrapolated after the source
+  /// went silent. Sending a null grid for the first is what stops a client
   /// rendering an absent tempo as a confident 0.00 BPM.
+  ///
+  /// Internal rather than private so the tests can pin the frame this composes.
+  /// It is the one place where the grid and the sources are read together, so
+  /// the invariants that span them - a null grid exactly when waiting, counters
+  /// belonging to the active source and nobody else - are only observable here.
   /// </summary>
-  private StateData Sample() {
+  internal StateData Sample() {
     bool known = this.grid.TryGetSnapshot(out BeatGridSnapshot snapshot);
 
+    IReadOnlyList<SyncSourceReport> registered = this.sources.Sources();
+    SyncSourceStatus active = default;
+    string activeName = NoSource;
+
+    foreach(SyncSourceReport report in registered) {
+      if(report.IsActive) {
+        active = report.Status;
+        activeName = report.Name;
+        break;
+      }
+    }
+
+    // The grid decides "waiting" and the source decides between "live" and
+    // "quiet". Split that way because each knows one half: only the grid knows
+    // whether a timeline exists at all, and only the source knows whether
+    // silence means anything - a Link session gone quiet is a worsening guess,
+    // a typed tempo left alone is exactly as true as when it was typed.
     string state = !known ? "waiting"
-      : snapshot.IsStale ? "quiet"
+      : active.State == SyncSourceState.Quiet ? "quiet"
       : "live";
 
     GridData? reading = known
@@ -158,10 +193,60 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
         snapshot.IsBarAligned)
       : null;
 
-    // Zeroed before the first packet, which is exactly what the counters mean
-    // at that point.
-    DiagnosticsData diagnostics = new DiagnosticsData(snapshot.Packets, snapshot.MaxReanchorJumpBeats);
+    return new StateData(
+      activeName,
+      state,
+      [.. registered.Select(report => new SourceReportData(
+        report.Name,
+        StateName(report.Status.State),
+        report.Status.Confidence))],
+      reading,
+      new AlignmentData(snapshot.IsBarAligned, MethodName(snapshot.AlignmentMethod)),
+      Counters(active.Diagnostics, snapshot.MaxReanchorJumpBeats));
+  }
 
-    return new StateData(SourceName, state, reading, diagnostics);
+  /// <summary>
+  /// Merges the active source's own counters with the grid's drift metric.
+  ///
+  /// The two come from different places on purpose. A source's counters describe
+  /// how that source is doing, so they follow the selection; the drift metric
+  /// describes whether extrapolating the current timeline still agrees with what
+  /// arrives next, which is worth asking of whichever source is driving.
+  /// </summary>
+  private static DiagnosticsData Counters(SyncSourceDiagnostics source, double reanchorMaxBeats) {
+    return new DiagnosticsData(
+      reanchorMaxBeats,
+      source.Packets,
+      source.Fps,
+      source.BeatsDetected,
+      source.BpmLocked,
+      source.LastBeatAgoMs,
+      source.Taps,
+      source.LastTapAgoMs);
+  }
+
+  /// <summary>
+  /// The protocol's name for a source state.
+  ///
+  /// A switch rather than <c>ToString().ToLowerInvariant()</c>, so that renaming
+  /// the enum is a compile error here instead of a silently changed wire format
+  /// that only a browser ever notices.
+  /// </summary>
+  private static string StateName(SyncSourceState state) {
+    return state switch {
+      SyncSourceState.Live => "live",
+      SyncSourceState.Quiet => "quiet",
+      _ => "waiting",
+    };
+  }
+
+  /// <summary>The protocol's name for what aligned the bar, or null while it is only a count.</summary>
+  private static string? MethodName(BarAlignmentMethod method) {
+    return method switch {
+      BarAlignmentMethod.Cue => "cue",
+      BarAlignmentMethod.Tap => "tap",
+      BarAlignmentMethod.Drop => "drop",
+      _ => null,
+    };
   }
 }

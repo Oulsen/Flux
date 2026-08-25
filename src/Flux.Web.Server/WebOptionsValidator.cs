@@ -35,6 +35,14 @@ internal sealed class WebOptionsValidator: IValidateOptions<WebOptions> {
       failures.Add($"Web:StateHz must be between 1 and 120, not {options.StateHz}.");
     }
 
+    if(options.SpectrumHz is < 1 or > 120) {
+      failures.Add($"Web:SpectrumHz must be between 1 and 120, not {options.SpectrumHz}.");
+    }
+
+    if(options.DevicesHz is < 1 or > 120) {
+      failures.Add($"Web:DevicesHz must be between 1 and 120, not {options.DevicesHz}.");
+    }
+
     if(options.ClientQueueCapacity < 1) {
       failures.Add($"Web:ClientQueueCapacity must be at least 1, not {options.ClientQueueCapacity}.");
     }
