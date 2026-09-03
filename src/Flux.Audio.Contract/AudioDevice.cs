@@ -95,3 +95,45 @@ public readonly record struct AudioCaptureStatus(
   AudioLevels Levels,
   int SampleRate,
   long Frames);
+
+/// <summary>
+/// The audio endpoints Flux can see, which one it is listening to, and the means
+/// to change that.
+///
+/// This is the whole of what the web layer is allowed to know about audio
+/// hardware: a list, a status and a selection. Nothing here mentions a sample
+/// format, a buffer or a driver mode, which is what keeps a device picker from
+/// slowly acquiring opinions about WASAPI.
+/// </summary>
+public interface IAudioDevices {
+  /// <summary>
+  /// The endpoints Flux can see, as of the last check.
+  ///
+  /// Served from a cache, and the caller is the reason: a subscribed browser asks
+  /// ten times a second, and enumerating operating-system endpoints at that rate
+  /// to answer a question whose answer changes when somebody plugs in a cable
+  /// would be absurd.
+  /// </summary>
+  IReadOnlyList<AudioDevice> Devices();
+
+  /// <summary>
+  /// What is being captured right now, and how it is behaving.
+  ///
+  /// The device named is the <em>wanted</em> one rather than the open one, so a
+  /// device that will not open is reported alongside its
+  /// <see cref="AudioDeviceState.Failed"/> instead of vanishing from the readout
+  /// at the exact moment somebody needs to know why there is no audio.
+  /// </summary>
+  AudioCaptureStatus Status();
+
+  /// <summary>
+  /// Points capture at a different device.
+  ///
+  /// Answers false for an id that is not in the list, which is the protocol's
+  /// <c>rejected</c> and covers the ordinary race of a device unplugged between
+  /// the list arriving in a browser and a button being pressed on it. It does not
+  /// wait for the device to open: whether the choice was a good one is what the
+  /// level meter is for.
+  /// </summary>
+  bool TrySelect(string deviceId);
+}

@@ -303,9 +303,13 @@
       "flux.audio": {
         "type": "Project",
         "dependencies": {
+          "Flux.Audio.Contract": "[0.1.0, )",
           "Flux.Beat": "[0.1.0, )",
           "NAudio.Wasapi": "[2.2.1, )"
         }
+      },
+      "flux.audio.contract": {
+        "type": "Project"
       },
       "flux.beat": {
         "type": "Project",
@@ -318,6 +322,7 @@
       "flux.web.server": {
         "type": "Project",
         "dependencies": {
+          "Flux.Audio.Contract": "[0.1.0, )",
           "Flux.Beat": "[0.1.0, )"
         }
       }

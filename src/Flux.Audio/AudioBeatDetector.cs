@@ -2,21 +2,6 @@ using Flux.Beat;
 
 namespace Flux.Audio;
 
-/// <summary>What the detector made of one frame. The protocol's <c>beat</c> field.</summary>
-internal enum BeatStrength {
-  /// <summary>Nothing.</summary>
-  None,
-
-  /// <summary>An onset that cleared the adaptive threshold.</summary>
-  Beat,
-
-  /// <summary>
-  /// An onset that cleared it by a wide margin. These are the ones the beat grid is
-  /// anchored to.
-  /// </summary>
-  Strong,
-}
-
 /// <summary>
 /// Everything the detector concluded from one frame, including where it now thinks
 /// the beat is.

@@ -24,7 +24,10 @@
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
   </ItemGroup>
 
+  <!-- The contract is the net10.0 half of this project: the shapes the web layer
+       renders, which it cannot reference a net10.0-windows assembly to reach. -->
   <ItemGroup>
+    <ProjectReference Include="..\Flux.Audio.Contract\Flux.Audio.Contract.csproj" />
     <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
   </ItemGroup>
 

@@ -151,6 +151,28 @@ public sealed class WireFormatTests {
     Assert.Equal(0.44, first.GetProperty("peak").GetDouble());
   }
 
+  /// <summary>
+  /// A device nobody is listening to carries its identity and nothing else, in the
+  /// bytes and not merely in the record: the whole point of omitting a meter is
+  /// that the field is absent on the wire, so a page renders a blank instead of a
+  /// zero it would read as a measurement.
+  /// </summary>
+  [Fact]
+  public void AnUnmeteredDeviceOmitsItsStateAndItsLevelsEntirely() {
+    DevicesData devices = new DevicesData([
+      new DeviceData("{0.0.2}", "Speakers", "loopback", State: null, Selected: false, Rms: null, Peak: null),
+    ]);
+
+    JsonElement first = Payload(Frames.Devices(devices), "devices").GetProperty("devices")[0];
+
+    Assert.Equal("{0.0.2}", first.GetProperty("id").GetString());
+    Assert.False(first.GetProperty("selected").GetBoolean());
+
+    Assert.False(first.TryGetProperty("state", out _));
+    Assert.False(first.TryGetProperty("rms", out _));
+    Assert.False(first.TryGetProperty("peak", out _));
+  }
+
   [Fact]
   public void BeatCarriesTheIndexAndTheTempo() {
     JsonElement data = Payload(Frames.Beat(new BeatData(1024, 3, BarAligned: false, 128.0)), "beat");

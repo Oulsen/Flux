@@ -1,3 +1,4 @@
+using Flux.Audio;
 using Flux.Beat;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -386,9 +387,114 @@ public sealed class SocketHubTests {
     await AssertErrorAsync("""{"type":"selectSource","data":{}}""", "invalid_data");
   }
 
+  /// <summary>
+  /// A build with no audio support answers exactly as an unplugged device does.
+  /// From the page's side both are "that device is not there", and both leave the
+  /// selection where it was.
+  /// </summary>
   [Fact]
   public async Task RejectsAnAudioDeviceThisBuildCannotSee() {
     await AssertErrorAsync("""{"type":"selectAudioDevice","data":{"deviceId":"{0.0.1}"}}""", "rejected");
+  }
+
+  [Fact]
+  public async Task PassesAnAudioDeviceSelectionToTheAudioLayer() {
+    FakeWebSocket socket = new FakeWebSocket();
+    FakeAudioDevices audio = new FakeAudioDevices().Seeing("{0.0.1}", "Microfoon (2- DDJ-FLX10)");
+    SocketHub hub = NewHub(audio);
+
+    Task serving = hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+
+    // No acknowledgement on success, by design: the next devices frame carries the
+    // selection, and that confirmation comes from the thing that made the change.
+    // The ping riding behind it is what proves the selection was already handled.
+    await SettleAsync(socket, """{"type":"selectAudioDevice","data":{"deviceId":"{0.0.1}"}}""");
+
+    Assert.Equal(["{0.0.1}"], audio.Selections);
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// The ordinary race, not an error condition: the list a browser is looking at
+  /// is up to a second old, so a device unplugged while its button was on screen
+  /// will happen.
+  /// </summary>
+  [Fact]
+  public async Task RejectsAnAudioDeviceThatHasGoneAway() {
+    FakeWebSocket socket = new FakeWebSocket();
+    FakeAudioDevices audio = new FakeAudioDevices().Seeing("{0.0.1}", "Microfoon (2- DDJ-FLX10)");
+    SocketHub hub = NewHub(audio);
+
+    Task serving = hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+
+    socket.Client("""{"type":"selectAudioDevice","data":{"deviceId":"{0.0.9}"}}""");
+
+    using JsonDocument error = JsonDocument.Parse(await socket.NextAsync());
+    Assert.Equal("error", error.RootElement.GetProperty("type").GetString());
+    Assert.Equal("rejected", error.RootElement.GetProperty("data").GetProperty("code").GetString());
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  [Fact]
+  public async Task RefusesASelectAudioDeviceWithNoId() {
+    await AssertErrorAsync("""{"type":"selectAudioDevice","data":{}}""", "invalid_data");
+  }
+
+  /// <summary>
+  /// The list arrives on the subscription rather than on the broadcaster's next
+  /// tick, because a picker that opens blank looks broken for as long as it stays
+  /// blank.
+  /// </summary>
+  [Fact]
+  public async Task SendsTheDeviceListAtOnceWhenAClientSubscribes() {
+    FakeWebSocket socket = new FakeWebSocket();
+    FakeAudioDevices audio = new FakeAudioDevices()
+      .Seeing("{0.0.1}", "Microfoon (2- DDJ-FLX10)")
+      .Capturing("{0.0.1}", AudioDeviceState.Signal, rms: 0.12, peak: 0.44);
+
+    SocketHub hub = NewHub(audio);
+
+    Task serving = hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+
+    socket.Client("""{"type":"subscribe","data":{"spectrum":false,"deviceLevels":true}}""");
+
+    using JsonDocument frame = JsonDocument.Parse(await socket.NextAsync());
+    Assert.Equal("devices", frame.RootElement.GetProperty("type").GetString());
+
+    JsonElement first = frame.RootElement.GetProperty("data").GetProperty("devices")[0];
+    Assert.Equal("{0.0.1}", first.GetProperty("id").GetString());
+    Assert.True(first.GetProperty("selected").GetBoolean());
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// A client that only wants a spectrum must not be sent a device list it never
+  /// asked for: everything expensive on this socket is opt-in, one flag at a time.
+  /// </summary>
+  [Fact]
+  public async Task SendsNoDeviceListToAClientThatOnlyWantedTheSpectrum() {
+    FakeWebSocket socket = new FakeWebSocket();
+    FakeAudioDevices audio = new FakeAudioDevices().Seeing("{0.0.1}", "Microfoon (2- DDJ-FLX10)");
+    SocketHub hub = NewHub(audio);
+
+    Task serving = hub.ServeAsync(socket, CancellationToken.None);
+    await socket.NextAsync();
+
+    // The pong is the proof: it was queued after the subscribe was handled, so
+    // arriving first means no devices frame was queued ahead of it.
+    await SettleAsync(socket, """{"type":"subscribe","data":{"spectrum":true,"deviceLevels":false}}""");
+
+    socket.ClientClose();
+    await serving;
   }
 
   [Fact]
@@ -480,15 +586,19 @@ public sealed class SocketHubTests {
     return data.GetProperty("message").GetString() ?? string.Empty;
   }
 
-  private static SocketHub NewHub() {
-    return NewRig().Hub;
+  private static SocketHub NewHub(IAudioDevices? audio = null) {
+    return NewRig(audio).Hub;
   }
 
   /// <summary>
   /// A hub and the beat pipeline behind it, so a test can check what a client
   /// message actually did rather than only what came back.
+  ///
+  /// The audio layer defaults to absent, which is a build with no audio support
+  /// rather than a machine with no devices, and is the case most of these tests
+  /// are about.
   /// </summary>
-  private static Rig NewRig() {
+  private static Rig NewRig(IAudioDevices? audio = null) {
     MonotonicClock clock = new MonotonicClock();
     BeatOptions beat = new BeatOptions();
     BeatGrid grid = new BeatGrid(clock, beat.Quantum, beat.StaleAfter);
@@ -505,6 +615,7 @@ public sealed class SocketHubTests {
       Options.Create(beat),
       sources,
       manual,
+      audio,
       NullLogger<SocketHub>.Instance);
 
     return new Rig(hub, sources, manual);

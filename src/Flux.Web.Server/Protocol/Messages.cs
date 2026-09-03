@@ -128,22 +128,30 @@ public sealed record SpectrumData(
 
 /// <summary>
 /// One audio endpoint Flux can see, and what it is currently hearing from it.
+///
+/// Only the selected device is measured, so <c>state</c>, <c>rms</c> and
+/// <c>peak</c> are omitted for the rest rather than sent as zeroes. Measuring
+/// every endpoint would mean holding twenty of them open for the length of a set,
+/// which is a real cost - exclusive-mode drivers, and devices shown as in use in
+/// every other application on the machine - paid to fill in meters nobody is
+/// reading. An omitted field says "not measured"; a zero would say "measured, and
+/// silent", which is a claim about somebody's hardware that Flux has not earned.
 /// </summary>
 /// <param name="Id">Opaque and stable while the device exists. The only value selectAudioDevice accepts.</param>
 /// <param name="Name">What the operating system calls it, for a human to recognise.</param>
 /// <param name="Kind">"capture" for an input, "loopback" for what a render device is playing.</param>
-/// <param name="State">"signal", "digitalSilence", "noData" or "failed".</param>
-/// <param name="Selected">Whether audio analysis is listening to this one.</param>
-/// <param name="Rms">Recent average level, 0 to 1.</param>
+/// <param name="State">"signal", "digitalSilence", "noData" or "failed"; absent for a device Flux is not capturing.</param>
+/// <param name="Selected">Whether audio analysis is listening to this one. Always present: the selection is never in doubt.</param>
+/// <param name="Rms">Recent average level, 0 to 1; absent when nothing was measured.</param>
 /// <param name="Peak">Recent peak level, 0 to 1. Sent beside the average because a clipping signal and a quiet one differ in exactly this pair.</param>
 public sealed record DeviceData(
   string Id,
   string Name,
   string Kind,
-  string State,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? State,
   bool Selected,
-  double Rms,
-  double Peak);
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Rms,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Peak);
 
 /// <summary>
 /// The complete list of audio devices, never a delta.

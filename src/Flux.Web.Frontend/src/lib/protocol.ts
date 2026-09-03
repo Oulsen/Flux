@@ -88,14 +88,28 @@ export interface SpectrumData {
   beat: SpectrumBeat;
 }
 
+/**
+ * One audio endpoint, and only what the server actually measured of it.
+ *
+ * `state`, `rms` and `peak` are optional because only the selected device is
+ * measured: metering every endpoint would mean holding all of them open for a
+ * whole set. A missing field means "not measured", so render a blank and never a
+ * zero - a row of zeroed meters reads as twenty dead devices rather than as
+ * nineteen unmeasured ones.
+ *
+ * A device that was selected and would not open keeps its `state` (`failed`, the
+ * answer to why there is no audio) and still has no levels, because it delivered
+ * no samples. `digitalSilence` does arrive with levels: zeros are a real reading
+ * of a stopped deck.
+ */
 export interface DeviceData {
   id: string;
   name: string;
   kind: DeviceKind;
-  state: DeviceState;
   selected: boolean;
-  rms: number;
-  peak: number;
+  state?: DeviceState;
+  rms?: number;
+  peak?: number;
 }
 
 export interface DevicesData {

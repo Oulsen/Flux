@@ -19,10 +19,11 @@ public static class ServiceCollectionExtensions {
   /// instrument that switches itself off exactly when it is being used to check
   /// the thing under test.
   ///
-  /// <see cref="AudioCaptureService"/> is registered twice, resolving to one
-  /// instance: as itself for those consumers, and as the hosted service that runs
-  /// its loop. A second copy would enumerate its own devices and capture nothing
-  /// anyone reads.
+  /// <see cref="AudioCaptureService"/> is registered three times, resolving to one
+  /// instance: as itself for those consumers, as the <see cref="IAudioDevices"/>
+  /// the web layer picks a device through, and as the hosted service that runs its
+  /// loop. A second copy would enumerate its own devices and capture nothing anyone
+  /// reads.
   ///
   /// The settings are validated on start rather than on first use, because the
   /// first use of them is on a background thread where a bad value reads as a
@@ -43,6 +44,7 @@ public static class ServiceCollectionExtensions {
       provider.GetRequiredService<IMonotonicClock>(),
       provider.GetRequiredService<IOptions<AudioOptions>>(),
       provider.GetRequiredService<ILogger<AudioCaptureService>>()));
+    services.AddSingleton<IAudioDevices>(provider => provider.GetRequiredService<AudioCaptureService>());
     services.AddHostedService(provider => provider.GetRequiredService<AudioCaptureService>());
 
     return services;
@@ -77,6 +79,40 @@ public static class ServiceCollectionExtensions {
       provider.GetRequiredService<ILogger<SpectrumAnalyzer>>()));
     services.AddHostedService(provider => provider.GetRequiredService<SpectrumAnalyzer>());
     services.AddHostedService<FrameRecorder>();
+
+    return services;
+  }
+
+  /// <summary>
+  /// Adds audio beat detection as a sync source, and as the feed the visualizer
+  /// draws.
+  ///
+  /// Separate from <see cref="AddAudioAnalysis"/> and required to follow it,
+  /// because the two answer different questions. Analysis produces a spectrum,
+  /// which is worth having whichever source is driving the lights and is what makes
+  /// recording a fixture possible before any of this exists. This turns that
+  /// spectrum into a tempo, which is a claim about the music that only makes sense
+  /// alongside a beat pipeline to publish it into.
+  ///
+  /// Registered four ways, all resolving to one instance: as itself, as a source
+  /// the manager can report on, as the spectrum feed the web layer reads, and as
+  /// the hosted service that subscribes to the analyzer. A second copy would run a
+  /// second detector over the same frames and publish into a sink nothing is
+  /// listening to.
+  ///
+  /// <see cref="IAudioSpectrum"/> is registered here rather than in
+  /// <see cref="AddAudioAnalysis"/> deliberately: the frames a browser draws carry
+  /// the detector's verdict as well as the bands, so a spectrum feed without a
+  /// detector behind it could only send half a picture, and the missing half is the
+  /// half the instrument exists for.
+  /// </summary>
+  public static IServiceCollection AddAudioSource(this IServiceCollection services) {
+    ArgumentNullException.ThrowIfNull(services);
+
+    services.AddSingleton<AudioSyncSource>();
+    services.AddSingleton<ISyncSource>(provider => provider.GetRequiredService<AudioSyncSource>());
+    services.AddSingleton<IAudioSpectrum>(provider => provider.GetRequiredService<AudioSyncSource>());
+    services.AddHostedService(provider => provider.GetRequiredService<AudioSyncSource>());
 
     return services;
   }

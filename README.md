@@ -93,6 +93,7 @@ npm test
 |---|---|
 | `src/Flux.Beat` | Ableton Link listener, packet decoding, beat grid, beat scheduler |
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
+| `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, and a spectrum frame |
 | `src/Flux.Web.Server` | WebSocket hub, beat broadcaster, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable |

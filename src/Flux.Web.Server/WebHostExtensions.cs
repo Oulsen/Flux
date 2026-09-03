@@ -1,3 +1,5 @@
+using Flux.Audio;
+using Flux.Beat;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Hosting;
@@ -41,8 +43,35 @@ public static class WebHostExtensions {
     builder.Services.AddSingleton<IValidateOptions<WebOptions>, WebOptionsValidator>();
     builder.Services.AddOptions<WebOptions>().Bind(section).ValidateOnStart();
 
-    builder.Services.AddSingleton<SocketHub>();
+    // Built by a factory rather than by constructor discovery, because the audio
+    // seam is genuinely optional: this container may hold no IAudioDevices at all,
+    // and GetService is the only resolution that answers null instead of throwing.
+    // The alternative - an empty interface implementation registered as a
+    // placeholder - would make "there is no audio in this build" indistinguishable
+    // from "there are no devices on this machine".
+    builder.Services.AddSingleton<SocketHub>(provider => new SocketHub(
+      provider.GetRequiredService<IOptions<WebOptions>>(),
+      provider.GetRequiredService<IOptions<BeatOptions>>(),
+      provider.GetRequiredService<SyncSourceManager>(),
+      provider.GetRequiredService<ManualSource>(),
+      provider.GetService<IAudioDevices>(),
+      provider.GetRequiredService<ILogger<SocketHub>>()));
+
     builder.Services.AddHostedService<BeatBroadcaster>();
+
+    // Both audio feeds are registered whether or not this build has audio. Each one
+    // starts nothing when its seam is absent, which keeps the decision in one place
+    // rather than making every host that wants a web UI know whether it has a sound
+    // card.
+    builder.Services.AddHostedService(provider => new SpectrumBroadcaster(
+      provider.GetRequiredService<SocketHub>(),
+      provider.GetService<IAudioSpectrum>(),
+      provider.GetRequiredService<IOptions<WebOptions>>()));
+
+    builder.Services.AddHostedService(provider => new DevicesBroadcaster(
+      provider.GetRequiredService<SocketHub>(),
+      provider.GetService<IAudioDevices>(),
+      provider.GetRequiredService<IOptions<WebOptions>>()));
 
     // Listening is configured rather than described in a URL string: the address
     // has just been parsed and checked, and handing Kestrel the parsed value

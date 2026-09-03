@@ -18,7 +18,7 @@ namespace Flux.Audio;
 /// with a backoff, and never lets any of that reach the host: a machine with no
 /// usable input still has Link and still has a DJ who can tap.
 /// </summary>
-public sealed class AudioCaptureService: BackgroundService, IAudioSamples {
+public sealed class AudioCaptureService: BackgroundService, IAudioSamples, IAudioDevices {
   /// <summary>
   /// Mono samples kept for the analyzer.
   ///
@@ -127,28 +127,14 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples {
     }
   }
 
-  /// <summary>
-  /// The endpoints Flux can see, as of the last check.
-  ///
-  /// Served from a cache on purpose. The caller this exists for is the device list
-  /// a browser subscribes to, which asks ten times a second, and enumerating COM
-  /// endpoints at that rate to answer a question whose answer changes when someone
-  /// plugs in a cable would be absurd.
-  /// </summary>
+  /// <inheritdoc/>
   public IReadOnlyList<AudioDevice> Devices() {
     lock(this.statusGate) {
       return this.devices;
     }
   }
 
-  /// <summary>
-  /// What is being captured right now, and how it is behaving.
-  ///
-  /// The device reported is the wanted one rather than the open one, so a device
-  /// that will not open is named alongside its <see cref="AudioDeviceState.Failed"/>
-  /// rather than disappearing from the readout at the moment someone needs to know
-  /// why there is no audio.
-  /// </summary>
+  /// <inheritdoc/>
   public AudioCaptureStatus Status() {
     AudioMeterReading reading = this.meter.Read();
     long captured = this.ring.Written;
@@ -171,15 +157,13 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples {
     }
   }
 
-  /// <summary>
-  /// Points capture at a different device.
+  /// <inheritdoc/>
   ///
-  /// Answers false for an id that is not in the list this service last saw, which
-  /// is the protocol's <c>rejected</c> and covers the ordinary race of a device
-  /// unplugged between the list arriving in a browser and a button being pressed
-  /// on it. It does not wait for the device to open: whether the choice was a good
-  /// one is what the level meter is for.
-  /// </summary>
+  /// <remarks>
+  /// The id is matched against the list this service last saw, so an id that was
+  /// never in it is refused rather than remembered: a selection is only ever made
+  /// from a list somebody was looking at.
+  /// </remarks>
   public bool TrySelect(string deviceId) {
     if(deviceId is not { Length: > 0 }) {
       return false;

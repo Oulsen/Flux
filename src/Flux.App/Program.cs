@@ -35,10 +35,13 @@ builder.Services.AddAbletonLink(builder.Configuration);
 // Capture and analysis run whichever source is driving the beat, because the
 // spectrum they feed is the instrument every later phase is checked against. A
 // spectrum that went dark because the DJ selected Link would switch itself off
-// exactly when it was being used to check the thing under test. The audio sync
-// source, which is what turns this into a tempo, arrives with the rest of Phase 2.
+// exactly when it was being used to check the thing under test. Detection is
+// registered on top of them and publishes unconditionally: an unselected source
+// stays warm, so choosing audio takes effect on the next frame rather than after
+// however long the detector needs to find the tempo again.
 builder.Services.AddAudioCapture(builder.Configuration);
 builder.Services.AddAudioAnalysis();
+builder.Services.AddAudioSource();
 
 // The per-beat console line was Phase 1's stand-in for the visualizer; the web
 // app has taken that job, so it is opt-in diagnostics now - three lines a

@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Flux.App/Flux.App.csproj" />
     <Project Path="src/Flux.Audio/Flux.Audio.csproj" />
+    <Project Path="src/Flux.Audio.Contract/Flux.Audio.Contract.csproj" />
     <Project Path="src/Flux.Beat/Flux.Beat.csproj" />
     <Project Path="src/Flux.Web.Server/Flux.Web.Server.csproj" />
   </Folder>

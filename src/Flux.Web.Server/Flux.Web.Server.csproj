@@ -18,7 +18,13 @@
     <InternalsVisibleTo Include="Flux.Web.Server.Tests" />
   </ItemGroup>
 
+  <!-- The contract and not Flux.Audio itself, which is net10.0-windows and
+       therefore unreferenceable from here. That is the point of the split: the
+       device list and the spectrum arrive as shapes, and the WASAPI stack behind
+       them stays where it belongs. A host with no audio registers neither
+       interface and this project serves a page regardless. -->
   <ItemGroup>
+    <ProjectReference Include="..\Flux.Audio.Contract\Flux.Audio.Contract.csproj" />
     <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
   </ItemGroup>
 

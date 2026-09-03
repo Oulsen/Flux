@@ -1,3 +1,4 @@
+using Flux.Audio;
 using Flux.Beat;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging;
@@ -38,6 +39,15 @@ public sealed class SocketHub {
   private readonly WebOptions options;
   private readonly SyncSourceManager sources;
   private readonly ManualSource manual;
+
+  /// <summary>
+  /// Null in a build with no audio support. Both messages that need it answer
+  /// <c>rejected</c> in that case, which is the same answer an unplugged device
+  /// gets: from the page's side, "that device is not there" covers both, and both
+  /// leave the selection exactly where it was.
+  /// </summary>
+  private readonly IAudioDevices? audio;
+
   private readonly ILogger<SocketHub> log;
   private readonly ReadOnlyMemory<byte> greeting;
 
@@ -58,6 +68,7 @@ public sealed class SocketHub {
     IOptions<BeatOptions> beat,
     SyncSourceManager sources,
     ManualSource manual,
+    IAudioDevices? audio,
     ILogger<SocketHub> log) {
     ArgumentNullException.ThrowIfNull(options);
     ArgumentNullException.ThrowIfNull(beat);
@@ -65,6 +76,7 @@ public sealed class SocketHub {
     this.options = options.Value;
     this.sources = sources ?? throw new ArgumentNullException(nameof(sources));
     this.manual = manual ?? throw new ArgumentNullException(nameof(manual));
+    this.audio = audio;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
 
     // Every field in the greeting is fixed for the lifetime of the process, so
@@ -300,6 +312,15 @@ public sealed class SocketHub {
       case "subscribe":
         if(Frames.TryReadSubscribe(envelope.Data, out bool spectrum, out bool deviceLevels)) {
           client.Subscribe(spectrum, deviceLevels);
+
+          // The list goes out at once rather than on the broadcaster's next tick,
+          // because a picker that opens blank looks broken for as long as it stays
+          // blank. Sent on any subscribe that wants the levels rather than only on
+          // the transition into wanting them: a client re-stating its wants gets a
+          // fresh list, which is the answer it would have wanted either way.
+          if(deviceLevels && this.audio is not null) {
+            client.Enqueue(DeviceFrames.Snapshot(this.audio));
+          }
         } else {
           client.Enqueue(Frames.Error(
             "invalid_data",
@@ -313,18 +334,7 @@ public sealed class SocketHub {
         break;
 
       case "selectAudioDevice":
-        if(Frames.TryReadDeviceId(envelope.Data, out string deviceId)) {
-          // Rejected rather than ignored, and rejected for a build with no audio
-          // support for the same reason as for an unplugged device: from the
-          // page's side both are "that device is not there", and both leave the
-          // selection where it was.
-          client.Enqueue(Frames.Error(
-            "rejected",
-            $"No audio device with id '{Frames.Quote(deviceId)}'."));
-        } else {
-          client.Enqueue(Frames.Error("invalid_data", "Selecting a device needs a string 'data.deviceId'."));
-        }
-
+        this.SelectAudioDevice(client, envelope.Data);
         break;
 
       case "tap":
@@ -367,6 +377,35 @@ public sealed class SocketHub {
     }
 
     this.log.LogInformation("A web client selected the {Source} sync source.", source);
+  }
+
+  /// <summary>
+  /// Points audio analysis at a different device, or says why it did not.
+  ///
+  /// No acknowledgement on success, for the same reason as a source switch: the
+  /// next <c>devices</c> frame carries the selection, and that confirmation comes
+  /// from the thing that actually made the change. A page that lit its own button
+  /// on click would keep lying about it after a rejection.
+  ///
+  /// A rejection is the ordinary outcome rather than an error condition. The device
+  /// list a browser is looking at is up to a second old, so an endpoint unplugged
+  /// in the meantime is a race that will happen, and the honest answer is that the
+  /// selection stands where it was.
+  /// </summary>
+  private void SelectAudioDevice(Client client, JsonElement data) {
+    if(!Frames.TryReadDeviceId(data, out string deviceId)) {
+      client.Enqueue(Frames.Error("invalid_data", "Selecting a device needs a string 'data.deviceId'."));
+      return;
+    }
+
+    if(this.audio is null || !this.audio.TrySelect(deviceId)) {
+      client.Enqueue(Frames.Error(
+        "rejected",
+        $"No audio device with id '{Frames.Quote(deviceId)}'."));
+      return;
+    }
+
+    this.log.LogInformation("A web client selected the audio device {DeviceId}.", deviceId);
   }
 
   /// <summary>

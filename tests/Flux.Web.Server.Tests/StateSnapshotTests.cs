@@ -185,6 +185,7 @@ public sealed class StateSnapshotTests {
       Options.Create(beat),
       spare,
       new ManualSource(clock, spare),
+      audio: null,
       NullLogger<SocketHub>.Instance);
   }
 

@@ -129,12 +129,16 @@
           "xunit.v3.runner.common": "[4.0.0]"
         }
       },
+      "flux.audio.contract": {
+        "type": "Project"
+      },
       "flux.beat": {
         "type": "Project"
       },
       "flux.web.server": {
         "type": "Project",
         "dependencies": {
+          "Flux.Audio.Contract": "[0.1.0, )",
           "Flux.Beat": "[0.1.0, )"
         }
       }

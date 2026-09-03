@@ -73,6 +73,14 @@ source and would change shape, and the Link fields kept their names. An older
 page therefore reads a blank diagnostics row while a non-Link source is active,
 which is a degradation and not a misreading.
 
+`devices` also became looser than first written: `state`, `rms` and `peak` are
+optional now rather than mandatory. Narrowing a promise like that would normally
+be exactly the change that increments the version, and it does not here for one
+specific reason: no build ever sent a `devices` frame before this one, so there is
+no client anywhere that could have depended on those fields being present. The
+message was specified before it had a producer, and it was the specification that
+turned out to be wrong about what could honestly be measured.
+
 ## Units and conventions
 
 | Field | Unit |
@@ -325,10 +333,16 @@ once immediately and then at the rate named in `hello` as `devicesHz`.
     "id": "{0.0.1.00000000}.{a1b2c3d4}",
     "name": "Microfoon (2- DDJ-FLX10)",
     "kind": "capture",
-    "state": "signal",
     "selected": true,
+    "state": "signal",
     "rms": 0.12,
     "peak": 0.44
+  },
+  {
+    "id": "{0.0.0.00000000}.{e5f6a7b8}",
+    "name": "Speakers (DDJ-FLX10)",
+    "kind": "loopback",
+    "selected": false
   }
 ]}}
 ```
@@ -338,10 +352,28 @@ once immediately and then at the rate named in `hello` as `devicesHz`.
 | `id` | string | Opaque, stable for as long as the device exists. The only value `selectAudioDevice` accepts |
 | `name` | string | What the operating system calls it, for a human to recognise |
 | `kind` | string | `"capture"` for an input, `"loopback"` for what a render device is playing |
-| `state` | string | `"signal"`, `"digitalSilence"`, `"noData"` or `"failed"` |
-| `selected` | bool | Whether audio analysis is listening to this one |
-| `rms` | number | Recent average level, 0 to 1 |
-| `peak` | number | Recent peak level, 0 to 1 |
+| `selected` | bool | Whether audio analysis is listening to this one. Always present |
+| `state` | string, optional | `"signal"`, `"digitalSilence"`, `"noData"` or `"failed"`. Absent for a device Flux is not capturing |
+| `rms` | number, optional | Recent average level, 0 to 1. Absent when nothing was measured |
+| `peak` | number, optional | Recent peak level, 0 to 1. Absent when nothing was measured |
+
+**Only the selected device is measured, and the other rows say so by leaving
+those three fields out.** Measuring every endpoint means holding all of them open
+for the length of a set, which costs real things: drivers that only open
+exclusively, and a device that then shows as in use in every other application on
+the machine. The alternative of sending zeroes was rejected for the same reason
+`state.diagnostics` omits a counter rather than sending one: an absent field says
+"not measured", while a zero says "measured, and silent", which is a claim about
+somebody's hardware that Flux has not earned. So a client renders a device with no
+`state` as one it knows nothing about beyond its name, never as a dead one.
+
+A device that was selected and could not be opened keeps its `state` - `"failed"`
+is the answer to why there is no audio, and it belongs on the row of the device
+somebody picked. Its `rms` and `peak` are still absent, because a device that
+never opened delivered no samples to measure. `"digitalSilence"`, by contrast,
+arrives *with* levels: bit-exact zeros are a real reading of a stopped deck, and a
+meter pinned at the bottom is exactly what distinguishes that from Flux not
+listening.
 
 `state` separates three ways of hearing nothing, because they call for three
 different responses and a single "no signal" would blur them:
