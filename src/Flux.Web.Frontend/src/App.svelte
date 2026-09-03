@@ -3,7 +3,10 @@
   import BeatIndicator from './components/BeatIndicator.svelte';
   import BpmReadout from './components/BpmReadout.svelte';
   import ConnectionBadge from './components/ConnectionBadge.svelte';
+  import DevicePicker from './components/DevicePicker.svelte';
   import Diagnostics from './components/Diagnostics.svelte';
+  import SourceSelector from './components/SourceSelector.svelte';
+  import TapTempo from './components/TapTempo.svelte';
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
   import { FluxSocket, socketUrl } from './lib/socket.ts';
@@ -15,8 +18,15 @@
 
   const sourceName = $derived(store.source === 'link' ? 'Ableton Link' : store.source);
 
+  // Held outside onMount because the controls send on it. Not reactive state:
+  // nothing renders from the socket itself, only from what it delivers.
+  let socket: FluxSocket | null = null;
+
+  /** Closed by default, so nothing subscribes to the device feed unasked. */
+  let devicesOpen = $state(false);
+
   onMount(() => {
-    const socket = new FluxSocket(socketUrl(), {
+    socket = new FluxSocket(socketUrl(), {
       message: (message) => store.apply(message),
       connection: (state) => {
         store.connection = state;
@@ -28,18 +38,57 @@
 
     socket.start();
 
-    const ping = setInterval(() => socket.send({ type: 'ping', data: { t: Date.now() } }), PING_INTERVAL_MS);
+    const ping = setInterval(() => socket?.send({ type: 'ping', data: { t: Date.now() } }), PING_INTERVAL_MS);
 
     return () => {
       clearInterval(ping);
-      socket.stop();
+      socket?.stop();
+      socket = null;
     };
+  });
+
+  function selectSource(source: string): void {
+    store.pendingSource = source;
+    socket?.send({ type: 'selectSource', data: { source } });
+  }
+
+  function tap(): void {
+    socket?.send({ type: 'tap', data: {} });
+  }
+
+  function setBpm(bpm: number | null): void {
+    socket?.send({ type: 'setBpm', data: { bpm } });
+  }
+
+  function selectAudioDevice(deviceId: string): void {
+    store.pendingDevice = deviceId;
+    socket?.send({ type: 'selectAudioDevice', data: { deviceId } });
+  }
+
+  /*
+   * What this client wants, restated in full whenever it changes.
+   *
+   * Driven by whether the panel is open rather than sent once at startup, which
+   * is what keeps a phone in the booth off the device feed entirely. It re-sends
+   * on every new connection on purpose: a subscription is a preference held by
+   * one socket and deliberately does not survive a reconnect, so a page that
+   * subscribed once would go quiet forever after the first Wi-Fi hiccup.
+   *
+   * Spectrum stays false until there is a canvas to draw it on. Asking for
+   * frames nobody renders would be paying the bandwidth for a blank rectangle.
+   */
+  $effect(() => {
+    const wants = { spectrum: false, deviceLevels: devicesOpen };
+
+    if (store.connection === 'open') {
+      socket?.send({ type: 'subscribe', data: wants });
+    }
   });
 </script>
 
 <header>
   <h1>Flux</h1>
-  <ConnectionBadge connection={store.connection} sourceState={store.sourceState} />
+  <ConnectionBadge connection={store.connection} sourceState={store.sourceState} source={store.source} />
 </header>
 
 <main>
@@ -59,6 +108,37 @@
       tick={store.beatTick}
       aligned={store.grid?.barAligned ?? false}
     />
+  </section>
+
+  <section class="controls">
+    <SourceSelector
+      sources={store.sources}
+      active={store.source}
+      pending={store.pendingSource}
+      select={selectSource}
+    />
+    <TapTempo manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {setBpm} />
+  </section>
+
+  <section class="panel">
+    <button
+      type="button"
+      class="disclosure"
+      class:open={devicesOpen}
+      aria-expanded={devicesOpen}
+      onclick={() => (devicesOpen = !devicesOpen)}
+    >
+      <span class="heading">audio device</span>
+      <span class="toggle">{devicesOpen ? 'hide' : 'show'}</span>
+    </button>
+
+    {#if devicesOpen}
+      <DevicePicker
+        devices={store.devices}
+        pending={store.pendingDevice}
+        select={selectAudioDevice}
+      />
+    {/if}
   </section>
 
   <section class="panel">
@@ -120,6 +200,14 @@
     border-radius: var(--radius);
   }
 
+  /* No surface of its own: the controls carry theirs, and a panel behind them
+     would sink the buttons into the background they are meant to sit on. */
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+  }
+
   .panel {
     padding: var(--gap);
     background: var(--panel);
@@ -127,13 +215,42 @@
     border-radius: var(--radius);
   }
 
-  h2 {
+  h2,
+  .heading {
     margin: 0 0 0.75rem;
     font-size: 0.7rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ink-faint);
     font-weight: 600;
+  }
+
+  .disclosure {
+    width: 100%;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--gap);
+    padding: 0;
+    background: none;
+    border: none;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .disclosure .heading {
+    margin: 0;
+  }
+
+  .disclosure.open {
+    margin-bottom: 0.75rem;
+  }
+
+  .toggle {
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
   }
 
   .mismatch {

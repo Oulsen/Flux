@@ -1,15 +1,20 @@
 import {
   PROTOCOL_VERSION,
+  type AlignmentData,
   type BeatData,
+  type DeviceData,
+  type DevicesData,
   type DiagnosticsData,
   type ErrorData,
   type GridData,
   type HelloData,
   type RawMessage,
+  type SourceReportData,
   type SourceState,
   type StateData,
 } from './protocol.ts';
 import type { ConnectionState } from './socket.ts';
+import { clearsPendingSelection, resolvePending, retiresHeldBeat } from './storeLogic.ts';
 
 /**
  * Everything the page knows, which is exactly what the server has told it.
@@ -28,6 +33,39 @@ export class FluxStore {
 
   source = $state('link');
   sourceState = $state<SourceState>('waiting');
+
+  /**
+   * Every source the build has, whether or not it is the active one.
+   *
+   * Empty until the first snapshot, and never filled in from a guess: which
+   * sources exist is a property of the running server, not of this page, and a
+   * selector offering one that is not there would be offering a dead end.
+   */
+  sources = $state<SourceReportData[]>([]);
+
+  alignment = $state<AlignmentData>({ aligned: false, method: null });
+
+  /**
+   * The source the user asked for, until a snapshot says it happened.
+   *
+   * The server decides what is active, so the control shows this rather than the
+   * request itself: a selection can be declined, and a button that moved on the
+   * press would then be lying about the state of the machine.
+   */
+  pendingSource = $state<string | null>(null);
+
+  /**
+   * Every audio endpoint Flux can see, and empty until something subscribes.
+   *
+   * Empty therefore means "not asked for" rather than "none exist", which is why
+   * the picker is the thing that subscribes: a list nobody wanted is not a list
+   * that came back short.
+   */
+  devices = $state<DeviceData[]>([]);
+
+  /** The device the user asked for, until a frame shows it selected. */
+  pendingDevice = $state<string | null>(null);
+
   grid = $state<GridData | null>(null);
   // Only the grid's own metric starts at a number. Every other counter belongs
   // to whichever source is active, and a zero before the first frame would
@@ -79,29 +117,36 @@ export class FluxStore {
 
       case 'state': {
         const state = message.data as StateData;
+        // Read before the assignment below overwrites what it is compared to.
+        const sourceChanged = state.source !== this.source;
+
         this.source = state.source;
         this.sourceState = state.sourceState;
+        this.sources = state.sources;
+        this.alignment = state.alignment;
         this.grid = state.grid;
         this.diagnostics = state.diagnostics;
+        this.pendingSource = resolvePending(this.pendingSource, state.source);
 
-        // The beat readout belongs to the source, so it goes when the source
-        // has never spoken - otherwise a stale position sits lit under a
-        // "waiting" label.
-        if (state.grid === null) {
+        if (retiresHeldBeat(this.beat, state.grid, sourceChanged)) {
           this.beat = null;
-        } else if (
-          this.beat !== null &&
-          (state.grid.beatIndex > this.beat.index || state.grid.beatIndex < this.beat.index - 1)
-        ) {
-          // A snapshot ahead of the beat frame means that frame's successor
-          // was dropped or is stuck behind bad Wi-Fi; more than one beat
-          // behind means a tempo change renumbered the grid. Either way,
-          // falling back to the snapshot self-heals within one state frame.
-          // Exactly one behind is the ordinary race between the separate
-          // state and beat pumps, where the beat frame is the fresher fact
-          // and stays. No flash is faked for the fallback: a snapshot places
-          // a position, not an instant.
-          this.beat = null;
+        }
+
+        break;
+      }
+
+      case 'devices': {
+        const data = message.data as DevicesData;
+        this.devices = data.devices;
+
+        // Confirmed by the list itself rather than by a reply, because the
+        // selection is a property of the server and not the answer to a
+        // question. A device that was asked for and could not be opened still
+        // comes back selected, labelled failed, which is the useful outcome and
+        // must not leave the control spinning.
+        const selected = data.devices.find((device) => device.selected)?.id;
+        if (selected !== undefined) {
+          this.pendingDevice = resolvePending(this.pendingDevice, selected);
         }
 
         break;
@@ -120,8 +165,15 @@ export class FluxStore {
       }
 
       case 'error': {
-        this.lastError = message.data as ErrorData;
-        console.warn('Flux rejected a message:', this.lastError);
+        const error = message.data as ErrorData;
+        this.lastError = error;
+
+        if (clearsPendingSelection(error.code)) {
+          this.pendingSource = null;
+          this.pendingDevice = null;
+        }
+
+        console.warn('Flux rejected a message:', error);
         break;
       }
 
@@ -135,5 +187,16 @@ export class FluxStore {
   /** Called when the socket drops, so nothing on screen claims to be live. */
   disconnected(): void {
     this.latencyMs = null;
+
+    // A request made over a socket that then died may never have arrived, and
+    // nothing is coming back to resolve it either way. Leaving the control
+    // pending would leave it pending until the page is reloaded.
+    this.pendingSource = null;
+    this.pendingDevice = null;
+
+    // A subscription is a preference held by the connection that is now gone, so
+    // the list it filled is gone with it. Keeping the rows would show meters
+    // frozen at whatever they read when the socket died.
+    this.devices = [];
   }
 }
