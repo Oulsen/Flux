@@ -11,6 +11,7 @@ import {
   type RawMessage,
   type SourceReportData,
   type SourceState,
+  type SpectrumData,
   type StateData,
 } from './protocol.ts';
 import type { ConnectionState } from './socket.ts';
@@ -65,6 +66,19 @@ export class FluxStore {
 
   /** The device the user asked for, until a frame shows it selected. */
   pendingDevice = $state<string | null>(null);
+
+  /**
+   * The newest analyzer frame, replaced rather than accumulated.
+   *
+   * Only the newest one is worth holding: the server samples its analyzer rather
+   * than queueing from it, so a page that fell behind should catch up to what is
+   * being heard now and never work through a backlog of what was.
+   *
+   * Null means no frame has arrived, which is not the same as silence - it is
+   * what an unsubscribed page and a dropped socket both look like. Whatever
+   * draws this has to say so rather than render an empty spectrum.
+   */
+  latestSpectrum = $state<SpectrumData | null>(null);
 
   grid = $state<GridData | null>(null);
   // Only the grid's own metric starts at a number. Every other counter belongs
@@ -152,6 +166,14 @@ export class FluxStore {
         break;
       }
 
+      case 'spectrum': {
+        // Held as the object it arrived as, because the visualizer tells one
+        // frame from the next by identity: a frame that redraws several times
+        // must trigger its beat flash exactly once.
+        this.latestSpectrum = message.data as SpectrumData;
+        break;
+      }
+
       case 'beat': {
         this.beat = message.data as BeatData;
         this.beatTick += 1;
@@ -198,5 +220,10 @@ export class FluxStore {
     // the list it filled is gone with it. Keeping the rows would show meters
     // frozen at whatever they read when the socket died.
     this.devices = [];
+
+    // Same argument, and it matters more here: a held frame leaves a spectrum
+    // standing on screen that looks exactly like a live one, on a display whose
+    // whole job is to say what is being heard right now.
+    this.latestSpectrum = null;
   }
 }

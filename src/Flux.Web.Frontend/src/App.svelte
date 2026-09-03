@@ -6,6 +6,7 @@
   import DevicePicker from './components/DevicePicker.svelte';
   import Diagnostics from './components/Diagnostics.svelte';
   import SourceSelector from './components/SourceSelector.svelte';
+  import SpectrumCanvas from './components/SpectrumCanvas.svelte';
   import TapTempo from './components/TapTempo.svelte';
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
@@ -24,6 +25,20 @@
 
   /** Closed by default, so nothing subscribes to the device feed unasked. */
   let devicesOpen = $state(false);
+
+  /** Wide enough that the spectrum is an instrument rather than a stripe. */
+  const VISUALIZER_WIDTH = '(min-width: 640px)';
+
+  /*
+   * Open where there is room for it and closed on a phone, which is the whole
+   * subscription policy: the booth phone is on the same Wi-Fi as the show and
+   * never asks for a 30 Hz feed it has no space to draw.
+   *
+   * Read once, at startup, and deliberately not kept in step with the window
+   * afterwards. Following a later resize would reopen a panel somebody had just
+   * closed, and the phone is not going to change width mid-set anyway.
+   */
+  let visualizerOpen = $state(window.matchMedia(VISUALIZER_WIDTH).matches);
 
   onMount(() => {
     socket = new FluxSocket(socketUrl(), {
@@ -74,11 +89,11 @@
    * one socket and deliberately does not survive a reconnect, so a page that
    * subscribed once would go quiet forever after the first Wi-Fi hiccup.
    *
-   * Spectrum stays false until there is a canvas to draw it on. Asking for
-   * frames nobody renders would be paying the bandwidth for a blank rectangle.
+   * Both feeds follow their own panel rather than the page, so a client only
+   * ever pays for frames something on screen is drawing.
    */
   $effect(() => {
-    const wants = { spectrum: false, deviceLevels: devicesOpen };
+    const wants = { spectrum: visualizerOpen, deviceLevels: devicesOpen };
 
     if (store.connection === 'open') {
       socket?.send({ type: 'subscribe', data: wants });
@@ -118,6 +133,25 @@
       select={selectSource}
     />
     <TapTempo manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {setBpm} />
+  </section>
+
+  <section class="panel">
+    <button
+      type="button"
+      class="disclosure"
+      class:open={visualizerOpen}
+      aria-expanded={visualizerOpen}
+      onclick={() => (visualizerOpen = !visualizerOpen)}
+    >
+      <span class="heading">spectrum</span>
+      <span class="toggle">{visualizerOpen ? 'hide' : 'show'}</span>
+    </button>
+
+    <!-- Unmounted rather than hidden when closed, which is what stops the
+         redraw loop as well as the traffic. -->
+    {#if visualizerOpen}
+      <SpectrumCanvas frame={store.latestSpectrum} />
+    {/if}
   </section>
 
   <section class="panel">

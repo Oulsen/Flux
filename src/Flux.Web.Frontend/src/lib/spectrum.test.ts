@@ -3,11 +3,14 @@ import { test } from 'node:test';
 import type { SpectrumBeat, SpectrumData } from './protocol.ts';
 import {
   advanceVisual,
+  BAR_GAP_PX,
+  barGeometry,
   decayFactor,
   emptyVisual,
   flashFor,
   FLASH_DECAY_PER_FRAME,
   LEVEL_DECAY_PER_FRAME,
+  MIN_BAR_WIDTH_PX,
   normalizeBin,
   receiveFrame,
   REFERENCE_FPS,
@@ -137,4 +140,29 @@ test('the flash decays and is gone within a second', () => {
 
   visual = advanceVisual(visual, 1000);
   assert.ok(visual.flash < 0.001, `a second later the flash was still ${visual.flash}`);
+});
+
+test('the columns divide the canvas and carry a gap between them', () => {
+  const geometry = barGeometry(640, 64);
+
+  assert.equal(geometry.slot, 10);
+  assert.equal(geometry.width, 10 - BAR_GAP_PX);
+});
+
+test('a crowded canvas draws touching columns rather than none at all', () => {
+  // Sixty-four columns across sixty-four pixels leaves a slot of exactly one,
+  // and subtracting the gap from that would leave nothing to paint.
+  const geometry = barGeometry(64, 64);
+
+  assert.equal(geometry.slot, 1);
+  assert.equal(geometry.width, MIN_BAR_WIDTH_PX);
+});
+
+test('a canvas with no width and a frame with no bins both draw nothing', () => {
+  // A collapsed panel measures zero, and the first redraw can land before the
+  // observer has reported a size at all.
+  assert.deepEqual(barGeometry(0, 64), { slot: 0, width: 0 });
+  assert.deepEqual(barGeometry(640, 0), { slot: 0, width: 0 });
+  assert.deepEqual(barGeometry(-10, 64), { slot: 0, width: 0 });
+  assert.deepEqual(barGeometry(Number.NaN, 64), { slot: 0, width: 0 });
 });
