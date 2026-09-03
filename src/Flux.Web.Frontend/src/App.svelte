@@ -8,7 +8,7 @@
   import Diagnostics from './components/Diagnostics.svelte';
   import SourceSelector from './components/SourceSelector.svelte';
   import SpectrumCanvas from './components/SpectrumCanvas.svelte';
-  import TapTempo from './components/TapTempo.svelte';
+  import AnchorPad from './components/AnchorPad.svelte';
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
   import { FluxSocket, socketUrl } from './lib/socket.ts';
@@ -136,7 +136,7 @@
         pending={store.pendingSource}
         select={selectSource}
       />
-      <TapTempo manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {setBpm} />
+      <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {setBpm} />
     </section>
   </div>
 

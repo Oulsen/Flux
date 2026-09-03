@@ -10,6 +10,16 @@
 
   const { manual, bpm, tap, setBpm }: Props = $props();
 
+  /*
+   * The label follows the mode because the gesture does. Under manual the button
+   * is hit repeatedly to give a tempo, and "anchor" invites exactly one press -
+   * a label that hides the feature the mode exists for. Everywhere else the
+   * tempo comes from the source and the only thing a press can say is where the
+   * bar starts. It changes only when the selector directly above it is used, and
+   * the pad's size, shape and position never move with it.
+   */
+  const label = $derived(manual ? 'tap' : 'anchor');
+
   /* The bounds ManualSource enforces. Repeated rather than derived because there
      is no shared definition to derive from: the server rejects out of range, and
      this only saves the round trip. */
@@ -63,45 +73,84 @@
   }
 </script>
 
-<div class="tap-tempo">
-  <button type="button" class="tap" onpointerdown={pressed} onkeydown={keyed}>tap</button>
+<!--
+  The pad and the two captions that are always there form one row, and the
+  manual-only tempo form sits under it rather than inside it. Centring the pad
+  against a column whose height changes with the mode moved the button
+  vertically every time the source was switched, which is the one thing a
+  control aimed at in a dark booth must not do.
+-->
+<div class="anchor-pad">
+  <div class="row">
+    <!--
+      Labelled for what it does rather than for the gesture, and deliberately
+      using the word the badge below it uses: a press here reads back as "bar
+      anchored by a tap", so the button and its own feedback name one thing.
+      "Sync" was the other candidate and is wrong twice over - the selector
+      above picks a sync source, and on DJ gear the word means tempo, which this
+      only touches on the manual source.
+    -->
+    <button type="button" class="tap" onpointerdown={pressed} onkeydown={keyed}>{label}</button>
 
-  <div class="detail">
-    <p class="caption">
-      every tap sets the downbeat{#if manual}, and the tempo{/if}
-    </p>
+    <div class="detail">
+      <p class="caption">
+        every tap sets the downbeat{#if manual}, and the tempo{/if}
+      </p>
 
-    {#if manual}
-      <form
-        class="tempo"
-        onsubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-      >
-        <label class="field">
-          <span class="visually-hidden">Tempo in BPM</span>
-          <input
-            class="numeric"
-            type="number"
-            inputmode="decimal"
-            step="0.01"
-            min={MIN_BPM}
-            max={MAX_BPM}
-            placeholder={bpm === null ? 'bpm' : bpm.toFixed(2)}
-            bind:value={typed}
-          />
-        </label>
-        <button type="submit" class="set">set</button>
-      </form>
+      <!--
+        Said out loud because an anchor placed by drop detection looks identical
+        to a right one, and nothing else on the page suggests a human can
+        overrule it.
+      -->
+      <p class="caption">a tap overrules whatever anchored the bar</p>
+    </div>
+  </div>
 
-      <p class="caption">a typed tempo leaves the downbeat where it is; empty clears it</p>
-    {/if}
+  <!--
+    Kept in the layout on every source rather than added on the manual one. The
+    stage above shares this column and is the element that takes the slack, so a
+    form appearing here shrinks the BPM readout - the one number the page exists
+    to show - every time the source is switched. Hidden rather than removed
+    holds the height; visibility also takes it out of the tab order and off a
+    screen reader, so what is reserved is space and nothing else.
+  -->
+  <div class="tempo-controls" class:reserved={!manual}>
+    <form
+      class="tempo"
+      onsubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <label class="field">
+        <span class="visually-hidden">Tempo in BPM</span>
+        <input
+          class="numeric"
+          type="number"
+          inputmode="decimal"
+          step="0.01"
+          min={MIN_BPM}
+          max={MAX_BPM}
+          placeholder={bpm === null ? 'bpm' : bpm.toFixed(2)}
+          bind:value={typed}
+        />
+      </label>
+      <button type="submit" class="set">set</button>
+    </form>
+
+    <p class="caption">a typed tempo leaves the downbeat where it is; empty clears it</p>
   </div>
 </div>
 
 <style>
-  .tap-tempo {
+  .anchor-pad {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: start;
+  }
+
+  .row {
     display: flex;
     align-items: center;
     gap: var(--gap);
@@ -119,7 +168,13 @@
     color: var(--accent);
     font: inherit;
     font-size: 0.9rem;
-    letter-spacing: 0.16em;
+
+    /* box-sizing is border-box page-wide, so the browser's own button padding
+       comes out of the 5rem rather than adding to it. Six letters and the
+       default padding do not both fit, and the wide tracking is what makes a
+       three-letter word look deliberate, so the padding goes instead. */
+    padding: 0;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     cursor: pointer;
 
@@ -150,6 +205,16 @@
     font-size: 0.75rem;
     letter-spacing: 0.06em;
     color: var(--ink-faint);
+  }
+
+  .tempo-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .reserved {
+    visibility: hidden;
   }
 
   .tempo {
