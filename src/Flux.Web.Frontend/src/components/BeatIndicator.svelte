@@ -6,11 +6,11 @@
     position: number;
     /** Increments once per beat, which is what retriggers the flash. */
     tick: number;
-    /** Whether the bar position has been anchored to the music. False for all of Phase 1. */
-    aligned: boolean;
   }
 
-  const { quantum, position, tick, aligned }: Props = $props();
+  // Whether the bar is anchored, and by what, is `AlignmentBadge`'s to say. Two
+  // components rendering the same fact is how they end up disagreeing about it.
+  const { quantum, position, tick }: Props = $props();
 
   const slots = $derived(Array.from({ length: Math.max(1, quantum) }, (_, index) => index + 1));
 </script>
@@ -29,14 +29,6 @@
       {/each}
     </div>
   {/key}
-
-  <p class="caption">
-    {#if aligned}
-      bar position anchored
-    {:else}
-      counting beats &middot; bar position not anchored yet
-    {/if}
-  </p>
 </div>
 
 <style>
@@ -84,12 +76,4 @@
      "animation effects" toggle, muting a beat visualizer the user opened on
      purpose. Anyone who genuinely wants a still page has the moving dot row
      saying the same thing. */
-
-  .caption {
-    margin: 0;
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
-    color: var(--ink-faint);
-    text-align: center;
-  }
 </style>

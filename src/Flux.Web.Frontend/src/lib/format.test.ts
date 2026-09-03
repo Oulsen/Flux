@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { reconnectDelay } from './backoff.ts';
-import { formatBpm, formatDrift, formatLatency, UNKNOWN } from './format.ts';
+import {
+  alignmentLabel,
+  formatAgo,
+  formatBpm,
+  formatCount,
+  formatDrift,
+  formatLatency,
+  formatRate,
+  UNKNOWN,
+} from './format.ts';
 import { parseMessage } from './protocol.ts';
 
 test('a tempo is always shown to two decimals', () => {
@@ -25,6 +34,43 @@ test('a round trip is whole milliseconds and never negative', () => {
   assert.equal(formatLatency(3.4), '3 ms');
   assert.equal(formatLatency(-2), '0 ms');
   assert.equal(formatLatency(null), UNKNOWN);
+});
+
+test('a counter is whole, and a zero is a reading rather than an absence', () => {
+  assert.equal(formatCount(0), '0');
+  assert.equal(formatCount(4821), '4821');
+  assert.equal(formatCount(3.9), '3');
+  assert.equal(formatCount(undefined), UNKNOWN);
+  assert.equal(formatCount(Number.NaN), UNKNOWN);
+});
+
+test('a measured rate keeps one decimal, since the question is how far under', () => {
+  assert.equal(formatRate(60), '60.0');
+  assert.equal(formatRate(59.94), '59.9');
+  assert.equal(formatRate(undefined), UNKNOWN);
+});
+
+test('an elapsed time switches to seconds at ten, and never runs backwards', () => {
+  assert.equal(formatAgo(9999), '9999 ms');
+  assert.equal(formatAgo(10_000), '10.0 s');
+  assert.equal(formatAgo(-5), '0 ms');
+  assert.equal(formatAgo(undefined), UNKNOWN);
+});
+
+test('an anchored bar says what anchored it', () => {
+  // Which one it was is the whole value: a cue press that never arrives looks
+  // exactly like a tap that did, unless the two are named apart.
+  assert.equal(alignmentLabel(true, 'cue'), 'bar anchored by a cue press');
+  assert.equal(alignmentLabel(true, 'tap'), 'bar anchored by a tap');
+  assert.equal(alignmentLabel(true, 'drop'), 'bar anchored by a drop');
+});
+
+test('an unanchored bar never claims a bar number', () => {
+  // The count is right and its starting point is arbitrary, so the reading has
+  // to say so however it was reached.
+  assert.equal(alignmentLabel(false, null), 'counting beats - bar not anchored yet');
+  assert.equal(alignmentLabel(false, 'tap'), 'counting beats - bar not anchored yet');
+  assert.equal(alignmentLabel(true, null), 'bar anchored');
 });
 
 test('the reconnect delay doubles and then stops growing', () => {

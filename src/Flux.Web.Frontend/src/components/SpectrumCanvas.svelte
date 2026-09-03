@@ -203,9 +203,12 @@
 </div>
 
 <style>
+  /* Grows with the window, within bounds: below about nine rems the bands stop
+     being distinguishable, and above sixteen the picture gains height without
+     gaining information, since a spectrum is read across and not up. */
   .visualizer {
     position: relative;
-    height: 9rem;
+    height: clamp(9rem, 22vh, 16rem);
   }
 
   canvas {
