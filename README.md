@@ -62,6 +62,7 @@ backend.
 | Key | Default | Meaning |
 |---|---|---|
 | `Web:Port` | `5050` | HTTP and WebSocket port for the UI |
+| `Beat:DefaultSource` | `link` | Which sync source is selected at startup: `link`, `audio` or `manual`; a name this build does not have falls back to the first source registered |
 | `Link:InterfaceAddress` | `null` | IP address of the network adapter to listen for Link on; `null` picks one automatically |
 | `Audio:DeviceId` | `null` | Exact endpoint id of the audio device to capture; `null` goes by name instead |
 | `Audio:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the audio device to capture, inputs before outputs; empty captures nothing until one is picked |
@@ -91,7 +92,7 @@ npm test
 
 | Path | Holds |
 |---|---|
-| `src/Flux.Beat` | Ableton Link listener, packet decoding, beat grid, beat scheduler |
+| `src/Flux.Beat` | Sync source abstraction and manager, Ableton Link listener, packet decoding, manual tap source, beat grid, bar anchor, beat scheduler |
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, and a spectrum frame |
 | `src/Flux.Web.Server` | WebSocket hub, beat broadcaster, web hosting |
