@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Windows version in the target framework is what makes the WinRT
+       projection available: Windows.Devices.Midi and Windows.Devices.Enumeration
+       arrive as a targeting pack the SDK downloads, so this project reads MIDI
+       with no NuGet dependency at all. 19041 is the floor for the projection
+       tooling rather than for the APIs used here, which have existed since
+       Windows 10 shipped.
+
+       SupportedOSPlatformVersion is set to the same value on purpose. Left at the
+       SDK default it sits lower than the target, and the platform analyzer then
+       has to be argued with at every call site about APIs that are in fact
+       guaranteed present - warnings that say nothing true, in a build that treats
+       warnings as errors. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <!-- The parser, the constants and the audibility model are internal: they exist
+       for the observer in this assembly, and the only outside caller they need is
+       the test project. That split is the whole testing strategy here - the port
+       plumbing needs a controller on the desk, and everything else must not. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Flux.Midi.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
+  </ItemGroup>
+
+</Project>

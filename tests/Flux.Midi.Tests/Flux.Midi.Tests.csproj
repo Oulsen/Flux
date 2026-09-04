@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The same target as the project under test, which is a correction to the plan
+       rather than a preference: it had this project on plain net10.0, and a project
+       cannot reference one that targets a higher Windows version than its own. The
+       plan's intent still holds and is what the test list reflects - nothing tested
+       here touches WinRT, a MIDI port or a controller. The parser and the
+       audibility model are pure by design, because the alternative is a test suite
+       that needs a DJ. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Flux.Midi\Flux.Midi.csproj" />
+  </ItemGroup>
+
+</Project>

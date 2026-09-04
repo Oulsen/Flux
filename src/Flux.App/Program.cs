@@ -1,6 +1,7 @@
 using Flux.App;
 using Flux.Audio;
 using Flux.Beat;
+using Flux.Midi;
 using Flux.Web.Server;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
@@ -42,6 +43,11 @@ builder.Services.AddAbletonLink(builder.Configuration);
 builder.Services.AddAudioCapture(builder.Configuration);
 builder.Services.AddAudioAnalysis();
 builder.Services.AddAudioSource();
+
+// The controller's cue button, read-only, as a downbeat marker. Not a source: it
+// registers nothing with the manager and has no opinion about tempo, it only says
+// where a bar starts - so it goes after the sources rather than among them.
+builder.Services.AddFlxObserver(builder.Configuration);
 
 // The per-beat console line was Phase 1's stand-in for the visualizer; the web
 // app has taken that job, so it is opt-in diagnostics now - three lines a

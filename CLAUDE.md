@@ -12,7 +12,8 @@ other description of a message, including code comments.
 - Solution-level `dotnet test` currently reports zero tests (xunit v3 on
   Microsoft.Testing.Platform). Run the test projects directly instead:
   `dotnet run --project tests/Flux.Beat.Tests`,
-  `dotnet run --project tests/Flux.Audio.Tests` and
+  `dotnet run --project tests/Flux.Audio.Tests`,
+  `dotnet run --project tests/Flux.Midi.Tests` and
   `dotnet run --project tests/Flux.Web.Server.Tests`.
 - Frontend checks, from `src/Flux.Web.Frontend`: `npm run check`
   (svelte-check) and `npm test` (node --test). Both must pass; `npm run check`

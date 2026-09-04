@@ -27,7 +27,9 @@ cue press or a tap.
 
 ## Requirements
 
-- Windows 10/11
+- Windows 10 version 2004 (build 19041) or newer, or Windows 11. That floor is
+  the WinRT MIDI projection the controller observer is built on, not a
+  preference.
 - [.NET SDK](https://dotnet.microsoft.com/download) (version pinned in
   `global.json`)
 - [Node.js](https://nodejs.org/) 22 or newer, for building the frontend
@@ -69,6 +71,8 @@ backend.
 | `Audio:Sensitivity` | `50` | How eagerly audio beat detection triggers, 1 to 100; the only tuning knob it has |
 | `Audio:RecordFramesPath` | `null` | File to write analyzed audio frames to, for turning a real track into a test fixture; off unless set |
 | `Audio:RecordAudioPath` | `null` | File to write the captured audio to as a mono WAVE recording, for questions about the analyzer itself rather than the detector; about 11 MB a minute, off unless set |
+| `Midi:Enabled` | `true` | Whether to watch a MIDI controller, so a cue press on an audible deck can anchor the bar; observation is read-only and does not disturb rekordbox |
+| `Midi:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the MIDI input to watch; empty watches nothing, because the notes Flux reads were measured on one controller |
 | `Console:BeatLog` | `false` | Print one console line per beat, for debugging the beat grid without a browser |
 | `Console:AudioMeter` | `false` | Print the capture level four times a second, for identifying an audio device without a browser |
 
@@ -79,6 +83,7 @@ The .NET test projects are xunit v3 executables:
 ```
 dotnet run --project tests/Flux.Beat.Tests
 dotnet run --project tests/Flux.Audio.Tests
+dotnet run --project tests/Flux.Midi.Tests
 dotnet run --project tests/Flux.Web.Server.Tests
 ```
 
@@ -96,6 +101,7 @@ npm test
 | `src/Flux.Beat` | Sync source abstraction and manager, Ableton Link listener, packet decoding, manual tap source, beat grid, bar anchor, beat scheduler |
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, and a spectrum frame |
+| `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
 | `src/Flux.Web.Server` | WebSocket hub, beat broadcaster, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable |
