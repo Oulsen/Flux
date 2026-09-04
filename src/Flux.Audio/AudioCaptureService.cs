@@ -57,6 +57,7 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples, IAudi
   private readonly AudioDeviceCatalog catalog;
   private readonly IMonotonicClock clock;
   private readonly AudioOptions options;
+  private readonly IMonoTap tap;
   private readonly ILogger<AudioCaptureService> log;
   private readonly MonoRingBuffer ring = new MonoRingBuffer(RingCapacity);
   private readonly AudioMeter meter;
@@ -102,12 +103,14 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples, IAudi
     AudioDeviceCatalog catalog,
     IMonotonicClock clock,
     IOptions<AudioOptions> options,
+    IMonoTap tap,
     ILogger<AudioCaptureService> log) {
     ArgumentNullException.ThrowIfNull(options);
 
     this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
     this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
     this.options = options.Value;
+    this.tap = tap ?? throw new ArgumentNullException(nameof(tap));
     this.log = log ?? throw new ArgumentNullException(nameof(log));
     this.meter = new AudioMeter(clock);
   }
@@ -303,7 +306,7 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples, IAudi
     MMDevice? endpoint = this.catalog.Open(device.Id);
     AudioCaptureSession? session = endpoint is null
       ? null
-      : AudioCaptureSession.Open(device, endpoint, this.ring, this.meter, this.log);
+      : AudioCaptureSession.Open(device, endpoint, this.ring, this.meter, this.tap, this.log);
 
     if(session is null) {
       endpoint?.Dispose();

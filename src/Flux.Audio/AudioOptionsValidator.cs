@@ -44,6 +44,10 @@ internal sealed class AudioOptionsValidator: IValidateOptions<AudioOptions> {
       failures.Add("Audio:RecordFramesPath must be a file path, or null to record nothing.");
     }
 
+    if(options.RecordAudioPath is { Length: > 0 } audioPath && string.IsNullOrWhiteSpace(audioPath)) {
+      failures.Add("Audio:RecordAudioPath must be a file path, or null to record nothing.");
+    }
+
     return failures.Count == 0
       ? ValidateOptionsResult.Success
       : ValidateOptionsResult.Fail(failures);

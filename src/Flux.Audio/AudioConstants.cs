@@ -97,23 +97,46 @@ internal static class AudioConstants {
   /// <summary>
   /// The bottom of the decibel range a bin is scaled over.
   ///
-  /// This pair is a reconstruction rather than a transcription, and it is the
-  /// riskiest number in the file. The scene reads a 200-element byte array from
-  /// its host and every threshold below is a number on <em>that</em> scale, so
-  /// getting the scale wrong moves all of them at once. The host does not document
-  /// it; the Web Audio <c>AnalyserNode</c> convention (-100 dB to -30 dB across
-  /// 0 to 255) is the only published mapping that produces bytes from a spectrum,
-  /// and the host's companion reading is a level in decibels, which fits.
+  /// This pair is the only number in the file measured against this rig rather
+  /// than transcribed from the scene, and it had to be. The scene reads a byte
+  /// array from its host, so every threshold below is a number on that scale and
+  /// the scale itself is the one thing the scene could not tell us. The first
+  /// answer here was the Web Audio <c>AnalyserNode</c> convention, -100 dB to
+  /// -30 dB across 0 to 255, on the grounds that it is the only published mapping
+  /// that turns a spectrum into bytes. It is the right shape and the wrong place:
+  /// the scene's host captured desktop audio, which sits inside that window,
+  /// while a DJ master bus sits above it.
+  ///
+  /// Measured on a four minute capture of three beatmatched tracks off the
+  /// FLX-10's master return, with Link independently reporting 122 BPM, the old
+  /// ceiling clamped 22.6% of all kick-band bins - so a kick's onset became a
+  /// small rise on a plateau of 255s, which is why the detector called 125 while
+  /// locking for 9% of the run. The derivation is in
+  /// <c>docs/audio-constants.md</c> and the harness that produced it is
+  /// <c>WindowCalibrationTests</c>.
+  ///
+  /// The span stays 70 dB. It is what converts a decibel rise into a byte rise,
+  /// so widening it would retune every threshold below at once, silently.
   ///
   /// If detection turns out to be uniformly too eager or too deaf against real
-  /// music, this is the first thing to suspect and
-  /// <see cref="AudioOptions.Sensitivity"/> is the knob that compensates without
-  /// touching it.
+  /// music, <see cref="AudioOptions.Sensitivity"/> is still the knob that
+  /// compensates without touching this.
   /// </summary>
-  public const double SpectrumMinDb = -100;
+  public const double SpectrumMinDb = -76;
 
-  /// <inheritdoc cref="SpectrumMinDb"/>
-  public const double SpectrumMaxDb = -30;
+  /// <summary>
+  /// The top of that range, and the number the measurement actually moved.
+  ///
+  /// Chosen as the middle of a plateau rather than as a best single reading,
+  /// because both edges of it fail and they fail differently. Below about -12 dB
+  /// the loudest bins start clamping again and the reported tempo climbs; above
+  /// about -2 dB the bins are faithful but the detector's absolute energy gates
+  /// stop being met in quiet passages, and at 0 dB it collapses to 114 BPM. Across
+  /// -10 dB to -2 dB it reported 122.0 to 122.7 against a true 122 and held a lock
+  /// for three quarters of the run, so this sits in the centre of that: 11 dB of
+  /// headroom above the loudest bin measured, 6 dB above the cliff.
+  /// </summary>
+  public const double SpectrumMaxDb = -6;
 
   /// <summary>
   /// How much of each bin is carried over from the previous frame.

@@ -34,6 +34,7 @@ internal sealed class AudioCaptureSession: IDisposable {
   private readonly MMDevice endpoint;
   private readonly MonoRingBuffer ring;
   private readonly AudioMeter meter;
+  private readonly IMonoTap tap;
   private readonly ILogger log;
   private readonly WasapiCapture capture;
   private readonly PcmFormat format;
@@ -56,12 +57,14 @@ internal sealed class AudioCaptureSession: IDisposable {
     WasapiCapture capture,
     MonoRingBuffer ring,
     AudioMeter meter,
+    IMonoTap tap,
     ILogger log) {
     this.device = device;
     this.endpoint = endpoint;
     this.capture = capture;
     this.ring = ring;
     this.meter = meter;
+    this.tap = tap;
     this.log = log;
     this.format = Describe(capture.WaveFormat);
   }
@@ -88,11 +91,13 @@ internal sealed class AudioCaptureSession: IDisposable {
     MMDevice endpoint,
     MonoRingBuffer ring,
     AudioMeter meter,
+    IMonoTap tap,
     ILogger log) {
     ArgumentNullException.ThrowIfNull(device);
     ArgumentNullException.ThrowIfNull(endpoint);
     ArgumentNullException.ThrowIfNull(ring);
     ArgumentNullException.ThrowIfNull(meter);
+    ArgumentNullException.ThrowIfNull(tap);
     ArgumentNullException.ThrowIfNull(log);
 
     WasapiCapture? capture = null;
@@ -101,7 +106,7 @@ internal sealed class AudioCaptureSession: IDisposable {
         ? new WasapiLoopbackCapture(endpoint)
         : new WasapiCapture(endpoint);
 
-      AudioCaptureSession session = new AudioCaptureSession(device, endpoint, capture, ring, meter, log);
+      AudioCaptureSession session = new AudioCaptureSession(device, endpoint, capture, ring, meter, tap, log);
       if(!session.format.IsSupported) {
         log.LogError(
           "{Device} offers {Bits}-bit {Encoding} audio on {Channels} channel(s), which Flux cannot read. Pick another device.",
@@ -204,6 +209,11 @@ internal sealed class AudioCaptureSession: IDisposable {
 
     this.ring.Write(mono[..block.Frames]);
     this.meter.Add(block);
+
+    // Last, and given exactly what the ring buffer got. A recording is only
+    // evidence about what the detector saw if it is the same samples, so the tap
+    // reads from the downmix rather than from the device buffer beside it.
+    this.tap.Write(mono[..block.Frames], this.SampleRate);
   }
 
   /// <summary>

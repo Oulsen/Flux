@@ -45,14 +45,25 @@ public class SpectrumAnalyzerTests {
   private const double ToneHz = 43 * 48_000.0 / AudioConstants.FftSize;
 
   /// <summary>
-  /// The column bin 43 lands in, and the byte a -65 dBFS tone has to read there.
-  /// The midpoint of the byte range is the only level worth calibrating against:
-  /// anything within 30 dB of full scale is clamped to 255, so a magnitude scaling
-  /// that was out by a factor of two would look perfect.
+  /// The column bin 43 lands in.
   /// </summary>
   private const int ToneColumn = 35;
 
-  private const double MinusSixtyFiveDbfs = 0.000562341325;
+  /// <summary>
+  /// A tone at the middle of the decibel window, which is the only level worth
+  /// calibrating a magnitude scale against: near the top of the window everything
+  /// clamps to 255, and near the bottom everything reads 0, so a scaling that was
+  /// out by a factor of two would look perfect at either end.
+  ///
+  /// Derived from the window rather than written down as a level, because the
+  /// window has moved once already. The claim being tested is a relationship - the
+  /// middle of the window reads the middle of the byte range - and a hardcoded
+  /// amplitude turns it into a coincidence that has to be re-derived by hand every
+  /// time <see cref="AudioConstants.SpectrumMaxDb"/> is revisited.
+  /// </summary>
+  private static readonly double MidWindowTone = Math.Pow(
+    10.0,
+    (AudioConstants.SpectrumMinDb + AudioConstants.SpectrumMaxDb) / 2.0 / 20.0);
 
   private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);
 
@@ -93,7 +104,7 @@ public class SpectrumAnalyzerTests {
     // changes, every threshold in AudioConstants silently moves with it, because
     // they are all numbers on this byte scale. A test is the only thing standing
     // between that and a detector that is merely slightly deaf.
-    ToneSamples source = new ToneSamples { Amplitude = MinusSixtyFiveDbfs, Frequency = ToneHz };
+    ToneSamples source = new ToneSamples { Amplitude = MidWindowTone, Frequency = ToneHz };
     SpectrumAnalyzer analyzer = Build(source);
 
     await analyzer.StartAsync(TestContext.Current.CancellationToken);

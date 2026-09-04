@@ -39,10 +39,23 @@ public static class ServiceCollectionExtensions {
       .ValidateOnStart();
 
     services.AddSingleton<AudioDeviceCatalog>();
+
+    // The recorder is registered here rather than beside the frame recorder in
+    // AddAudioAnalysis, because it records what capture produces and not what the
+    // analyzer makes of it. A host with a level meter and no FFT thread can still
+    // record the signal, which is the configuration the calibration work needs.
+    // Registered twice, resolving to one instance: as the tap the capture callback
+    // hands samples to, and as the hosted service that owns the file. It does
+    // nothing unless Audio:RecordAudioPath is set.
+    services.AddSingleton<AudioRecorder>();
+    services.AddSingleton<IMonoTap>(provider => provider.GetRequiredService<AudioRecorder>());
+    services.AddHostedService(provider => provider.GetRequiredService<AudioRecorder>());
+
     services.AddSingleton<AudioCaptureService>(provider => new AudioCaptureService(
       provider.GetRequiredService<AudioDeviceCatalog>(),
       provider.GetRequiredService<IMonotonicClock>(),
       provider.GetRequiredService<IOptions<AudioOptions>>(),
+      provider.GetRequiredService<IMonoTap>(),
       provider.GetRequiredService<ILogger<AudioCaptureService>>()));
     services.AddSingleton<IAudioDevices>(provider => provider.GetRequiredService<AudioCaptureService>());
     services.AddHostedService(provider => provider.GetRequiredService<AudioCaptureService>());

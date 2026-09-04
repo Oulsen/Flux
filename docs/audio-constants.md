@@ -31,13 +31,19 @@ the Web Audio `AnalyserNode` convention, which is the only published mapping tha
 turns a spectrum into a 0 to 255 array, and which fits the one other clue
 available: the companion level is in decibels rather than linear.
 
+The convention's *shape* survived contact with real music and its *position* did
+not. The window is 70 dB wide as the convention says, and it now sits 24 dB higher
+than the convention puts it, because a DJ master bus is 24 dB louder than the
+desktop audio the convention was written for. That is measured rather than
+reasoned: see below.
+
 | Step | Value | Flux symbol | Why |
 |---|---|---|---|
 | Window | Hann, 2048 samples | `FftSize` | 42.7 ms at 48 kHz. Half of it and the bass bins cannot separate a kick from the bass line under it; double it and the window smears the attack across most of a sixteenth note at 175 BPM |
 | Magnitude | `4 x` the bin magnitude | `SpectrumAnalyzer.MagnitudeScale` | The Hann window sums to half its length and a real signal's energy splits between the positive and negative frequency, so a full-scale tone arrives at a quarter of full scale |
 | Smoothing | 0.8 of the previous frame | `SpectrumSmoothing` | Spectral flux is a difference between consecutive frames, so smoothing decides how spiky that difference is. The thresholds were tuned against a smoothed spectrum; a raw one makes every frame look like an onset |
 | Decibels | `20 x log10(magnitude)` | - | Music covers four orders of magnitude, and a linear scale spends nearly all of a byte on the loudest tenth of it |
-| Byte | `255 x (dB + 100) / 70`, clamped | `SpectrumMinDb`, `SpectrumMaxDb` | -100 dBFS reads 0 and -30 dBFS reads 255. Everything within 30 dB of full scale saturates, which is deliberate: that is where the detail a detector needs is not |
+| Byte | `255 x (dB + 76) / 70`, clamped | `SpectrumMinDb`, `SpectrumMaxDb` | -76 dBFS reads 0 and -6 dBFS reads 255. The width is the convention's; the position is measured against this rig, and the measurement is the section below |
 | Band energy | mean of `(byte / 255)^2` | `SpectrumScale.BandEnergy` | The mean and not the sum, so the same music gives the same answer over a band of 7 bins and one of 23. A sum would make every threshold depend on the sample rate |
 
 **This is the riskiest part of the transcription.** If the reconstruction is out by
@@ -48,10 +54,10 @@ test that a tone of a known level reads the byte value the scale promises
 (`SpectrumAnalyzerTests.ReadsAToneAtTheLevelTheScalePromises`), and
 `Audio:Sensitivity`, which compensates without anyone having to touch the scale.
 
-### Measured against a real master bus, and it is mispositioned
+### Measured against a real master bus, and it was mispositioned
 
-Two recordings off the FLX-10's master return, 48 seconds each, say the window is
-in the wrong place for this signal:
+Two recordings off the FLX-10's master return, 48 seconds each, said the window
+was in the wrong place for this signal:
 
 | Measurement | Value |
 |---|---|
@@ -63,20 +69,85 @@ in the wrong place for this signal:
 | Frames clearing the 0.06 energy floor | 100% |
 | Spectral flux, p99 | 0.046 |
 
-The top of the window, -30 dBFS, sits below this signal's peaks. A master bus at
-around -22 dBFS RMS has bass bins well above that, so the kick band parks near the
-top of the byte range and a kick's onset becomes a small rise on a high plateau
-instead of a spike from near silence. Two consequences follow directly: the 0.06
-energy floor gates nothing at all, and the flux the detector triggers on is
+The top of the window, -30 dBFS, sat below this signal's peaks. A master bus at
+around -22 dBFS RMS has bass bins well above that, so the kick band parked near
+the top of the byte range and a kick's onset became a small rise on a high plateau
+instead of a spike from near silence. Two consequences followed directly: the 0.06
+energy floor gated nothing at all, and the flux the detector triggers on was
 compressed into the top few percent of its range.
 
 The scene will not have seen this. Its host captured system audio at ordinary
 desktop levels, which lands inside the window rather than above it.
 
-**This is not yet fixed, and it should not be fixed by moving a threshold.** The
-thresholds are the part with evidence behind them; the window position is the part
-that was guessed. Whatever replaces it has to be calibrated against recordings
-whose tempo is known independently, and then checked on more than one track.
+**It was not fixed by moving a threshold**, and that was the right call: the
+thresholds are the part with evidence behind them and the window position was the
+part that had been guessed. What follows is the calibration that replaced it.
+
+### Repositioned, on 2026-09-04
+
+The material is a four minute capture off the same master return: three
+beatmatched tracks, fader at playing level, nothing touched during the run, with
+Link independently reporting **122 BPM** throughout. Two recordings were made in
+the same run, a WAVE capture of the audio and a JSONL capture of the analyzed
+frames, and the second exists to check the first: the harness replays the audio
+through the analyzer's own transform, so it has to reproduce the frames the
+analyzer wrote at the time before anything it says is worth reading.
+
+**The measurement had to start from the samples, and that is the whole reason the
+audio is recorded at all.** `SpectrumScale.ToByte` clamps at `SpectrumMaxDb`, so
+on a signal that reaches the top of the window every frame recording and every
+frame on the wire holds the ceiling instead of the level. Choosing the ceiling
+from data already cut off at it is circular. The unclamped kick band, recomputed
+from the audio:
+
+| Kick band, unclamped | loudest bin | band mean |
+|---|---|---|
+| p50 | -27.7 dBFS | -32.1 dBFS |
+| p99 | -18.3 dBFS | -24.1 dBFS |
+| maximum | -17.0 dBFS | -22.8 dBFS |
+
+So the old ceiling sat about 13 dB below the signal's peaks, and it clamped
+**22.6% of every kick-band bin in the run**.
+
+Candidate ceilings, span held at 70 dB, each one replayed through the real
+detector against a true 122 BPM:
+
+| Ceiling | Clamped bins | Kick energy p50 | Median locked BPM | Frames locked |
+|---|---|---|---|---|
+| -30 dBFS (old) | 22.6% | 0.789 | 125.05 | 9% |
+| -20 dBFS | 0.9% | 0.581 | 121.85 | 54% |
+| -16 to -12 dBFS | 0.0% | 0.50 to 0.42 | 122.50 | 65% |
+| **-10 to -2 dBFS** | **0.0%** | **0.39 to 0.26** | **122.0 to 122.7** | **74 to 77%** |
+| 0 dBFS | 0.0% | 0.232 | 114.74 | 38% |
+
+**Both edges of that plateau fail, and they fail differently**, which is why the
+answer is its middle rather than its best single reading. Too low and the loudest
+bins clamp, the flux the detector triggers on is compressed, and the reported
+tempo climbs: at the old ceiling it read 125 against a true 122 while holding a
+lock for 9% of the run. Too high and the bins are faithful but the detector's
+*absolute* energy gates stop being met in quiet passages, because
+`MinEnergyFloor` and the strong-beat multiple are levels rather than ratios. At
+0 dBFS that collapses to 114 BPM.
+
+`SpectrumMaxDb = -6` therefore sits in the centre of the working range: 11 dB of
+headroom above the loudest bin measured, 6 dB of margin above the cliff.
+`SpectrumMinDb = -76` follows from holding the span at 70 dB, which is not
+negotiable - the span is what converts a decibel rise into a byte rise, so
+changing it would retune every threshold in this document at once.
+
+The harness is `WindowCalibrationTests` with `SpectrumProbe`, and it is skipped
+unless a local recording is present. Recordings are made by running with
+`Audio:RecordAudioPath` and `Audio:RecordFramesPath` both set.
+
+**What this does not yet establish.** One session, one rig, one master level: the
+three tracks were beatmatched and played at a single gain, so the survey covers
+several pieces of music but only one level. A second take at a noticeably
+different level would test the headroom claim rather than assume it, and until
+that exists the 11 dB above the loudest measured bin is a margin rather than a
+proven bound. Note also that a frame recording carries no record of the window it
+was made under, so an old JSONL fixture is only interpretable alongside the
+constants of the day: that is why the WAVE capture is the durable fixture and the
+frame recording is a derived one.
 
 ## The bands
 
@@ -193,10 +264,12 @@ sized in frames, and 280 ms is only 17 frames at this rate.
 ## What none of this proves
 
 The constants are evidence about music, so the only test that can confirm them is
-music. `Audio:RecordFramesPath` writes every analyzed frame to a JSON Lines file
-for exactly that reason: a run against a real track through the real controller
-becomes a fixture that replays through the detector at any speed, so a defect
-found on stage becomes a test rather than a memory.
+music. There are two recorders for that reason. `Audio:RecordFramesPath` writes
+every analyzed frame to a JSON Lines file, so a run against a real track through
+the real controller becomes a fixture that replays through the detector at any
+speed and a defect found on stage becomes a test rather than a memory.
+`Audio:RecordAudioPath` writes the captured audio itself, which is what any
+question about the analyzer rather than the detector has to be answered from.
 
 What the synthetic fixtures in `tests/Flux.Audio.Tests` do prove is the
 arithmetic: that an onset every 469 ms comes out as 128 BPM, that a snare louder
@@ -204,7 +277,12 @@ than its kick is rejected, that a drop renumbers the beats and a short gap does
 not, and that the analyzer's frame loop actually fires. Those are worth having and
 they are not the same claim.
 
-One consequence of the recording format is worth knowing before any band edge is
-ever moved: a recording holds band energies, not audio. Change where a band is and
-every existing fixture describes the old bands, so they need re-recording rather
-than reinterpreting.
+One consequence of the frame format is worth knowing, and it is broader than it
+first looks: a frame recording holds band energies, not audio. Change where a band
+is and every existing fixture describes the old bands. The same argument applies
+to everything upstream of a band energy, and that is the sharper half of it: the
+energies are computed from bytes that `SpectrumMaxDb` has already clamped, so a
+frame recording cannot be used to reposition the window that produced it, and it
+carries no record of where that window was. This was found the hard way, by trying
+it. An audio recording has neither problem, which is why the calibration above is
+measured from one and why the WAVE capture is the durable fixture.

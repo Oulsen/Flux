@@ -63,18 +63,25 @@ public class SpectrumScaleTests {
   }
 
   [Theory]
-  // Full scale and anything above the top of the range saturate, which is honest:
-  // the range exists because the top 30 dB of a spectrum is where all the detail
-  // that matters is, not the top 100.
+  // Deliberately concrete rather than derived from the window. Every threshold in
+  // AudioConstants is a number on this scale, so an accidental change to the window
+  // has to fail something loudly, and this is the something.
+  //
+  // Full scale, and the top of the window itself, both saturate.
   [InlineData(1.0, 255)]
-  [InlineData(0.0316227766, 255)]
-  // -70 dBFS, in the middle of the range where nothing is clamped. This is the
-  // region the analyzer's calibration test aims at, because it is the only one that
-  // would move if the magnitude scaling were wrong: everything within 30 dB of full
-  // scale reads 255 either way. Chosen a few dB off the exact midpoint, which lands
-  // on a rounding boundary and would make this test a coin toss on the last bit.
-  [InlineData(0.000316227766, 109)]
-  // The bottom of the range and below it.
+  [InlineData(0.501187234, 255)]
+  // -30 dBFS, which is where a DJ master bus keeps its bass and where the old
+  // window's ceiling used to sit. It reads as a level now rather than as 255, which
+  // is the entire substance of the calibration: a kick's onset is a rise from here
+  // instead of a plateau at the top of the range.
+  [InlineData(0.0316227766, 168)]
+  // -45 dBFS, mid-window, where nothing is clamped and a magnitude scaling that was
+  // out by a factor of two would show. A few dB off the exact midpoint on purpose:
+  // the midpoint lands on a rounding boundary and would make this a coin toss on
+  // the last bit.
+  [InlineData(0.005623413, 113)]
+  // The bottom of the window and below it.
+  [InlineData(0.000158489319, 0)]
   [InlineData(0.00001, 0)]
   [InlineData(0.0, 0)]
   public void ScalesMagnitudesOntoTheByteRange(double magnitude, int expected) {

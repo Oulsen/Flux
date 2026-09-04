@@ -65,4 +65,22 @@ public sealed class AudioOptions {
   /// nobody wants to discover it during a set.
   /// </summary>
   public string? RecordFramesPath { get; set; }
+
+  /// <summary>
+  /// A file to write the captured audio to as a WAVE recording, or null for the
+  /// normal case of not recording anything.
+  ///
+  /// The heavier sibling of <see cref="RecordFramesPath"/>, and the one to reach
+  /// for when the question is about the analyzer rather than about the detector. A
+  /// frame recording holds band energies computed from bytes already clamped at
+  /// <see cref="AudioConstants.SpectrumMaxDb"/>, so on a signal that reaches the
+  /// top of that window it records the ceiling instead of the music, and where the
+  /// window belongs is exactly what cannot then be worked out from it. This records
+  /// the signal, so it answers that and every later question about band edges or
+  /// transform size too.
+  ///
+  /// Off by default because it writes about eleven megabytes a minute for as long
+  /// as the app runs.
+  /// </summary>
+  public string? RecordAudioPath { get; set; }
 }
