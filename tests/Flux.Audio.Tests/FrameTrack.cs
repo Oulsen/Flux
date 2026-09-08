@@ -61,11 +61,21 @@ internal sealed class FrameTrack {
 
   /// <summary>A run of kick drums at a steady tempo.</summary>
   public FrameTrack Beats(double bpm, int count, double peak = 0.5, double mids = 0.05) {
+    return this.Hits(bpm, [.. Enumerable.Range(0, count).Select(beat => (double)beat)], peak, mids);
+  }
+
+  /// <summary>
+  /// Kick onsets at arbitrary beat positions, ascending, for what a steady run
+  /// cannot express: missed kicks, and bass notes landing off the grid. The
+  /// section runs to one beat past the last onset, so consecutive sections join
+  /// without a gap.
+  /// </summary>
+  public FrameTrack Hits(double bpm, IReadOnlyList<double> beats, double peak = 0.5, double mids = 0.05) {
     double framesPerBeat = 60.0 / bpm * AudioConstants.FrameRateHz;
-    int total = (int)Math.Round(count * framesPerBeat);
+    int total = (int)Math.Round((beats[^1] + 1) * framesPerBeat);
 
     HashSet<int> onsets = [];
-    for(int beat = 0; beat < count; beat++) {
+    foreach(double beat in beats) {
       onsets.Add((int)Math.Round(beat * framesPerBeat));
     }
 

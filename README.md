@@ -76,6 +76,12 @@ backend.
 | `Console:BeatLog` | `false` | Print one console line per beat, for debugging the beat grid without a browser |
 | `Console:AudioMeter` | `false` | Print the capture level four times a second, for identifying an audio device without a browser |
 
+An `appsettings.local.json` beside it overrides any of these and is not
+committed, which is what the recording keys above are usually set from: a
+recording path is a fact about one machine, and the diagnostic settings worth
+turning on while investigating something are rarely worth turning on for
+everyone.
+
 ## Tests
 
 The .NET test projects are xunit v3 executables:

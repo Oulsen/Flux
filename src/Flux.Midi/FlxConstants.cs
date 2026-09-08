@@ -30,16 +30,15 @@ internal static class FlxConstants {
   /// <summary>
   /// The note the cue button sends, on its deck's own channel.
   ///
-  /// UNVERIFIED, and it is the one number in this file that has not been pinned
-  /// down. Notes 11 and 12 are the transport pair - cue and play/pause - and which
-  /// is which was not established during the capture, because the press order
-  /// varied and both produce identical MIDI. Settling it needs a controller and one
-  /// glance at rekordbox's play state: press this button and see whether the deck
-  /// starts playing. If it does, this constant becomes 12 and nothing else in the
-  /// project changes, which is the reason the other note is deliberately not mapped
-  /// to anything.
+  /// Measured, settling the one number this file had left open: notes 11 and 12
+  /// are the transport pair, and pressing the note 11 button starts the deck
+  /// playing, so 11 is play/pause and cue is 12. The name is not the whole
+  /// argument. Play and pause share one button, so note 11 fires on pause as
+  /// well, and a note-on is a press at any velocity - half of that button's
+  /// presses would have anchored the bar at the instant the track stopped, which
+  /// is not a downbeat. Note 11 stays deliberately mapped to nothing.
   /// </summary>
-  public const int CueNote = 11;
+  public const int CueNote = 12;
 
   /// <summary>
   /// The note that announces which layer a deck section is showing, as velocity 127
@@ -68,6 +67,27 @@ internal static class FlxConstants {
 
   /// <summary>A 14-bit control's maximum, for the fader's full-open position.</summary>
   public const int FaderMax = (1 << 14) - 1;
+
+  /// <summary>
+  /// The MIDI channel the crossfader arrives on, which is not a deck channel.
+  ///
+  /// Measured: CC 31 and CC 63 on channel 7, the device's universal
+  /// CC <c>n</c> / CC <c>n + 32</c> pair again, with 1227 messages on each half.
+  /// Recorded ahead of use, because wiring it in is not the one-constant change it
+  /// looks like: <see cref="FlxMessageParser"/> drops everything outside the deck
+  /// channels before a control change is ever read, so crossfader awareness needs
+  /// a channel 7 escape hatch for this pair and crossfader state alongside the
+  /// channel faders. Position alone still cannot decide audibility - the
+  /// per-channel assign switches (A, THRU, B) are unmeasured, and a deck assigned
+  /// THRU ignores the crossfader entirely.
+  /// </summary>
+  public const int CrossfaderChannel = 7;
+
+  /// <summary>The high seven bits of the crossfader, on <see cref="CrossfaderChannel"/>.</summary>
+  public const int CrossfaderMsbController = 31;
+
+  /// <summary>The low seven bits of the crossfader.</summary>
+  public const int CrossfaderLsbController = CrossfaderMsbController + 32;
 
   /// <summary>
   /// How far a channel fader has to be open before the deck behind it counts as

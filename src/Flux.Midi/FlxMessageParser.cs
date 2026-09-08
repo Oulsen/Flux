@@ -75,8 +75,8 @@ internal sealed class FlxMessageParser {
       return null;
     }
 
-    // The controller puts plenty on channels 5 and up - pads on 10, the jog wheel
-    // and loop buttons on 7 - and none of it identifies a deck.
+    // The controller puts plenty on channels 5 and up - pads on 10, the jog wheel,
+    // loop buttons and the crossfader on 7 - and none of it identifies a deck.
     if(deck < FlxConstants.FirstDeckChannel || deck > FlxConstants.LastDeckChannel) {
       return null;
     }

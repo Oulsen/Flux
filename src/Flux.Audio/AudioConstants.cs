@@ -266,6 +266,21 @@ internal static class AudioConstants {
   public const double BpmIntervalMaxMillis = 1000;
 
   /// <summary>
+  /// How close an interval must sit to an exact multiple of the current beat
+  /// interval to be read as missed kicks and divided down, as a fraction of the
+  /// beat interval.
+  ///
+  /// Not the scene's; the derivation is in <c>docs/audio-constants.md</c>. The
+  /// floor is frame quantization: a doubled interval lands within two frames of
+  /// exact, which is under 6% of a beat across the whole tempo band. The ceiling
+  /// is the off-grid contamination the unlock guards against: an interval of one
+  /// and a half beats folded by two misses the beat by 25%, and folding it would
+  /// launder inconsistent evidence into consistent-looking evidence. A tenth sits
+  /// between the two with at least a factor of two to spare each way.
+  /// </summary>
+  public const double FoldTolerance = 0.10;
+
+  /// <summary>
   /// How much of the previous estimate survives a new one while the tempo is
   /// unlocked. Heavily weighted towards history: a tempo that moves as fast as one
   /// bad measurement is a tempo nothing can be anchored to.

@@ -182,6 +182,92 @@ public class AudioBeatDetectorTests {
   }
 
   [Fact]
+  public void HoldsTheLockThroughAContaminatedStretch() {
+    // A passage where offbeat bass notes slip past the kick gate feeds the
+    // estimator a mixture of true intervals and half-shifted ones: each accepted
+    // offbeat lands inside the refractory window of the kick behind it, so the
+    // mixture runs at one and a half beats as often as at one. A single median
+    // over it disagrees with the lock by more than the unlock threshold, and a
+    // detector that unlocked on that one outlier would adopt it. The mixture is
+    // inconsistent in a way a real track change never is, which is the test the
+    // unlock applies.
+    FrameTrack track = new FrameTrack().Warmup().Beats(125, 16);
+    for(int repeat = 0; repeat < 5; repeat++) {
+      track.Hits(125, [0, 1.5, 3, 4.5, 5.23, 6.23]);
+    }
+
+    List<BeatDecision> decisions = Replay(track);
+
+    Assert.True(decisions[^1].Locked, "The contaminated stretch stole the lock.");
+    Assert.InRange(decisions[^1].Bpm, 120, 131);
+    Assert.All(
+      decisions.SkipWhile(decision => !decision.Locked),
+      decision => Assert.True(decision.Locked, $"The lock was given up at {decision.Bpm} BPM."));
+  }
+
+  [Fact]
+  public void LocksDespiteMissedKicks() {
+    // Above 120 BPM a single missed kick produces an interval that still fits the
+    // 300 to 1000 ms band, so a track with sparse kicks feeds the estimate a
+    // permanent mixture of true and doubled intervals whose spread never settles
+    // under the lock bar - the tempo then hovers at the mixture's compromise
+    // forever. Reading an exact multiple of the current beat as missed kicks and
+    // dividing it down is what makes this diet lockable; the tolerance is
+    // derived in docs/audio-constants.md.
+    List<double> beats = [];
+    for(int bar = 0; bar < 10; bar++) {
+      beats.AddRange([bar * 4.0, (bar * 4.0) + 1, (bar * 4.0) + 2]);
+    }
+
+    List<BeatDecision> decisions = Replay(new FrameTrack().Warmup().Hits(125, beats));
+
+    Assert.True(decisions[^1].Locked, "The tempo never locked through missed kicks.");
+    Assert.InRange(decisions[^1].Bpm, 120, 131);
+  }
+
+  [Fact]
+  public void RefinesALockMintedFromAJitteredIntro() {
+    // The lock is minted from a mean over at most nineteen intervals, and onset
+    // times carry frame quantization and detection jitter, so that snapshot can
+    // sit most of a BPM off the true tempo in either direction - and the scene
+    // then displayed it unchanged for the rest of the track. Here one early
+    // onset in the intro biases the minted mean high, and the clean beats that
+    // follow have to pull the locked tempo back to the truth.
+    List<double> beats = [];
+    for(int beat = 0; beat <= 10; beat++) {
+      beats.Add(beat);
+    }
+
+    beats.Add(10.94);
+    for(int beat = 12; beat < 48; beat++) {
+      beats.Add(beat);
+    }
+
+    List<BeatDecision> decisions = Replay(new FrameTrack().Warmup().Hits(125, beats));
+
+    Assert.True(decisions[^1].Locked, "The tempo never locked.");
+    Assert.InRange(decisions[^1].Bpm, 124.5, 125.4);
+  }
+
+  [Fact]
+  public void UnlocksForAGenuineTempoChange() {
+    // The counterpart of holding the lock through contamination: a new track at a
+    // genuinely different tempo produces intervals that agree with each other, and
+    // that consistency is what distinguishes it from noise. A detector that could
+    // never unlock would play the previous track's tempo forever.
+    List<BeatDecision> decisions = Replay(new FrameTrack().Warmup().Beats(128, 16).Beats(90, 45));
+
+    BeatDecision last = decisions[^1];
+    Assert.True(last.Locked, "The tempo never re-locked on the new track.");
+    Assert.InRange(last.Bpm, 87, 93);
+
+    // Through an unlock rather than a drift: the old lock has to be given up
+    // before the new tempo can be adopted.
+    int firstLock = decisions.FindIndex(decision => decision.Locked);
+    Assert.Contains(decisions.Skip(firstLock), decision => !decision.Locked);
+  }
+
+  [Fact]
   public void ForgetsTheTempoOnReset() {
     // What a device change does. Keeping a tempo across a gap of unknown length
     // produces a timeline anchored somewhere in the silence, which is a beat display

@@ -135,6 +135,14 @@ headroom above the loudest bin measured, 6 dB of margin above the cliff.
 negotiable - the span is what converts a decibel rise into a byte rise, so
 changing it would retune every threshold in this document at once.
 
+**The two tempo columns of that table are the estimator of the day, and the
+rules under "Changed from the scene" have since improved them** - the plateau
+now reads 122.0 to 122.5 and both failing edges degrade more gently, so a
+re-run will not reproduce those two columns exactly. The clamping percentages
+and energy levels will, and they are what chose the ceiling: they are
+properties of the signal rather than of the estimator, which is why -6 dBFS
+does not move.
+
 The harness is `WindowCalibrationTests` with `SpectrumProbe`, and it is skipped
 unless a local recording is present. Recordings are made by running with
 `Audio:RecordAudioPath` and `Audio:RecordFramesPath` both set.
@@ -260,6 +268,74 @@ between the two programs rather than a disagreement about music.
 `FrameRateHz` is 60, which is the scene's rate because it ran on
 `requestAnimationFrame`. It is not free to change: the history windows above are
 sized in frames, and 280 ms is only 17 frames at this rate.
+
+### Changed from the scene
+
+Three rules deviate from the scene rather than transcribing it. Each replaces a
+behaviour that is defensible on a desktop visualizer and wrong on a DJ master
+bus, and none of them changes a transcribed number.
+
+**Missed kicks fold into the estimate rather than fighting it.** The interval
+band's own rationale ("what stops one missed kick from halving the answer")
+only holds below 120 BPM: above it, a doubled interval still fits inside
+1000 ms. A track with sparse kicks at 125 BPM therefore feeds the estimator a
+permanent mixture of 480 ms true intervals and 958 ms doubles, its spread never
+drops under the lock bar, and the reported tempo sits at the mixture's
+compromise indefinitely - around 116 BPM for a 125 BPM track. The rule added:
+once a tempo hypothesis exists, an interval sitting within `FoldTolerance` of an
+exact integer multiple of the current beat interval is read as that many beats
+and divided down before it enters the estimate. A missed kick is not a tempo
+claim.
+
+Both bounds on the tolerance are derived rather than chosen. The floor is frame
+quantization: onsets land on the 16.7 ms frame grid, so a doubled interval is
+within two frames of exact, under 6% of a beat across the whole 60 to 200 BPM
+band. The ceiling is the off-grid contamination the unlock rule below guards
+against: an interval of one and a half beats folded by two misses the beat by
+25%, and folding it would launder inconsistent evidence into consistent-looking
+evidence. A tenth of a beat sits between the two with at least a factor of two
+to spare each way, which is why the fold cannot defeat the unlock. Pinned by
+`LocksDespiteMissedKicks`.
+
+**A locked tempo keeps refining instead of staying as minted.** The scene froze
+`estimatedBPM` at the moment of locking, which makes the reported tempo a mean
+over at most nineteen intervals from the track's intro - and since onset times
+carry both frame quantization and detection jitter, that snapshot has a
+sampling error worth most of a BPM in either direction, which then stands for
+the rest of the track. The rule added: while locked, the longest
+grid-consistent run of intervals ending at the newest onset (every interval
+within `FoldTolerance` of a whole number of beats, at most four so the rounding
+stays unambiguous) re-derives the tempo from its endpoints - total time over
+total beats - and feeds it through the existing
+`BpmSmoothingHeld`/`BpmSmoothingFresh` pair.
+
+Three details carry the design. The endpoint form divides the onset jitter by
+the whole span instead of by one interval, which is the entire point: the error
+falls as the run grows. It is a suffix rather than the whole window because a
+mix contains an off-grid onset more often than once per window, so a gate
+demanding a fully clean window would never open. And the run must be worth at
+least `LockAfterBeats` beats, holding a refinement to the same evidence bar as
+the lock it adjusts, which is what stops contamination steering a lock the
+unlock rule would have protected. A side effect worth naming: a locked tempo
+now follows a small pitch ride, which a frozen one never could. Pinned by
+`RefinesALockMintedFromAJitteredIntro`.
+
+**The unlock demands a lockable challenger.** The scene gives up a locked tempo
+when a single median disagrees by more than 25 BPM after the 15 second
+protection, and adopts that median wholesale. That single median is not enough
+evidence: a passage where offbeat bass notes slip past the kick gate feeds the
+estimator a mixture of true and half-shifted intervals - each accepted offbeat
+lands inside the 280 ms refractory window of the kick behind it, so the mixture
+runs at one and a half beats as often as at one - and one median over that
+mixture clears the threshold. Surrendering to it turns one bad window into
+minutes of wrong tempo, since the adopted value is then defended by the same
+protection the correct one had. Flux therefore adds a third unlock condition:
+the disagreeing intervals must themselves be consistent enough to lock
+(`LockMaxRelativeStdDev`, the same bar locking applies). A real track change
+produces intervals that agree with each other; a contaminated stretch does not.
+The rule reuses the lock's own consistency bar, so no constant is added, and
+both halves are pinned in `AudioBeatDetectorTests`: contamination holds the
+lock, a genuine tempo change still releases it.
 
 ## What none of this proves
 

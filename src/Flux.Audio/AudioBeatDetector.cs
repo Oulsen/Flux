@@ -344,12 +344,30 @@ internal sealed class AudioBeatDetector {
       return;
     }
 
+    double beatMillis = this.smoothedBpm > 0 ? 60_000.0 / this.smoothedBpm : 0;
+
     List<double> intervals = new List<double>(this.beatTimes.Count);
     for(int index = 1; index < this.beatTimes.Count; index++) {
       double interval = this.beatTimes[index] - this.beatTimes[index - 1];
-      if(interval > AudioConstants.BpmIntervalMinMillis && interval < AudioConstants.BpmIntervalMaxMillis) {
-        intervals.Add(interval);
+      if(interval <= AudioConstants.BpmIntervalMinMillis || interval >= AudioConstants.BpmIntervalMaxMillis) {
+        continue;
       }
+
+      // A missed kick is not a tempo claim. Above 120 BPM a single missed kick
+      // produces an interval that still fits the band, so a track with sparse
+      // kicks feeds the estimate a mixture of true and doubled intervals that
+      // never settles. An interval sitting on an exact multiple of the current
+      // beat is therefore read as that many beats and divided down. The
+      // tolerance is tight enough that the off-grid contamination the unlock
+      // guards against can never fold - see docs/audio-constants.md.
+      if(beatMillis > 0) {
+        double beats = Math.Round(interval / beatMillis);
+        if(beats >= 2 && Math.Abs((interval / beats) - beatMillis) <= beatMillis * AudioConstants.FoldTolerance) {
+          interval /= beats;
+        }
+      }
+
+      intervals.Add(interval);
     }
 
     if(intervals.Count < AudioConstants.MinIntervalsForBpm) {
@@ -381,6 +399,7 @@ internal sealed class AudioBeatDetector {
     this.relativeSpread = mean > 0 ? Math.Sqrt(variance) / mean : 1.0;
 
     if(this.locked) {
+      this.Refine();
       this.MaybeUnlock(rawBpm, nowMillis);
 
       return;
@@ -405,18 +424,85 @@ internal sealed class AudioBeatDetector {
   }
 
   /// <summary>
+  /// Sharpens a locked tempo from the onsets since, instead of leaving it as
+  /// minted.
+  ///
+  /// The scene froze the estimate at the moment of locking, which makes the
+  /// reported tempo a mean over at most nineteen intervals from the track's
+  /// intro - and onset times quantize to the frame grid, so that snapshot
+  /// carries a sampling error worth most of a BPM in either direction, then
+  /// stands for the rest of the track. Re-deriving the tempo from the endpoints
+  /// of a run divides the same jitter by the whole span rather than by one
+  /// interval, and updating through the existing smoothing keeps the readout
+  /// calm.
+  ///
+  /// Only grid-consistent evidence refines: the longest run of intervals ending
+  /// at the newest onset in which every interval sits within the fold tolerance
+  /// of a whole number of beats, few enough beats that the rounding is
+  /// unambiguous. A suffix rather than the whole window, because a mix has an
+  /// off-grid onset more often than once per window and a gate demanding twenty
+  /// clean onsets in a row would never open. The run has to be worth at least as
+  /// many beats as locking demands - a refinement is held to the same evidence
+  /// bar as the lock it adjusts - which is also what keeps contamination from
+  /// steering the lock the way the unlock rule forbids.
+  /// </summary>
+  private void Refine() {
+    double beatMillis = 60_000.0 / this.smoothedBpm;
+    double beats = 0;
+    int first = this.beatTimes.Count - 1;
+
+    for(int index = this.beatTimes.Count - 1; index >= 1; index--) {
+      double interval = this.beatTimes[index] - this.beatTimes[index - 1];
+      double count = Math.Round(interval / beatMillis);
+
+      // The cap keeps the rounding honest: the tolerance is per beat, so past
+      // four beats the acceptance windows of neighbouring counts would overlap
+      // and a long gap could be counted wrong instead of being rejected.
+      if(count < 1
+        || count * AudioConstants.FoldTolerance >= 0.5
+        || Math.Abs((interval / count) - beatMillis) > beatMillis * AudioConstants.FoldTolerance) {
+        break;
+      }
+
+      beats += count;
+      first = index - 1;
+    }
+
+    if(beats < AudioConstants.LockAfterBeats) {
+      return;
+    }
+
+    double estimate = 60_000.0 * beats / (this.beatTimes[^1] - this.beatTimes[first]);
+
+    this.smoothedBpm = (this.smoothedBpm * AudioConstants.BpmSmoothingHeld)
+      + (estimate * AudioConstants.BpmSmoothingFresh);
+    this.bpm = this.smoothedBpm;
+  }
+
+  /// <summary>
   /// Gives up a locked tempo, but only under protest.
   ///
-  /// Twelve beats to lock and a large disagreement sustained for fifteen seconds to
-  /// unlock, and the asymmetry is the point. A mix runs two tracks at once for far
-  /// longer than a bar, and a detector that unlocked on the incoming track's first
-  /// kick would throw away the tempo the floor is still dancing to.
+  /// Twelve beats to lock; to unlock, a large disagreement, fifteen seconds of
+  /// protection, and intervals consistent enough that the challenger could lock in
+  /// its own right. The asymmetry is the point: a mix runs two tracks at once for
+  /// far longer than a bar, and a detector that unlocked on the incoming track's
+  /// first kick would throw away the tempo the floor is still dancing to.
+  ///
+  /// The consistency test is Flux's, not the scene's. A passage where offbeat
+  /// bass notes slip past the kick gate feeds the estimator a mixture of true
+  /// and half-shifted intervals, and a single median over that mixture can
+  /// disagree with the lock by more than the unlock threshold. The scene
+  /// surrendered the lock to that one outlier and adopted it wholesale, which
+  /// turns one bad window into a minute of wrong tempo. A real track change
+  /// produces intervals that agree with each other; a contaminated stretch does
+  /// not, and holding the lock through it is what the lock is for.
   /// </summary>
   private void MaybeUnlock(double rawBpm, double nowMillis) {
     bool disagrees = Math.Abs(rawBpm - this.smoothedBpm) > AudioConstants.UnlockBpmDifference;
     bool oldEnough = nowMillis - this.lockedAtMillis > AudioConstants.UnlockAfterLockMillis;
+    bool consistent = this.relativeSpread < AudioConstants.LockMaxRelativeStdDev;
 
-    if(!disagrees || !oldEnough) {
+    if(!disagrees || !oldEnough || !consistent) {
       return;
     }
 

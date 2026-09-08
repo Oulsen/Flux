@@ -22,6 +22,8 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationO
   ContentRootPath = AppContext.BaseDirectory,
 });
 
+builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
+
 Console.WriteLine($"Flux {FluxVersion.Current} - music in, light out.");
 Console.WriteLine("Waiting for Ableton Link. Enable LINK in rekordbox and play a track. Ctrl+C to stop.");
 Console.WriteLine();
