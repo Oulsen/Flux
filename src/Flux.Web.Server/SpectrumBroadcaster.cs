@@ -113,7 +113,7 @@ public sealed class SpectrumBroadcaster: IHostedService, IDisposable {
   }
 
   /// <summary>
-  /// The protocol's name for what the detector made of a frame.
+  /// The protocol's name for the detector's verdict.
   ///
   /// A switch rather than <c>ToString().ToLowerInvariant()</c>, so renaming the
   /// enum is a compile error here instead of a silently changed wire format that

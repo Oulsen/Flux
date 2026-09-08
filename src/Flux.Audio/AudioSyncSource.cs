@@ -82,6 +82,19 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
   private int previousGeneration;
 
   private SpectrumSnapshot? latest;
+
+  /// <summary>
+  /// The strongest verdict since the last <see cref="Spectrum"/> read.
+  ///
+  /// Latched rather than taken from the newest frame, because the two sides run at
+  /// different rates on purpose: the analyzer produces sixty frames a second and
+  /// the broadcaster samples thirty of them, so a verdict that lives on exactly one
+  /// frame is sampled away about half the time. A visualizer missing half the
+  /// accepted beats looks like a detector missing them, which is precisely the
+  /// misreading the instrument exists to prevent.
+  /// </summary>
+  private BeatStrength pendingStrength;
+
   private double lastFrameMicros;
   private double? lastBeatMicros;
   private double bpm;
@@ -154,9 +167,18 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
   /// <inheritdoc/>
   public SpectrumSnapshot? Spectrum() {
     lock(this.statusGate) {
-      return this.clock.NowMicros - this.lastFrameMicros > SpectrumStaleMillis * 1000.0
-        ? null
-        : this.latest;
+      if(this.latest is not SpectrumSnapshot snapshot
+        || this.clock.NowMicros - this.lastFrameMicros > SpectrumStaleMillis * 1000.0) {
+        return null;
+      }
+
+      // The verdict is consumed by the read: see pendingStrength. Clearing it here
+      // is what keeps a beat from being drawn twice by a reader faster than the
+      // frames.
+      SpectrumSnapshot drawn = snapshot with { Strength = this.pendingStrength };
+      this.pendingStrength = BeatStrength.None;
+
+      return drawn;
     }
   }
 
@@ -232,6 +254,10 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
         decision.Flux,
         decision.Strength);
 
+      if(decision.Strength > this.pendingStrength) {
+        this.pendingStrength = decision.Strength;
+      }
+
       this.lastFrameMicros = frame.TimestampMicros;
       this.lastBeatMicros = decision.LastBeatMicros;
       this.bpm = decision.Bpm;
@@ -276,6 +302,7 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
 
     lock(this.statusGate) {
       this.latest = null;
+      this.pendingStrength = BeatStrength.None;
       this.lastFrameMicros = 0;
       this.lastBeatMicros = null;
       this.bpm = 0;

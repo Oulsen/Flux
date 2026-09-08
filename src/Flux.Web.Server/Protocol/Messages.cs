@@ -35,7 +35,7 @@ public sealed record HelloData(int Protocol, string App, int Quantum, int StateH
 /// <param name="Beat">Fractional beats since the session anchor. May be negative, and is renumbered wholesale by a tempo change.</param>
 /// <param name="BeatIndex">The integer beat, floored from <paramref name="Beat"/> by the one shared definition.</param>
 /// <param name="PositionInBar">1-based position in the bar.</param>
-/// <param name="BarAligned">Whether <paramref name="PositionInBar"/> means anything musically. False for all of Phase 1.</param>
+/// <param name="BarAligned">Whether <paramref name="PositionInBar"/> means anything musically. False until a cue press, tap or drop anchors the bar.</param>
 public sealed record GridData(double Bpm, double Beat, long BeatIndex, int PositionInBar, bool BarAligned);
 
 /// <summary>

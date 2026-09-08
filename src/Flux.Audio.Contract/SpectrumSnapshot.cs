@@ -43,7 +43,11 @@ public enum BeatStrength {
 /// threshold is compared against, and therefore the only one that explains why a
 /// beat did or did not fire.
 /// </param>
-/// <param name="Strength">What the detector made of this frame.</param>
+/// <param name="Strength">
+/// What the detector made of this frame - except through
+/// <see cref="IAudioSpectrum.Spectrum"/>, where it is the strongest verdict since
+/// the previous read, for the reason argued there.
+/// </param>
 public sealed record SpectrumSnapshot(
   IReadOnlyList<int> Bins,
   double Kick,
@@ -69,6 +73,12 @@ public interface IAudioSpectrum {
   /// contract in this file worth being strict about: a spectrum frozen at whatever
   /// was playing when the device closed is the most misleading picture the
   /// instrument could draw, because it looks exactly like music.
+  ///
+  /// The <see cref="SpectrumSnapshot.Strength"/> the frame carries is the strongest
+  /// verdict since the previous read, and reading consumes it. Sampling makes the
+  /// bands cheap to downsample, but a verdict lives on exactly one analyzer frame,
+  /// and a sampled verdict is missed about half the time - so the one field whose
+  /// absence would be read as the detector failing is latched instead.
   /// </summary>
   SpectrumSnapshot? Spectrum();
 }

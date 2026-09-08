@@ -116,6 +116,29 @@ public sealed class AudioSyncSourceTests {
   }
 
   /// <summary>
+  /// A verdict lives on exactly one analyzer frame, and the visualizer samples at
+  /// half the frame rate, so a verdict published only on its own frame is sampled
+  /// away about half the time - a beat the detector accepted then never reaches the
+  /// screen, and the instrument reports a miss that did not happen. The strongest
+  /// verdict is therefore latched until a read consumes it, and drawn exactly once.
+  /// </summary>
+  [Fact]
+  public void LatchesTheBeatVerdictUntilARedraw() {
+    Rig rig = new Rig();
+
+    rig.Play(new FrameTrack().Warmup().Beats(Bpm, 16));
+
+    // The track ends between beats, so the newest frame's own verdict is None. The
+    // latch is what carries the accepted beat across to the read.
+    SpectrumSnapshot? drawn = rig.Source.Spectrum();
+    Assert.NotNull(drawn);
+    Assert.NotEqual(BeatStrength.None, drawn.Strength);
+
+    // Consumed: the same beat must not flash twice.
+    Assert.Equal(BeatStrength.None, rig.Source.Spectrum()?.Strength);
+  }
+
+  /// <summary>
   /// A gap in the frames means the device closed or changed, not that a frame ran
   /// late, and everything derived from the audio before it is dropped: spectral flux
   /// across such a gap measures the join between two unrelated pieces of audio, and

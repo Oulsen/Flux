@@ -300,7 +300,7 @@ What the audio analyzer is hearing, sent only to clients that asked for it with
 | `mids` | number | Mid band energy, 0 to 1 |
 | `highs` | number | High band energy, 0 to 1 |
 | `flux` | number | Spectral flux against the previous frame: the number the beat detector actually triggers on |
-| `beat` | string | `"none"`, `"beat"` or `"strong"` - what the detector made of this frame |
+| `beat` | string | `"none"`, `"beat"` or `"strong"` - the strongest verdict the detector reached since the previous frame sent to this client |
 
 The example shows eight bins for readability. There are always exactly 64, and a
 client should still check rather than index blindly.
@@ -317,6 +317,12 @@ it, so a subscriber that cannot keep up sees fewer frames and never an older
 one. The analyzer runs faster than this feed on purpose: downsampling a frame
 that already exists is free, and slowing the analyzer to match a browser would
 put a phone's refresh rate in charge of beat detection.
+
+The one exception to sampling is `beat`: a verdict lives on exactly one analyzer
+frame, so sampling it would drop about half the accepted beats from the picture.
+It is latched instead - the value carried is the strongest verdict since the
+previous frame this client was sent, so every accepted beat is drawn exactly
+once.
 
 Bins arrive already scaled to 0..255 rather than as magnitudes, so the page
 never has to know the FFT size, the sample rate, or where the band edges are.
@@ -461,9 +467,9 @@ flash, and shipping it a spectrum frame thirty times a second would spend its
 battery and its Wi-Fi on a canvas nobody is looking at. Everything expensive on
 this socket is opt-in.
 
-A `devices` snapshot is sent immediately on a subscription that turns
-`deviceLevels` on, so a picker fills in at once rather than after up to a tenth
-of a second of blank.
+A `devices` snapshot is sent immediately on any subscribe that asks for
+`deviceLevels`, whether or not it was already on, so a picker fills in at once
+rather than after up to a tenth of a second of blank.
 
 ### `selectSource`
 
