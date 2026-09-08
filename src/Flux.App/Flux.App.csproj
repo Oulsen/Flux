@@ -1,13 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- net10.0-windows from the start, even as a plain console host: this process
+  <!-- Windows-specific from the start, even as a plain console host: this process
        raises the multimedia timer resolution and opts out of background timer
        throttling, and Phase 5 grows it into the WinForms + WebView2 shell. The
        Windows-specific target is what makes the platform analyzers useful rather
-       than noisy. -->
+       than noisy.
+
+       The Windows version is not a choice made here. Flux.Midi needs it for the
+       WinRT MIDI projection, and a project cannot reference one that targets a
+       higher Windows version than its own - so referencing the observer sets the
+       floor for the executable too. Flux.Beat and Flux.Web.Server stay on plain
+       net10.0 and Flux.Audio on net10.0-windows: a higher target can reference a
+       lower one, so the cascade stops here rather than spreading through the
+       solution. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <RootNamespace>Flux.App</RootNamespace>
     <AssemblyName>Flux</AssemblyName>
   </PropertyGroup>
@@ -18,11 +27,14 @@
 
   <ItemGroup>
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="appsettings.local.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Flux.Audio\Flux.Audio.csproj" />
     <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
-    <ProjectReference Include="..\Flux.Web\Flux.Web.csproj" />
+    <ProjectReference Include="..\Flux.Midi\Flux.Midi.csproj" />
+    <ProjectReference Include="..\Flux.Web.Server\Flux.Web.Server.csproj" />
   </ItemGroup>
 
 </Project>

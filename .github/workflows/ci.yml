@@ -17,18 +17,20 @@ concurrency:
 
 jobs:
   build:
-    # Windows and not Linux because Flux.App targets net10.0-windows and grows a
-    # WinForms shell later. Building that TFM on Linux needs EnableWindowsTargeting
-    # and would then run the tests on the one platform the app never ships to.
+    # Windows and not Linux because Flux.App targets a Windows framework, reaches
+    # WASAPI and WinRT MIDI through it, and grows a WinForms shell later. Building
+    # that TFM on Linux needs EnableWindowsTargeting and would then run the tests
+    # on the one platform the app never ships to.
     runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
 
       # The frontend runs first because the build is two steps in a fixed order:
-      # Vite writes into src/Flux.Web/wwwroot, then the .NET build copies it along.
-      # A pipeline without this half builds green and produces a backend with no
-      # web app in it, which is worse than having no pipeline at all.
+      # Vite writes into src/Flux.Web.Server/wwwroot, then the .NET build copies
+      # it along. A pipeline without this half builds green and produces a
+      # backend with no web app in it, which is worse than having no pipeline at
+      # all.
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -57,7 +59,7 @@ jobs:
       # point rather than the folder also catches a build that wrote only assets.
       - name: Verify the web app reached the backend
         shell: bash
-        run: test -f src/Flux.Web/wwwroot/index.html
+        run: test -f src/Flux.Web.Server/wwwroot/index.html
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -78,5 +80,17 @@ jobs:
       - name: Test Flux.Beat
         run: dotnet run --no-build --project tests/Flux.Beat.Tests
 
-      - name: Test Flux.Web
-        run: dotnet run --no-build --project tests/Flux.Web.Tests
+      # Nothing here opens a device: the runner has no sound card, and the parts
+      # worth testing are the format conversion, the ring buffer, the meter and
+      # the device choice, all of which are pure by design.
+      - name: Test Flux.Audio
+        run: dotnet run --no-build --project tests/Flux.Audio.Tests
+
+      # Nothing here opens a MIDI port either: the parser and the per-deck
+      # audibility model are pure, and the port plumbing around them is verified
+      # with a controller on the desk because there is no other way.
+      - name: Test Flux.Midi
+        run: dotnet run --no-build --project tests/Flux.Midi.Tests
+
+      - name: Test Flux.Web.Server
+        run: dotnet run --no-build --project tests/Flux.Web.Server.Tests

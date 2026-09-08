@@ -37,22 +37,6 @@ public sealed class LinkOptions {
   public string BindAddress { get; set; } = "0.0.0.0";
 
   /// <summary>
-  /// How long without an ALIVE packet before the grid is reported stale.
-  ///
-  /// rekordbox republishes roughly every 250 ms, so this is ten missed packets -
-  /// long enough not to flicker on a scheduling hiccup, short enough that
-  /// switching LINK off shows up within a breath.
-  /// </summary>
-  public TimeSpan StaleAfter { get; set; } = TimeSpan.FromSeconds(2.5);
-
-  /// <summary>
-  /// Beats per bar. Only ever used to turn a beat number into a 1-2-3-4
-  /// readout; Link transmits no meter, so this is Flux's own interpretation and
-  /// nothing on the wire contradicts or confirms it.
-  /// </summary>
-  public int Quantum { get; set; } = 4;
-
-  /// <summary>
   /// Microseconds added to Link's time origin to reach the local clock.
   ///
   /// Zero on this machine, because rekordbox and Flux share a clock. Non-zero

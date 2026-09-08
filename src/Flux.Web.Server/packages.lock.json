@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "flux.audio.contract": {
+        "type": "Project"
+      },
+      "flux.beat": {
+        "type": "Project"
+      }
+    }
+  }
+}

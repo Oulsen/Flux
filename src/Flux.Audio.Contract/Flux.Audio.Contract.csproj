@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- net10.0, and that is the entire reason this project exists. Flux.Audio is
+       net10.0-windows because WASAPI is a Windows API, and a net10.0 project
+       cannot reference a net10.0-windows one - so the web layer, which is
+       deliberately platform-neutral, had no way to see an audio device or a
+       spectrum at all. This holds the shapes both halves agree on: the types are
+       already NAudio-free, so nothing is redesigned here, only moved somewhere
+       both sides can reach.
+
+       It has no dependencies at all, on purpose. Anything that arrives here
+       becomes a dependency of every consumer, and the point of a contract is
+       that agreeing to it costs nothing. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <!-- Namespace Flux.Audio rather than Flux.Audio.Contract, matching the
+       convention every Microsoft.Extensions.*.Abstractions package follows: the
+       split is a build-time concern, and a caller should not have to know which
+       assembly a type happens to live in to write a using directive. -->
+  <PropertyGroup>
+    <RootNamespace>Flux.Audio</RootNamespace>
+  </PropertyGroup>
+
+</Project>

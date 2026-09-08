@@ -5,15 +5,21 @@
   interface Props {
     connection: ConnectionState;
     sourceState: SourceState;
+    /** The active source's name, because the badge reports on whichever one it is. */
+    source: string;
   }
 
-  const { connection, sourceState }: Props = $props();
+  const { connection, sourceState, source }: Props = $props();
 
   /*
    * The connection to Flux outranks the state of the sync source, because a
    * dropped socket makes every other reading on the page a memory. Only once
-   * the page is genuinely connected does what Link is doing become the
+   * the page is genuinely connected does what the source is doing become the
    * headline.
+   *
+   * The source is named from the wire rather than written into the text. Saying
+   * "waiting for link" while audio is selected is not a wording problem, it is
+   * the badge reporting on the wrong machine.
    */
   const label = $derived.by(() => {
     if (connection === 'connecting') {
@@ -28,9 +34,9 @@
       case 'live':
         return { text: 'live', tone: 'live' };
       case 'quiet':
-        return { text: 'link quiet', tone: 'quiet' };
+        return { text: `${source} quiet`, tone: 'quiet' };
       default:
-        return { text: 'waiting for link', tone: 'dead' };
+        return { text: `waiting for ${source}`, tone: 'dead' };
     }
   });
 </script>

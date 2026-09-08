@@ -1,6 +1,8 @@
 using Flux.App;
+using Flux.Audio;
 using Flux.Beat;
-using Flux.Web;
+using Flux.Midi;
+using Flux.Web.Server;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,20 +22,48 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationO
   ContentRootPath = AppContext.BaseDirectory,
 });
 
+builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
+
 Console.WriteLine($"Flux {FluxVersion.Current} - music in, light out.");
 Console.WriteLine("Waiting for Ableton Link. Enable LINK in rekordbox and play a track. Ctrl+C to stop.");
 Console.WriteLine();
 
 // Registration order is start order, and the timer resolution has to be up
-// before the beat scheduler starts sleeping against it.
+// before the beat scheduler starts sleeping against it. The grid and scheduler
+// come next, then the sources that feed them.
 builder.Services.AddHostedService<TimerResolutionService>();
+builder.Services.AddBeatCore(builder.Configuration);
 builder.Services.AddAbletonLink(builder.Configuration);
+
+// Capture and analysis run whichever source is driving the beat, because the
+// spectrum they feed is the instrument every later phase is checked against. A
+// spectrum that went dark because the DJ selected Link would switch itself off
+// exactly when it was being used to check the thing under test. Detection is
+// registered on top of them and publishes unconditionally: an unselected source
+// stays warm, so choosing audio takes effect on the next frame rather than after
+// however long the detector needs to find the tempo again.
+builder.Services.AddAudioCapture(builder.Configuration);
+builder.Services.AddAudioAnalysis();
+builder.Services.AddAudioSource();
+
+// The controller's cue button, read-only, as a downbeat marker. Not a source: it
+// registers nothing with the manager and has no opinion about tempo, it only says
+// where a bar starts - so it goes after the sources rather than among them.
+builder.Services.AddFlxObserver(builder.Configuration);
 
 // The per-beat console line was Phase 1's stand-in for the visualizer; the web
 // app has taken that job, so it is opt-in diagnostics now - three lines a
 // second, for nobody, on a default night.
 if(builder.Configuration.GetValue("Console:BeatLog", defaultValue: false)) {
   builder.Services.AddHostedService<ConsoleBeatMonitor>();
+}
+
+// The same arrangement for the capture level, and for a sharper reason: a device
+// list can only show names, and on this rig the endpoint carrying the master mix
+// is called "Microfoon". Only a level that falls when the channel fader does can
+// tell the right device from the thirteen silent ones beside it.
+if(builder.Configuration.GetValue("Console:AudioMeter", defaultValue: false)) {
+  builder.Services.AddHostedService<ConsoleAudioMonitor>();
 }
 
 builder.AddFluxWeb();

@@ -26,7 +26,7 @@ obj/
 
 # Frontend
 node_modules/
-src/Flux.Web/wwwroot/
+src/Flux.Web.Server/wwwroot/
 .vite/
 dist/
 

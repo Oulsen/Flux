@@ -1,7 +1,7 @@
 {
   "version": 1,
   "dependencies": {
-    "net10.0-windows7.0": {
+    "net10.0-windows10.0.19041": {
       "Microsoft.Extensions.Hosting": {
         "type": "Direct",
         "requested": "[10.0.11, )",
@@ -282,10 +282,34 @@
         "resolved": "10.0.11",
         "contentHash": "SXcz+kF+4Oo9b1+55zntpJFYfwb1jw66ioxptyNOOTDc8g2FHnBFWjZpsWfCvZIhzr0x+4e2trVTs4OKwQfBtw=="
       },
+      "NAudio.Core": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "GgkdP6K/7FqXFo7uHvoqGZTJvW4z8g2IffhOO4JHaLzKCdDOUEzVKtveoZkCuUX8eV2HAINqi7VFqlFndrnz/g=="
+      },
+      "NAudio.Wasapi": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "lFfXoqacZZe0WqNChJgGYI+XV/n/61LzPHT3C1CJp4khoxeo2sziyX5wzNYWeCMNbsWxFvT3b3iXeY1UYjBhZw==",
+        "dependencies": {
+          "NAudio.Core": "2.2.1"
+        }
+      },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",
         "resolved": "10.0.11",
         "contentHash": "QTXEoQBzz00SFWbo7nAg1Ogd4f99lwqcO9uAJ7MYSLEUR28f6As32QktrqG2Fr9cfAfd1GjLyGYspE7Ipj7P6w=="
+      },
+      "flux.audio": {
+        "type": "Project",
+        "dependencies": {
+          "Flux.Audio.Contract": "[0.1.0, )",
+          "Flux.Beat": "[0.1.0, )",
+          "NAudio.Wasapi": "[2.2.1, )"
+        }
+      },
+      "flux.audio.contract": {
+        "type": "Project"
       },
       "flux.beat": {
         "type": "Project",
@@ -295,10 +319,17 @@
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.11, )"
         }
       },
-      "flux.web": {
+      "flux.midi": {
         "type": "Project",
         "dependencies": {
-          "Flux.Beat": "[0.0.1, )"
+          "Flux.Beat": "[0.1.0, )"
+        }
+      },
+      "flux.web.server": {
+        "type": "Project",
+        "dependencies": {
+          "Flux.Audio.Contract": "[0.1.0, )",
+          "Flux.Beat": "[0.1.0, )"
         }
       }
     }

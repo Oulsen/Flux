@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- net10.0-windows because the project under test is: WASAPI is a Windows API
+       and there is nothing to gain from pretending otherwise. What is tested here
+       is deliberately not Windows-specific, though - the format conversion, the
+       ring buffer, the meter and the device choice are all reachable without a
+       sound card, which is the whole reason they are separate types. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+  </ItemGroup>
+
+  <!-- Linked rather than copied, and rather than moved into a shared test project.
+       A clock a test drives by hand is four lines; a project to hold it would be a
+       csproj, a lock file and a solution entry to carry them. Linking keeps one
+       definition, and a change to it breaks both suites at once, which is the
+       behaviour worth having. -->
+  <ItemGroup>
+    <Compile Include="..\Flux.Beat.Tests\FakeClock.cs" Link="FakeClock.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Flux.Audio\Flux.Audio.csproj" />
+  </ItemGroup>
+
+</Project>
