@@ -38,7 +38,7 @@ public static class ServiceCollectionExtensions {
       .Bind(configuration.GetSection(AudioOptions.SectionName))
       .ValidateOnStart();
 
-    services.AddSingleton<AudioDeviceCatalog>();
+    services.AddSingleton<IAudioDeviceCatalog, AudioDeviceCatalog>();
 
     // The recorder is registered here rather than beside the frame recorder in
     // AddAudioAnalysis, because it records what capture produces and not what the
@@ -52,7 +52,7 @@ public static class ServiceCollectionExtensions {
     services.AddHostedService(provider => provider.GetRequiredService<AudioRecorder>());
 
     services.AddSingleton<AudioCaptureService>(provider => new AudioCaptureService(
-      provider.GetRequiredService<AudioDeviceCatalog>(),
+      provider.GetRequiredService<IAudioDeviceCatalog>(),
       provider.GetRequiredService<IMonotonicClock>(),
       provider.GetRequiredService<IOptions<AudioOptions>>(),
       provider.GetRequiredService<IMonoTap>(),

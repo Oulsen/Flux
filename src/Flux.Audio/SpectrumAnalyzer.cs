@@ -88,6 +88,13 @@ internal sealed class SpectrumAnalyzer: IHostedService, IDisposable {
   private long frames;
   private long dropped;
 
+  /// <summary>
+  /// Counts the runs of unbroken audio, so a frame can say which one it belongs
+  /// to. Touched only on the analyzer thread; everyone else learns it from the
+  /// frame that carries it.
+  /// </summary>
+  private int generation;
+
   public SpectrumAnalyzer(IAudioSamples samples, IMonotonicClock clock, ILogger<SpectrumAnalyzer> log) {
     this.samples = samples ?? throw new ArgumentNullException(nameof(samples));
     this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
@@ -241,7 +248,8 @@ internal sealed class SpectrumAnalyzer: IHostedService, IDisposable {
       SpectrumScale.DisplayColumns(this.spectrum, rate),
       SpectrumScale.BandEnergy(this.spectrum, this.kickBand.Low, this.kickBand.High),
       SpectrumScale.BandEnergy(this.spectrum, this.midBand.Low, this.midBand.High),
-      SpectrumScale.BandEnergy(this.spectrum, this.highBand.Low, this.highBand.High));
+      SpectrumScale.BandEnergy(this.spectrum, this.highBand.Low, this.highBand.High),
+      this.generation);
 
     Volatile.Write(ref this.latest, frame);
     Interlocked.Increment(ref this.frames);
@@ -300,9 +308,27 @@ internal sealed class SpectrumAnalyzer: IHostedService, IDisposable {
   }
 
   /// <summary>
-  /// Drops everything derived from audio that is no longer arriving.
+  /// Drops everything derived from audio that is no longer arriving, and starts a
+  /// new generation for whatever arrives next.
+  ///
+  /// The generation is what tells the detector's side of the join that the
+  /// smoothing was cleared. A device switch refills the capture buffer in about
+  /// 43 ms, so the gap it leaves in the frame timestamps is far too short to
+  /// distinguish from a frame that merely ran late - and carrying the detector's
+  /// state across a cleared smoothing is exactly the climb-from-silence its
+  /// warm-up exists to ignore.
   /// </summary>
   private void Forget() {
+    // Idle polling lands here every hundred milliseconds while no device is
+    // delivering, so a run of audio only counts as ended once: a generation per
+    // poll would be noise, and this method is only ever called on the analyzer
+    // thread that reads the counter.
+    if(Volatile.Read(ref this.latest) is null) {
+      return;
+    }
+
+    this.generation++;
+
     Volatile.Write(ref this.latest, null);
     Array.Clear(this.smoothed);
     Array.Clear(this.spectrum);

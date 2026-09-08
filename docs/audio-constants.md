@@ -237,6 +237,7 @@ symbol in `AudioConstants.cs`.
 | `minQuietForDrop` | 800 ms | `MinQuietForDropMillis` | Silence before a drop can happen | A passing gap between phrases is not a breakdown |
 | drop energy ratio | 5 | `DropEnergyRatio` | Loudness of the return | |
 | drop energy floor | 0.25 | `DropMinEnergy` | Absolute loudness of the return | The ratio alone is met by any rise out of near-silence, which is why there is a floor beside it |
+| drop ratio guard | 0.001 | `DropRatioEpsilon` | Denominator floor for the drop ratio | A numerical guard, not a tuned value: it keeps the ratio finite when the previous frame was bit-exact silence. A twentieth of `QuietEnergyThreshold`, so against any passage quiet enough to arm a drop it barely moves the ratio it protects |
 | `dropCooldown` | 5 s | `DropCooldownMillis` | Minimum gap between drops | A drop rebases the beat numbering, which is the most disruptive thing the detector can do |
 | max drops | 3 per 30 s | `MaxDropsPerWindow`, `DropCountWindowMillis` | Drop rate limit | A breakdown with stabs in it would otherwise re-anchor the grid every couple of bars |
 
@@ -257,13 +258,16 @@ symbol in `AudioConstants.cs`.
 
 ### Added by Flux
 
-Two numbers here are not the scene's, and both exist because of a difference
+The numbers here are not the scene's, and each exists because of a difference
 between the two programs rather than a disagreement about music.
 
 | Flux | Value | Why |
 |---|---|---|
 | `WarmUpFrames` | 20 frames | The scene's host handed it a spectrum that was already running. Ours starts at silence and climbs to the signal over several frames as the smoothing fills, and that climb is a rising flux with no music behind it. A third of a second is enough for the carry-over to fall under a twentieth, and far cheaper than one phantom onset inside the tempo estimate |
 | `DisplayBins`, `DisplayLowHz`, `DisplayHighHz` | 64 columns, 30 Hz to 16 kHz | The 64 log-spaced columns the protocol sends. The scene's visible width is a user setting defaulting to its first 2.5 kHz; a visualizer being read as a test instrument wants the whole picture |
+| `ConfidenceLockedFloor`, `ConfidenceLockedSpan` | 0.6 + up to 0.4 | The scene never reported confidence; Flux has a source selector that needs one. These define the protocol's `confidence` field for a locked tempo. The floor sits above the unlocked ceiling so the bands cannot overlap: a lock is a qualitative claim about twelve consistent beats, and no amount of unlocked consistency should outrank it. The span is the remainder of the scale, filled in by interval consistency |
+| `ConfidenceUnlockedCeiling` | 0.5 | The most an unlocked tempo can claim, a tenth below the locked floor so the two bands stay visibly apart rather than merely disjoint |
+| `ConfidenceSpreadRange` | 2 | Interval spread is mapped to a 0 to 1 consistency by dividing by this multiple of `LockMaxRelativeStdDev`. Two puts the lock bar itself at the middle of the scale: intervals exactly at the bar read 0.5, and only a spread twice as loose as anything lockable reads zero |
 
 `FrameRateHz` is 60, which is the scene's rate because it ran on
 `requestAnimationFrame`. It is not free to change: the history windows above are

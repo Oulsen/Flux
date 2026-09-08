@@ -27,13 +27,20 @@ namespace Flux.Audio;
 /// <param name="Mids">Mid band energy.</param>
 /// <param name="Highs">High band energy.</param>
 /// <param name="Bins">The display columns, for looking at.</param>
+/// <param name="Gen">
+/// The frame's capture generation. Recorded because a replay has to reproduce the
+/// reset a device switch caused, and the switch is too fast to reconstruct from
+/// the timestamps alone. Defaults to zero, so a recording made before this field
+/// existed still replays as the single unbroken run it was.
+/// </param>
 internal sealed record RecordedFrame(
   double T,
   int Rate,
   double Kick,
   double Mids,
   double Highs,
-  int[] Bins);
+  int[] Bins,
+  int Gen = 0);
 
 /// <summary>
 /// Source-generated so the format is one declaration rather than a serializer
@@ -57,7 +64,14 @@ internal static class FrameRecording {
     ArgumentNullException.ThrowIfNull(frame);
 
     return JsonSerializer.Serialize(
-      new RecordedFrame(frame.TimestampMicros, frame.SampleRate, frame.Kick, frame.Mids, frame.Highs, frame.Bins),
+      new RecordedFrame(
+        frame.TimestampMicros,
+        frame.SampleRate,
+        frame.Kick,
+        frame.Mids,
+        frame.Highs,
+        frame.Bins,
+        frame.Generation),
       RecordingJson.Default.RecordedFrame);
   }
 
@@ -83,7 +97,8 @@ internal static class FrameRecording {
         recorded.Bins,
         recorded.Kick,
         recorded.Mids,
-        recorded.Highs);
+        recorded.Highs,
+        recorded.Gen);
     }
   }
 }

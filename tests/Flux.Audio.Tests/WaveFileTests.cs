@@ -87,6 +87,29 @@ public class WaveFileTests {
   }
 
   [Fact]
+  public void ReportsATruncatedFmtChunkAsBadData() {
+    // A file cut off inside its own header is a statement about the file, and
+    // InvalidDataException is how every other malformation here reports one. An
+    // index exception would point at this reader instead.
+    using MemoryStream stream = new MemoryStream();
+    using(WaveFile file = new WaveFile(stream, 48_000)) {
+      file.Write([0.5f]);
+    }
+
+    string path = TempPath();
+
+    try {
+      // Twenty bytes ends exactly after the fmt chunk's size field, so the walk
+      // finds a chunk that promises sixteen bytes the file does not have.
+      File.WriteAllBytes(path, stream.ToArray()[..20]);
+
+      Assert.Throws<InvalidDataException>(() => WaveFile.Read(path));
+    } finally {
+      File.Delete(path);
+    }
+  }
+
+  [Fact]
   public void RefusesAStreamThatCannotSeek() {
     // Refused at construction rather than at the first flush, because the flush
     // happens on the writer thread a minute into a recording nobody is watching.

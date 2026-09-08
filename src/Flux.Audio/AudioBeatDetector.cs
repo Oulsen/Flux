@@ -596,7 +596,8 @@ internal sealed class AudioBeatDetector {
   /// statement about twelve consistent beats, and within each band the spread of
   /// the intervals is what varies. It exists so the source selector can show that
   /// audio is a worse bet than Link right now without the user having to switch to
-  /// it and watch.
+  /// it and watch. The band edges live in <see cref="AudioConstants"/> with the
+  /// rest of the numbers a reading depends on.
   /// </summary>
   private double Confidence() {
     if(this.bpm <= 0) {
@@ -604,10 +605,12 @@ internal sealed class AudioBeatDetector {
     }
 
     double consistency = Math.Clamp(
-      1.0 - (this.relativeSpread / (2.0 * AudioConstants.LockMaxRelativeStdDev)),
+      1.0 - (this.relativeSpread / (AudioConstants.ConfidenceSpreadRange * AudioConstants.LockMaxRelativeStdDev)),
       0,
       1);
 
-    return this.locked ? 0.6 + (0.4 * consistency) : 0.5 * consistency;
+    return this.locked
+      ? AudioConstants.ConfidenceLockedFloor + (AudioConstants.ConfidenceLockedSpan * consistency)
+      : AudioConstants.ConfidenceUnlockedCeiling * consistency;
   }
 }

@@ -145,6 +145,29 @@ public sealed class AudioSyncSourceTests {
   }
 
   /// <summary>
+  /// A device switch is faster than the gap test can see: the capture buffer
+  /// refills in about 43 ms, so the frames resume within a tick or two while the
+  /// analyzer's smoothing restarts from silence. The frame's generation is what
+  /// carries the news, and everything derived from the old device has to go with
+  /// it - the climb out of a cleared spectrum measured against the old device's
+  /// flux history is a phantom onset, arriving at the exact moment the user
+  /// switched devices.
+  /// </summary>
+  [Fact]
+  public void RetractsItsTempoWhenTheDeviceChangesWithoutALongGap() {
+    Rig rig = new Rig();
+
+    rig.Play(new FrameTrack().Warmup().Beats(Bpm, 16));
+    Assert.True(rig.Grid.TryGetSnapshot(out _));
+
+    rig.PlayAfterDeviceSwitch();
+
+    Assert.False(rig.Grid.TryGetSnapshot(out _));
+    Assert.Equal(SyncSourceState.Waiting, rig.Source.Status().State);
+    Assert.Equal(0, rig.Source.Bpm);
+  }
+
+  /// <summary>
   /// A breakdown is not a gap in the frames. It is 1.5 seconds of quiet audio,
   /// which the detector reads as a breakdown and this class must not read as the
   /// device going away: resetting there would throw away the tempo the drop is
@@ -266,6 +289,25 @@ public sealed class AudioSyncSourceTests {
         Kick: 0.5,
         Mids: 0.05,
         Highs: 0.01));
+    }
+
+    /// <summary>
+    /// Delivers one frame from a new capture generation only two frame periods
+    /// later, which is what a fast device switch looks like: a gap far too short
+    /// for the timestamps to distinguish from a frame that ran late, so the
+    /// generation is the only thing announcing the change.
+    /// </summary>
+    public void PlayAfterDeviceSwitch() {
+      this.Clock.Advance(TimeSpan.FromMilliseconds(2 * FramePeriodMicros / 1000.0));
+
+      this.source.Observe(new SpectrumFrame(
+        this.Clock.NowMicros,
+        48_000,
+        new int[AudioConstants.DisplayBins],
+        Kick: 0.5,
+        Mids: 0.05,
+        Highs: 0.01,
+        Generation: 1));
     }
 
     private void AdvanceTo(double micros) {

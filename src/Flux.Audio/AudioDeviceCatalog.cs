@@ -5,6 +5,24 @@ using System.Runtime.InteropServices;
 namespace Flux.Audio;
 
 /// <summary>
+/// Where the capture loop's devices come from.
+///
+/// An interface for the same reason <see cref="IAudioSamples"/> is one: the
+/// resolve, backoff and forget policy in <see cref="AudioCaptureService"/> is the
+/// most stateful loop in the audio stack, its clock is already injected, and this
+/// seam is the one thing that was keeping it from being replayable on a machine
+/// with no sound card. A backoff that failed to reset would otherwise present as
+/// flaky hardware on the one machine that can reproduce it.
+/// </summary>
+internal interface IAudioDeviceCatalog {
+  /// <inheritdoc cref="AudioDeviceCatalog.Devices"/>
+  IReadOnlyList<AudioDevice> Devices();
+
+  /// <inheritdoc cref="AudioDeviceCatalog.Open"/>
+  MMDevice? Open(string id);
+}
+
+/// <summary>
 /// What Windows can hear, and which of it Flux should listen to.
 ///
 /// Both halves of that are here because the second one is the part with an
@@ -14,7 +32,7 @@ namespace Flux.Audio;
 /// <em>the</em> audio, and defaulting to the default render endpoint is
 /// confidently wrong in exactly the situation the app exists for.
 /// </summary>
-internal sealed class AudioDeviceCatalog {
+internal sealed class AudioDeviceCatalog: IAudioDeviceCatalog {
   private readonly ILogger<AudioDeviceCatalog> log;
 
   public AudioDeviceCatalog(ILogger<AudioDeviceCatalog> log) {

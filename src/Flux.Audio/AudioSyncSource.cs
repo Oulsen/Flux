@@ -36,6 +36,11 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
   /// consecutive frames, so carrying state across a gap of unknown length measures
   /// the join between two unrelated pieces of audio, and a discontinuity is
   /// precisely what this detector calls a beat.
+  ///
+  /// This is the fallback, not the primary signal. A device switch is announced
+  /// exactly by the frame's generation changing; the time test remains for frames
+  /// that arrive without one, such as a recording replayed from before generations
+  /// were recorded.
   /// </summary>
   private const double ResetAfterGapMillis = 500;
 
@@ -66,11 +71,15 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
   private readonly object statusGate = new object();
 
   /// <summary>
-  /// The previous frame's timestamp, touched only on the analyzer thread and
-  /// therefore deliberately outside the lock: it is how this class recognises a gap
-  /// in the audio, which is a question only the thread reading the audio can ask.
+  /// The previous frame's timestamp and generation, touched only on the analyzer
+  /// thread and therefore deliberately outside the lock: they are how this class
+  /// recognises a break in the audio, which is a question only the thread reading
+  /// the audio can ask.
   /// </summary>
   private double previousFrameMicros;
+
+  /// <inheritdoc cref="previousFrameMicros"/>
+  private int previousGeneration;
 
   private SpectrumSnapshot? latest;
   private double lastFrameMicros;
@@ -197,12 +206,20 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
   internal void Observe(SpectrumFrame frame) {
     ArgumentNullException.ThrowIfNull(frame);
 
+    // A changed generation is the analyzer saying its smoothing was cleared, which
+    // a fast device switch does without leaving a gap the time test can see: the
+    // capture buffer refills in about 43 ms. The detector's state has to go with
+    // the smoothing, because the climb out of a cleared spectrum is a rising flux
+    // with no music behind it, and keeping the old flux history under it is how a
+    // switch turns into a phantom onset.
     if(this.previousFrameMicros > 0
-      && (frame.TimestampMicros - this.previousFrameMicros) / 1000.0 > ResetAfterGapMillis) {
+      && (frame.Generation != this.previousGeneration
+        || (frame.TimestampMicros - this.previousFrameMicros) / 1000.0 > ResetAfterGapMillis)) {
       this.Forget();
     }
 
     this.previousFrameMicros = frame.TimestampMicros;
+    this.previousGeneration = frame.Generation;
 
     BeatDecision decision = this.detector.Observe(frame);
 

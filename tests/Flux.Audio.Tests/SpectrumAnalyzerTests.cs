@@ -157,6 +157,37 @@ public class SpectrumAnalyzerTests {
   }
 
   [Fact]
+  public async Task StartsANewGenerationWhenAudioResumes() {
+    // The generation is how the detector's side of the join learns the smoothing
+    // was cleared: a device switch refills the capture buffer faster than any
+    // timestamp test can safely call a break, so the frames themselves have to say
+    // they belong to a new run of audio.
+    ToneSamples source = new ToneSamples { Amplitude = 0.5, Frequency = ToneHz };
+    SpectrumAnalyzer analyzer = Build(source);
+
+    await analyzer.StartAsync(TestContext.Current.CancellationToken);
+
+    try {
+      Assert.True(await WaitUntil(() => analyzer.Latest is not null, Patience), "Nothing was ever analyzed.");
+      int before = Assert.IsType<SpectrumFrame>(analyzer.Latest).Generation;
+
+      source.Delivering = false;
+      Assert.True(
+        await WaitUntil(() => analyzer.Latest is null, Patience),
+        "The spectrum was never forgotten.");
+
+      source.Delivering = true;
+      Assert.True(await WaitUntil(() => analyzer.Latest is not null, Patience), "Analysis never resumed.");
+
+      // Exactly one generation, however many idle polls the silence covered: a
+      // run of audio only ends once.
+      Assert.Equal(before + 1, Assert.IsType<SpectrumFrame>(analyzer.Latest).Generation);
+    } finally {
+      await Stop(analyzer);
+    }
+  }
+
+  [Fact]
   public async Task KeepsRunningWhenAHandlerThrows() {
     // The visualizer is fed from this thread too, and it is the instrument the
     // detector is judged with. One bad subscriber must not take it down.

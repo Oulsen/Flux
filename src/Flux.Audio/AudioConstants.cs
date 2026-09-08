@@ -354,4 +354,39 @@ internal static class AudioConstants {
 
   /// <inheritdoc cref="DropCooldownMillis"/>
   public const double DropCountWindowMillis = 30_000;
+
+  /// <summary>
+  /// The confidence a locked tempo starts from, before interval consistency adds
+  /// the rest.
+  ///
+  /// Not the scene's, which never reported confidence at all. These four define
+  /// the shape of the protocol's <c>confidence</c> field, and the shape carries
+  /// the meaning: the locked band starts above where the unlocked band ends, so a
+  /// locked estimate always outranks an unlocked one, because a lock is a
+  /// qualitative claim about twelve consistent beats that no amount of unlocked
+  /// consistency should be able to shout over.
+  /// </summary>
+  public const double ConfidenceLockedFloor = 0.6;
+
+  /// <summary>
+  /// What interval consistency adds on top of <see cref="ConfidenceLockedFloor"/>,
+  /// reaching 1 at a spread of zero. The remainder of the scale, so the two
+  /// numbers move together by construction.
+  /// </summary>
+  public const double ConfidenceLockedSpan = 0.4;
+
+  /// <summary>
+  /// The most an unlocked tempo can report. Below the locked floor on purpose, and
+  /// the tenth of headroom between them keeps the bands visibly apart rather than
+  /// merely non-overlapping.
+  /// </summary>
+  public const double ConfidenceUnlockedCeiling = 0.5;
+
+  /// <summary>
+  /// The interval spread at which consistency reads zero, as a multiple of
+  /// <see cref="LockMaxRelativeStdDev"/>. Two, so the lock bar itself sits at the
+  /// middle of the consistency scale: intervals exactly at the bar read 0.5, and
+  /// only a spread twice as loose as anything lockable reads zero.
+  /// </summary>
+  public const double ConfidenceSpreadRange = 2.0;
 }

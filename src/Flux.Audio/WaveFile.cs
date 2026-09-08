@@ -90,6 +90,14 @@ internal sealed class WaveFile: IDisposable {
       int body = position + 8;
 
       if(tag == "fmt ") {
+        // Sixteen bytes is the shape this class writes and the smallest fmt chunk
+        // that can hold the fields read below. Checked so a truncated file fails
+        // the way every other malformation does, as a statement about the file,
+        // rather than as an index exception about this method.
+        if(size < 16 || body + 16 > bytes.Length) {
+          throw new InvalidDataException($"{path} has a truncated fmt chunk.");
+        }
+
         ushort format = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(body));
         ushort channels = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(body + 2));
         ushort bits = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(body + 14));

@@ -26,6 +26,7 @@ public class FrameRecordingTests {
         Assert.Equal(recorded[index].Mids, replayed[index].Mids);
         Assert.Equal(recorded[index].Highs, replayed[index].Highs);
         Assert.Equal(recorded[index].Bins, replayed[index].Bins);
+        Assert.Equal(recorded[index].Generation, replayed[index].Generation);
       }
     } finally {
       File.Delete(path);
@@ -88,6 +89,44 @@ public class FrameRecordingTests {
       File.WriteAllLines(path, [FrameRecording.ToLine(Frame(1)), "{\"t\":2.0,\"rate\":48"]);
 
       Assert.Throws<JsonException>(() => FrameRecording.Read(path).ToList());
+    } finally {
+      File.Delete(path);
+    }
+  }
+
+  [Fact]
+  public void CarriesTheGenerationThroughARoundTrip() {
+    // The generation is the one field a replay cannot reconstruct from the rest of
+    // the line: a device switch leaves a gap in the timestamps far too short to
+    // recognise as one, which is the reason the field exists at all.
+    string path = TempPath();
+
+    try {
+      File.WriteAllLines(path, [
+        FrameRecording.ToLine(Frame(1)),
+        FrameRecording.ToLine(Frame(2) with { Generation = 3 }),
+      ]);
+
+      List<SpectrumFrame> replayed = [.. FrameRecording.Read(path)];
+
+      Assert.Equal([0, 3], replayed.Select(frame => frame.Generation));
+    } finally {
+      File.Delete(path);
+    }
+  }
+
+  [Fact]
+  public void ReadsARecordingMadeBeforeGenerationsWereRecorded() {
+    // Every recording made before the field existed is one unbroken run of audio
+    // as far as anyone can now tell, and generation zero says exactly that.
+    string path = TempPath();
+
+    try {
+      File.WriteAllLines(path, ["{\"t\":1,\"rate\":48000,\"kick\":0.1,\"mids\":0.2,\"highs\":0.3,\"bins\":[]}"]);
+
+      SpectrumFrame replayed = Assert.Single(FrameRecording.Read(path));
+
+      Assert.Equal(0, replayed.Generation);
     } finally {
       File.Delete(path);
     }

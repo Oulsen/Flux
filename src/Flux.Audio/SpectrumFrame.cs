@@ -22,13 +22,21 @@ namespace Flux.Audio;
 /// <param name="Kick">Bass band energy, 0 to 1. The one the detector triggers on.</param>
 /// <param name="Mids">Mid band energy, 0 to 1. Used only to tell a kick from a snare.</param>
 /// <param name="Highs">High band energy, 0 to 1. Drawn, never decided on.</param>
+/// <param name="Generation">
+/// Which unbroken run of audio this frame belongs to. The analyzer starts a new
+/// generation every time it forgets its smoothing, so two frames with different
+/// generations are measurements of two unrelated pieces of audio, however close
+/// their timestamps sit: a device switch refills the capture buffer in well under
+/// the gap a timestamp test can safely call a discontinuity.
+/// </param>
 internal sealed record SpectrumFrame(
   double TimestampMicros,
   int SampleRate,
   int[] Bins,
   double Kick,
   double Mids,
-  double Highs);
+  double Highs,
+  int Generation = 0);
 
 /// <summary>
 /// Where the analyzer gets its audio.
