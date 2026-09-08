@@ -3,27 +3,40 @@
 Music in, light out.
 
 Flux is a standalone Windows app being built, in phases, to drive Philips Hue
-Entertainment lights from music with proper beat sync. Today it does the
-foundation of that: it follows an Ableton Link session on the local network and
-shows a live beat display in any browser on the LAN, phone included.
+Entertainment lights from music with proper beat sync. Today it is the
+instrument that has to come first: it finds the beat, either from an Ableton
+Link session or by listening to the music itself, and shows what it found in
+any browser on the LAN, phone included. Everything the lights will eventually
+follow is visible on screen, which is the only way to tell that a beat grid is
+right before anything is wired to it.
 
-## What works in 0.1.0
+## What works in 0.2.0
 
-- Follows an Ableton Link session (rekordbox, Ableton Live, or any Link peer)
+- Finds the beat two independent ways, and either one drives the same grid.
+  **Ableton Link** (rekordbox, Ableton Live, or any Link peer) is followed
   passively: Flux listens without joining, so it never appears as a peer and
-  never influences the session.
+  never influences the session. **Audio** analyses the sound itself, which is
+  the only source that reports what is actually coming out of the speakers.
+- Switches between the sources live, from the page, without a restart. Each
+  one reports its own tempo, confidence and health, so the two can be compared
+  rather than trusted in turn.
+- Anchors bar 1 from a tap on the page or a cue press on a DDJ-FLX10. Neither
+  source transmits a downbeat, so somebody has to say where the bar starts; a
+  cue press is only accepted from a deck whose channel fader says it is
+  audible, because previewing the next track in headphones must not move the
+  grid.
 - Tracks the tempo and beat grid, keeps extrapolating when the source goes
   quiet, and reports that honestly instead of freezing or guessing.
 - Serves a web UI with a BPM readout, a per-beat flash, the position in the
-  bar, and connection and source health. The page reconnects on its own
-  through a Flux restart or a Wi-Fi drop.
-- Streams state and beats over a WebSocket. The wire contract is
+  bar, a 64 column spectrum, and connection and source health. The page
+  reconnects on its own through a Flux restart or a Wi-Fi drop, and a phone
+  gets the beat display without paying for the spectrum traffic.
+- Streams state, beats and spectrum over a WebSocket. The wire contract is
   [docs/protocol.md](docs/protocol.md).
 
-Not here yet: audio-analysis beat detection, bar anchoring, and the lights
-themselves. The bar position counts at the right rate but does not know where
-beat 1 is: Ableton Link carries no downbeat, so a later phase anchors it from a
-cue press or a tap.
+Not here yet: the lights themselves. Everything above exists so that the phase
+which finally talks to a Hue bridge can be about the lights rather than about
+whether the beat is right.
 
 ## Requirements
 
@@ -33,8 +46,9 @@ cue press or a tap.
 - [.NET SDK](https://dotnet.microsoft.com/download) (version pinned in
   `global.json`)
 - [Node.js](https://nodejs.org/) 22 or newer, for building the frontend
-- An Ableton Link peer on the same network, such as rekordbox with LINK
-  enabled
+- Something to find a beat in, and either one is enough: an Ableton Link peer
+  on the same network, such as rekordbox with LINK enabled, or an audio input
+  carrying the music, such as a DJ controller's master return
 
 ## Build and run
 
@@ -50,8 +64,10 @@ dotnet run --project src/Flux.App
 ```
 
 The console prints the addresses the page is reachable on, including the one
-to type on a phone. Enable LINK in rekordbox and play a track; the page picks
-the session up by itself.
+to type on a phone. Play a track and the page picks the beat up by itself:
+enable LINK in rekordbox for the Link source, or pick an audio device on the
+page and switch the source to Audio. Which source is selected at startup is
+`Beat:DefaultSource` below.
 
 For frontend work with hot reload, keep the backend running and start
 `npm run dev` in `src/Flux.Web.Frontend`; Vite proxies the WebSocket to the

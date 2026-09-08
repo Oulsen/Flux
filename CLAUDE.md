@@ -2,7 +2,10 @@
 
 Flux drives lights from music, built in phases. `README.md` says what works
 right now; `docs/protocol.md` is the WebSocket wire contract and wins over any
-other description of a message, including code comments.
+other description of a message, including code comments;
+`docs/audio-constants.md` is the audit trail for every number audio beat
+detection runs on, and a constant in `AudioConstants` without a derivation
+there is not checkable by anyone.
 
 ## Building and testing
 
@@ -18,6 +21,12 @@ other description of a message, including code comments.
 - Frontend checks, from `src/Flux.Web.Frontend`: `npm run check`
   (svelte-check) and `npm test` (node --test). Both must pass; `npm run check`
   is the frontend's only type gate.
+- Some audio tests skip rather than fail when they find no local recording,
+  and that is the intended state: they replay a capture of real music, which
+  is several megabytes of somebody's music and deliberately not committed.
+  A skip there is not a broken suite. Recordings are made by running with
+  `Audio:RecordAudioPath` and `Audio:RecordFramesPath` set, and a new take
+  needs a new filename, since both recorders truncate.
 - After C# edits are complete, run
   `dotnet format style --severity warn --verbosity quiet` (this repo opts in;
   it strips unused usings), then build, then run the tests.
