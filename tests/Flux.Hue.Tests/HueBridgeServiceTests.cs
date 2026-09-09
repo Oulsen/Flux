@@ -260,8 +260,86 @@ public class HueBridgeServiceTests {
     Assert.Contains(harness.Seen, connection => connection.State == HueConnectionState.Ready);
   }
 
+  [Fact]
+  public void TheLatencyOffsetStartsFromTheConfiguredOneWhenNobodyHasMovedTheSlider() {
+    Harness harness = new Harness(options => options.LatencyOffsetMs = 90);
+
+    Assert.Equal(90, harness.Service.Connection.LatencyOffsetMs);
+  }
+
+  [Fact]
+  public void AStoredLatencyOffsetWinsOverTheConfiguredOne() {
+    // The setting is a starting value and the slider is the instrument. Reading them
+    // the other way round would undo a tuned number on every restart.
+    Harness harness = new Harness(
+      options => options.LatencyOffsetMs = 90,
+      settings => settings.Stored = new HueSettings(EntertainmentAreaId: null, LatencyOffsetMs: 40));
+
+    Assert.Equal(40, harness.Service.Connection.LatencyOffsetMs);
+  }
+
+  [Fact]
+  public void AStoredZeroIsADecisionAndNotAnAbsentValue() {
+    // The reason the stored offset is nullable at all: without that, a rig that needs
+    // no correction could never be told so while a non-zero default was configured.
+    Harness harness = new Harness(
+      options => options.LatencyOffsetMs = 90,
+      settings => settings.Stored = new HueSettings(EntertainmentAreaId: null, LatencyOffsetMs: 0));
+
+    Assert.Equal(0, harness.Service.Connection.LatencyOffsetMs);
+  }
+
+  [Fact]
+  public void SettingTheLatencyOffsetRemembersItAndTellsEveryPage() {
+    Harness harness = new Harness();
+
+    bool accepted = harness.Service.TrySetLatencyOffset(-120);
+
+    Assert.True(accepted);
+    Assert.Equal(-120, harness.Service.Connection.LatencyOffsetMs);
+    Assert.Equal(-120, harness.Settings.Stored.LatencyOffsetMs);
+    Assert.Contains(harness.Seen, connection => connection.LatencyOffsetMs == -120);
+  }
+
+  [Theory]
+  [InlineData(501)]
+  [InlineData(-501)]
+  public void RefusesALatencyOffsetAimedAtADifferentBeat(int offsetMs) {
+    Harness harness = new Harness(options => options.LatencyOffsetMs = 90);
+
+    bool accepted = harness.Service.TrySetLatencyOffset(offsetMs);
+
+    Assert.False(accepted);
+    Assert.Equal(90, harness.Service.Connection.LatencyOffsetMs);
+    Assert.Null(harness.Settings.Stored.LatencyOffsetMs);
+  }
+
+  [Fact]
+  public async Task ForgettingABridgeKeepsTheTunedLatencyOffset() {
+    // The offset measures the room and the fixtures, not the bridge. Re-pairing after
+    // a router reboot must not quietly throw away a number somebody set by eye.
+    Harness harness = new Harness();
+    harness.Credentials.Stored = Credentials;
+    harness.Client.Bridges = [Bridge];
+    harness.Client.Areas = [Living];
+    await harness.RunStartupAsync();
+    harness.Service.TrySetLatencyOffset(75);
+
+    harness.Service.Forget();
+
+    Assert.Null(harness.Credentials.Stored);
+    Assert.Null(harness.Settings.Stored.EntertainmentAreaId);
+    Assert.Equal(75, harness.Settings.Stored.LatencyOffsetMs);
+    Assert.Equal(75, harness.Service.Connection.LatencyOffsetMs);
+  }
+
   private sealed class Harness {
-    public Harness(Action<HueOptions>? configure = null) {
+    /// <param name="stored">
+    /// Runs before the service is built, for the settings it reads once at
+    /// construction. Assigning to <see cref="Settings"/> afterwards is too late for
+    /// the latency offset and would pass while proving nothing.
+    /// </param>
+    public Harness(Action<HueOptions>? configure = null, Action<InMemorySettingsStore>? stored = null) {
       HueOptions options = new HueOptions {
         // A window measured in milliseconds, polled fast. The real values are a
         // minute and a second, and both are settings for exactly this reason.
@@ -269,6 +347,7 @@ public class HueBridgeServiceTests {
         PairingPollInterval = TimeSpan.FromMilliseconds(10),
       };
       configure?.Invoke(options);
+      stored?.Invoke(Settings);
 
       Service = new HueBridgeService(Client, Credentials, Settings, Options.Create(options), NullLogger<HueBridgeService>.Instance);
       Service.Changed += connection => Seen.Add(connection);

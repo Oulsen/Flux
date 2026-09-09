@@ -206,6 +206,8 @@ public sealed class AudioBroadcastTests {
       sources,
       new ManualSource(clock, sources),
       audio,
+      hue: null,
+      new FakeHostLifetime(),
       NullLogger<SocketHub>.Instance);
   }
 

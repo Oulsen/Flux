@@ -10,7 +10,15 @@ namespace Flux.Hue;
 /// The area lights are streamed to. Null until one is chosen, which is also the
 /// state after pairing a bridge that has more than one.
 /// </param>
-public sealed record HueSettings(Guid? EntertainmentAreaId) {
+/// <param name="LatencyOffsetMs">
+/// The offset the user tuned by eye, or null when they never touched the slider.
+///
+/// Null rather than zero, because the two mean different things: null defers to
+/// <see cref="HueOptions.LatencyOffsetMs"/>, while zero is somebody deciding this rig
+/// needs no correction. Collapsing them would make a configured default impossible to
+/// change back to.
+/// </param>
+public sealed record HueSettings(Guid? EntertainmentAreaId, int? LatencyOffsetMs = null) {
   /// <summary>Nothing chosen yet.</summary>
   public static HueSettings Empty { get; } = new HueSettings(EntertainmentAreaId: null);
 }

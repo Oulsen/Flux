@@ -17,11 +17,6 @@ internal sealed class HueOptionsValidator: IValidateOptions<HueOptions> {
   private const int MinStreamHz = 10;
   private const int MaxStreamHz = 60;
 
-  // Half a second is a whole beat at 120 BPM. An offset larger than that is not a
-  // latency correction any more, it is an offset to a different beat, and the
-  // smaller equivalent is the number somebody actually meant.
-  private const int MaxLatencyOffsetMs = 500;
-
   private static readonly TimeSpan MaxDiscoveryTimeout = TimeSpan.FromSeconds(30);
 
   public ValidateOptionsResult Validate(string? name, HueOptions options) {
@@ -59,9 +54,9 @@ internal sealed class HueOptionsValidator: IValidateOptions<HueOptions> {
         + "a bulb renders about 25 updates a second regardless, and raising this cannot change that.");
     }
 
-    if(Math.Abs(options.LatencyOffsetMs) > MaxLatencyOffsetMs) {
+    if(Math.Abs(options.LatencyOffsetMs) > HueOptions.MaxLatencyOffsetMs) {
       return ValidateOptionsResult.Fail(
-        $"Hue:LatencyOffsetMs must be between -{MaxLatencyOffsetMs} and {MaxLatencyOffsetMs}. "
+        $"Hue:LatencyOffsetMs must be between -{HueOptions.MaxLatencyOffsetMs} and {HueOptions.MaxLatencyOffsetMs}. "
         + "Half a second is a whole beat at 120 BPM, so a larger value aims at a different beat.");
     }
 

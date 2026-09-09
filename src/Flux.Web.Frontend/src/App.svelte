@@ -3,6 +3,7 @@
   import AlignmentBadge from './components/AlignmentBadge.svelte';
   import BeatIndicator from './components/BeatIndicator.svelte';
   import BpmReadout from './components/BpmReadout.svelte';
+  import BridgePanel from './components/BridgePanel.svelte';
   import ConnectionBadge from './components/ConnectionBadge.svelte';
   import DevicePicker from './components/DevicePicker.svelte';
   import Diagnostics from './components/Diagnostics.svelte';
@@ -82,6 +83,33 @@
   }
 
   /*
+   * None of the bridge controls sets a pending flag, and that is not an omission.
+   *
+   * Every one of them is answered by a `hue` frame that carries the state it moved
+   * to - `discovering`, `pairing` - so the screen already shows the request having
+   * been taken. A second flag beside that could only ever disagree with it.
+   */
+  function discoverBridges(): void {
+    socket?.send({ type: 'discoverBridges', data: {} });
+  }
+
+  function pairBridge(bridgeId: string): void {
+    socket?.send({ type: 'pairBridge', data: { bridgeId } });
+  }
+
+  function selectArea(areaId: string): void {
+    socket?.send({ type: 'selectArea', data: { areaId } });
+  }
+
+  function forgetBridge(): void {
+    socket?.send({ type: 'forgetBridge', data: {} });
+  }
+
+  function setLatencyOffset(offsetMs: number): void {
+    socket?.send({ type: 'setLatencyOffset', data: { offsetMs } });
+  }
+
+  /*
    * What this client wants, restated in full whenever it changes.
    *
    * Driven by whether the panel is open rather than sent once at startup, which
@@ -141,6 +169,24 @@
   </div>
 
   <div class="consult">
+    <!--
+      Not a disclosure panel, unlike the two below it. Those are closed by default
+      because opening them costs traffic; this one costs nothing - the bridge frame is
+      pushed on change to every client whether or not anything is drawing it - and
+      when it matters it is the whole reason somebody has the page open.
+    -->
+    <section class="panel">
+      <h2>bridge</h2>
+      <BridgePanel
+        hue={store.hue}
+        discover={discoverBridges}
+        pair={pairBridge}
+        {selectArea}
+        forget={forgetBridge}
+        setOffset={setLatencyOffset}
+      />
+    </section>
+
     <section class="panel">
       <button
         type="button"

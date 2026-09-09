@@ -56,6 +56,10 @@ public static class Frames {
     return Encode("devices", devices, ProtocolJson.Default.EnvelopeDevicesData);
   }
 
+  public static ReadOnlyMemory<byte> Hue(HueData hue) {
+    return Encode("hue", hue, ProtocolJson.Default.EnvelopeHueData);
+  }
+
   public static ReadOnlyMemory<byte> Pong(long t) {
     return Encode("pong", new EchoData(t), ProtocolJson.Default.EnvelopeEchoData);
   }
@@ -156,6 +160,41 @@ public static class Frames {
     return false;
   }
 
+  /// <summary>Reads the bridge id out of a <c>pairBridge</c> payload.</summary>
+  public static bool TryReadBridgeId(JsonElement data, out string bridgeId) {
+    return TryReadString(data, "bridgeId", out bridgeId);
+  }
+
+  /// <summary>
+  /// Reads the area id out of a <c>selectArea</c> payload.
+  ///
+  /// The id is a uuid on the wire and a <see cref="Guid"/> here, so a value that is
+  /// not one is <c>invalid_data</c> rather than <c>rejected</c>: the two codes mean
+  /// different things to whoever is reading, and a malformed id is a bug in the
+  /// client rather than a race it lost.
+  /// </summary>
+  public static bool TryReadAreaId(JsonElement data, out Guid areaId) {
+    areaId = Guid.Empty;
+
+    return TryReadString(data, "areaId", out string text) && Guid.TryParse(text, out areaId);
+  }
+
+  /// <summary>
+  /// Reads a <c>setLatencyOffset</c> payload.
+  ///
+  /// Integer milliseconds, strictly. A fractional offset is refused rather than
+  /// rounded, because the slider that sends this deals in whole milliseconds and
+  /// anything else is a client that has stopped agreeing with the document.
+  /// </summary>
+  public static bool TryReadLatencyOffset(JsonElement data, out int offsetMs) {
+    offsetMs = 0;
+
+    return data.ValueKind == JsonValueKind.Object
+      && data.TryGetProperty("offsetMs", out JsonElement value)
+      && value.ValueKind == JsonValueKind.Number
+      && value.TryGetInt32(out offsetMs);
+  }
+
   /// <summary>
   /// Shortens a client-supplied string before it is quoted back in an error.
   /// </summary>
@@ -231,6 +270,7 @@ public static class Frames {
 [JsonSerializable(typeof(Envelope<BeatData>))]
 [JsonSerializable(typeof(Envelope<SpectrumData>))]
 [JsonSerializable(typeof(Envelope<DevicesData>))]
+[JsonSerializable(typeof(Envelope<HueData>))]
 [JsonSerializable(typeof(Envelope<EchoData>))]
 [JsonSerializable(typeof(Envelope<ErrorData>))]
 [JsonSerializable(typeof(ClientEnvelope))]

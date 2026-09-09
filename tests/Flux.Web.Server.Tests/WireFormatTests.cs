@@ -1,4 +1,4 @@
-using Flux.Web.Server.Protocol;
+﻿using Flux.Web.Server.Protocol;
 using System.Text.Json;
 using Xunit;
 
@@ -36,6 +36,7 @@ public sealed class WireFormatTests {
       [new SourceReportData("link", "live", 1.0), new SourceReportData("manual", "waiting", 0.0)],
       new GridData(128.5, 1024.25, 1024, 1, BarAligned: false),
       new AlignmentData(Aligned: false, Method: null),
+      Light: null,
       new DiagnosticsData(0.0, Packets: 4821));
 
     JsonElement data = Payload(Frames.State(state), "state");
@@ -79,11 +80,50 @@ public sealed class WireFormatTests {
       [],
       Grid: null,
       new AlignmentData(Aligned: false, Method: null),
+      Light: null,
       new DiagnosticsData(0));
 
     JsonElement data = Payload(Frames.State(state), "state");
 
     Assert.Equal(JsonValueKind.Null, data.GetProperty("grid").ValueKind);
+  }
+
+  /// <summary>
+  /// <c>light</c> is null exactly when Flux is not streaming, which is every frame
+  /// this build sends. Present-and-null rather than omitted, on the same rule as
+  /// <c>grid</c>: it is a documented value, not a counter that does not apply.
+  /// </summary>
+  [Fact]
+  public void StateSendsLightAsANullWhileNothingIsStreaming() {
+    StateData state = new StateData(
+      "link",
+      "live",
+      [],
+      new GridData(128.0, 4.0, 4, 1, BarAligned: true),
+      new AlignmentData(Aligned: true, Method: "tap"),
+      Light: null,
+      new DiagnosticsData(0));
+
+    JsonElement data = Payload(Frames.State(state), "state");
+
+    Assert.True(data.TryGetProperty("light", out JsonElement light));
+    Assert.Equal(JsonValueKind.Null, light.ValueKind);
+  }
+
+  [Fact]
+  public void StateCarriesTheMeasuredFrameRateWhileStreaming() {
+    StateData state = new StateData(
+      "link",
+      "live",
+      [],
+      new GridData(128.0, 4.0, 4, 1, BarAligned: true),
+      new AlignmentData(Aligned: true, Method: "tap"),
+      new LightData(49.7),
+      new DiagnosticsData(0));
+
+    JsonElement data = Payload(Frames.State(state), "state");
+
+    Assert.Equal(49.7, data.GetProperty("light").GetProperty("fps").GetDouble());
   }
 
   /// <summary>
@@ -101,6 +141,7 @@ public sealed class WireFormatTests {
       [new SourceReportData("manual", "live", 1.0)],
       new GridData(128.0, 4.0, 4, 1, BarAligned: true),
       new AlignmentData(Aligned: true, Method: "tap"),
+      Light: null,
       new DiagnosticsData(0.0, Taps: 4, LastTapAgoMs: 512.0));
 
     JsonElement data = Payload(Frames.State(state), "state");

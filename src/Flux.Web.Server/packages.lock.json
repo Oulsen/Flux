@@ -2,11 +2,53 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
+      "HueApi": {
+        "type": "Transitive",
+        "resolved": "3.3.0",
+        "contentHash": "gEDZuribcK6QIjN8BVCNq3zs/3qXkQClz7m4C+fcwm4lHg8H0QZZ+BZGGqtqls67D8bUrJ8/aZ9O2mICRvWpgw=="
+      },
+      "HueApi.ColorConverters": {
+        "type": "Transitive",
+        "resolved": "3.3.0",
+        "contentHash": "fz2LFMHnya+ePwFjJu/fp1lOwgSy68VgjC+Fi5bXH2fpZwInXFEVQIeHC7LSSXAFezKNX3hrubEM4W4tsrh9og==",
+        "dependencies": {
+          "HueApi": "3.3.0"
+        }
+      },
+      "HueApi.Entertainment": {
+        "type": "Transitive",
+        "resolved": "3.3.0",
+        "contentHash": "VV4qrZ3v/EvGOMW+/FwiAT9wxZ4HpzWJ79VtZW44JxfTi8VK4rVBgRtQfZLDbWJJGhQg8edVyme8ENA7JmMWVw==",
+        "dependencies": {
+          "HueApi.ColorConverters": "3.3.0",
+          "Portable.BouncyCastle": "1.9.0"
+        }
+      },
+      "Portable.BouncyCastle": {
+        "type": "Transitive",
+        "resolved": "1.9.0",
+        "contentHash": "eZZBCABzVOek+id9Xy04HhmgykF0wZg9wpByzrWN7q8qEI0Qen9b7tfd7w8VA3dOeesumMG7C5ZPy0jk7PSRHw=="
+      },
+      "System.Security.Cryptography.ProtectedData": {
+        "type": "Transitive",
+        "resolved": "10.0.12",
+        "contentHash": "wO0W8VDMeRJZakRySOmemAnrBZMwEFRlbfBtATxUiLf2I3IhSRnCp1Vt157NWptdE4IJ7eftd5n8q9LtaKHFTQ=="
+      },
       "flux.audio.contract": {
         "type": "Project"
       },
       "flux.beat": {
         "type": "Project"
+      },
+      "flux.hue": {
+        "type": "Project",
+        "dependencies": {
+          "Flux.Beat": "[0.2.0, )",
+          "HueApi": "[3.3.0, )",
+          "HueApi.ColorConverters": "[3.3.0, )",
+          "HueApi.Entertainment": "[3.3.0, )",
+          "System.Security.Cryptography.ProtectedData": "[10.0.12, )"
+        }
       }
     }
   }

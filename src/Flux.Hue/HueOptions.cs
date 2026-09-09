@@ -13,6 +13,19 @@ public sealed class HueOptions {
   public const string SectionName = "Hue";
 
   /// <summary>
+  /// The largest latency offset that means anything, in either direction.
+  ///
+  /// Half a second is a whole beat at 120 BPM. An offset larger than that is not a
+  /// latency correction any more, it is an offset to a different beat, and the
+  /// smaller equivalent is the number somebody actually meant.
+  ///
+  /// Public because the bound is enforced twice and must not be able to disagree
+  /// with itself: once on <see cref="LatencyOffsetMs"/> at startup, and once on the
+  /// slider that moves it while the music is playing.
+  /// </summary>
+  public const int MaxLatencyOffsetMs = 500;
+
+  /// <summary>
   /// Whether Flux talks to a bridge at all.
   ///
   /// Worth a setting for the same reason the MIDI observer has one: a build with

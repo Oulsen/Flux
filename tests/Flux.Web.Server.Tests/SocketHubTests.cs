@@ -616,6 +616,8 @@ public sealed class SocketHubTests {
       sources,
       manual,
       audio,
+      hue: null,
+      new FakeHostLifetime(),
       NullLogger<SocketHub>.Instance);
 
     return new Rig(hub, sources, manual);

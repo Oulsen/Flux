@@ -186,6 +186,8 @@ public sealed class StateSnapshotTests {
       spare,
       new ManualSource(clock, spare),
       audio: null,
+      hue: null,
+      new FakeHostLifetime(),
       NullLogger<SocketHub>.Instance);
   }
 

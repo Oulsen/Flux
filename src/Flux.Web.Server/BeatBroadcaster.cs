@@ -202,6 +202,11 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
         report.Status.Confidence))],
       reading,
       new AlignmentData(snapshot.IsBarAligned, MethodName(snapshot.AlignmentMethod)),
+
+      // Null in this build because nothing streams to a bridge yet, which is the same
+      // thing it will mean once something does. The field is sent rather than omitted
+      // so a page can render "not streaming" from the state it already receives.
+      Light: null,
       Counters(active.Diagnostics, snapshot.MaxReanchorJumpBeats));
   }
 

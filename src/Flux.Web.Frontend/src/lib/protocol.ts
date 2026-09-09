@@ -21,6 +21,23 @@ export type DeviceKind = 'capture' | 'loopback';
 
 export type DeviceState = 'signal' | 'digitalSilence' | 'noData' | 'failed';
 
+/**
+ * Where Flux has got to with a bridge.
+ *
+ * Seven rather than a paired boolean, because each one is a different screen.
+ * `unpaired` carrying a `message` is the ordinary end of a pairing attempt nobody
+ * answered and must not be painted as a failure - nothing broke, the button is on a
+ * physical object in another room and it was not pressed in time.
+ */
+export type HueState =
+  | 'disabled'
+  | 'unpaired'
+  | 'discovering'
+  | 'pairing'
+  | 'connecting'
+  | 'ready'
+  | 'failed';
+
 export interface HelloData {
   protocol: number;
   app: string;
@@ -68,6 +85,17 @@ export interface DiagnosticsData {
   lastTapAgoMs?: number;
 }
 
+/**
+ * What the light stream is achieving.
+ *
+ * `fps` is measured and is not the configured rate echoed back. It is also not the
+ * rate a bulb renders: the bridge forwards over Zigbee at roughly 25 updates a second
+ * and drops the excess, so a gap between the two is the design and not a fault.
+ */
+export interface LightData {
+  fps: number;
+}
+
 export interface StateData {
   source: string;
   sourceState: SourceState;
@@ -75,6 +103,8 @@ export interface StateData {
   /** Null exactly when nothing has been received yet. Never render it as zero. */
   grid: GridData | null;
   alignment: AlignmentData;
+  /** Null exactly when Flux is not streaming. The only field that says whether it is. */
+  light: LightData | null;
   diagnostics: DiagnosticsData;
 }
 
@@ -123,6 +153,46 @@ export interface BeatData {
   bpm: number;
 }
 
+export interface HueBridgeData {
+  id: string;
+  /** Where it answered from this time. Display only: DHCP moves it, so never store it. */
+  address: string;
+}
+
+export interface HueAreaData {
+  id: string;
+  name: string;
+  channelCount: number;
+  /**
+   * Whether something already holds this area's one streaming session, which is the
+   * pre-flight for a failure that otherwise arrives as an opaque DTLS timeout. It does
+   * not say who: the bridge offers no name to blame, and it does not distinguish Flux
+   * from another application.
+   */
+  streaming: boolean;
+}
+
+/**
+ * Everything the page knows about the bridge, pushed on change rather than at the
+ * state rate.
+ *
+ * Nothing here is optional. Every null is a documented value - no bridge paired, no
+ * window running - rather than an absence, which is the opposite of how
+ * `DiagnosticsData` and `DeviceData` treat theirs.
+ */
+export interface HueData {
+  state: HueState;
+  bridge: HueBridgeData | null;
+  discovered: HueBridgeData[];
+  areas: HueAreaData[];
+  selectedAreaId: string | null;
+  /** Non-null exactly when `state` is `pairing`. */
+  pairingSecondsRemaining: number | null;
+  /** Signed milliseconds; positive sends light early. Always a real number. */
+  latencyOffsetMs: number;
+  message: string | null;
+}
+
 export interface EchoData {
   t: number;
 }
@@ -156,6 +226,27 @@ export interface SetBpmData {
   bpm: number | null;
 }
 
+export interface PairBridgeData {
+  bridgeId: string;
+}
+
+export interface SelectAreaData {
+  areaId: string;
+}
+
+export interface SetLatencyOffsetData {
+  /** -500 to 500. Outside that is refused rather than clamped. */
+  offsetMs: number;
+}
+
+/**
+ * None of these is answered with a reply.
+ *
+ * Each is confirmed by the broadcast that follows - a `hue` frame for the bridge
+ * messages - because pairing is normally watched on two screens at once, and a reply
+ * addressed to the phone would leave the laptop showing a state that had already
+ * moved. So a button stays pending until the feed agrees with it.
+ */
 export type ClientMessage =
   | { type: 'ping'; data: EchoData }
   | { type: 'subscribe'; data: SubscribeData }
@@ -165,7 +256,12 @@ export type ClientMessage =
   // clocks are unrelated and a timestamp from this one would place the beat
   // somewhere arbitrary.
   | { type: 'tap'; data: Record<string, never> }
-  | { type: 'setBpm'; data: SetBpmData };
+  | { type: 'setBpm'; data: SetBpmData }
+  | { type: 'discoverBridges'; data: Record<string, never> }
+  | { type: 'pairBridge'; data: PairBridgeData }
+  | { type: 'selectArea'; data: SelectAreaData }
+  | { type: 'forgetBridge'; data: Record<string, never> }
+  | { type: 'setLatencyOffset'; data: SetLatencyOffsetData };
 
 /**
  * An inbound message decoded only as far as its type tag.

@@ -8,6 +8,8 @@ import {
   type ErrorData,
   type GridData,
   type HelloData,
+  type HueData,
+  type LightData,
   type RawMessage,
   type SourceReportData,
   type SourceState,
@@ -86,6 +88,19 @@ export class FluxStore {
   // claim a measurement nobody has made.
   diagnostics = $state<DiagnosticsData>({ reanchorMaxBeats: 0 });
 
+  /**
+   * The bridge picture, or null before the first frame has arrived.
+   *
+   * Null is "not told yet" and never "no bridge": the server sends one of these the
+   * moment a socket opens, so null lasts about as long as the handshake. A page that
+   * rendered "unpaired" while it was null would flash a pairing screen at somebody
+   * whose lights are already running.
+   */
+  hue = $state<HueData | null>(null);
+
+  /** Non-null exactly while Flux is streaming to a bridge. */
+  light = $state<LightData | null>(null);
+
   beat = $state<BeatData | null>(null);
 
   /** Bumped once per beat, so a flash can be retriggered even on a repeat position. */
@@ -139,6 +154,7 @@ export class FluxStore {
         this.sources = state.sources;
         this.alignment = state.alignment;
         this.grid = state.grid;
+        this.light = state.light;
         this.diagnostics = state.diagnostics;
         this.pendingSource = resolvePending(this.pendingSource, state.source);
 
@@ -163,6 +179,14 @@ export class FluxStore {
           this.pendingDevice = resolvePending(this.pendingDevice, selected);
         }
 
+        break;
+      }
+
+      case 'hue': {
+        // Replaced wholesale rather than merged. The frame is a complete snapshot
+        // and the server compares it field by field before sending, so anything
+        // that arrives is genuinely different from what is held.
+        this.hue = message.data as HueData;
         break;
       }
 
@@ -225,5 +249,15 @@ export class FluxStore {
     // standing on screen that looks exactly like a live one, on a display whose
     // whole job is to say what is being heard right now.
     this.latestSpectrum = null;
+
+    // A stream Flux may or may not still be running is not a measured frame rate,
+    // and this field's whole contract is that a number in it was measured.
+    this.light = null;
+
+    // `hue` is deliberately kept, unlike everything above it. A reconnect brings a
+    // fresh frame within a second, the connection badge already marks the whole page
+    // as last-known, and the one moment this matters is a phone rejoining the Wi-Fi
+    // on the way back from the cupboard - blanking the pairing screen exactly then
+    // would be the worst possible time to be tidy.
   }
 }

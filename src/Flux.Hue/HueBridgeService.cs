@@ -42,7 +42,15 @@ public sealed class HueBridgeService: BackgroundService {
     _settings = settings;
     _options = options;
     _logger = logger;
-    _connection = HueConnection.Initial(options.Value.Enabled ? HueConnectionState.Unpaired : HueConnectionState.Disabled);
+
+    // A stored offset wins over the configured one, and null is the difference between
+    // "nobody has touched the slider" and "somebody decided this rig needs no
+    // correction". Read once here rather than on every broadcast: it is the user's
+    // number from this point on, and the settings file is only where it survives a
+    // restart.
+    _connection = HueConnection.Initial(
+      options.Value.Enabled ? HueConnectionState.Unpaired : HueConnectionState.Disabled,
+      settings.Load().LatencyOffsetMs ?? options.Value.LatencyOffsetMs);
   }
 
   /// <summary>The current picture. Complete on every read, never a delta.</summary>
@@ -135,6 +143,27 @@ public sealed class HueBridgeService: BackgroundService {
   }
 
   /// <summary>
+  /// Shifts light against the beat, and remembers it.
+  ///
+  /// Returns false outside <see cref="HueOptions.MaxLatencyOffsetMs"/> either way,
+  /// rather than clamping: the values just outside the range are typos, and clamping
+  /// turns a typo into a plausible wrong answer that somebody then tunes around.
+  ///
+  /// Not gated on a bridge being paired. The offset describes the room rather than the
+  /// hardware, and refusing to remember it until a bridge answers would lose the
+  /// number somebody set while waiting for one.
+  /// </summary>
+  public bool TrySetLatencyOffset(int offsetMs) {
+    if(Math.Abs(offsetMs) > HueOptions.MaxLatencyOffsetMs) {
+      return false;
+    }
+
+    _settings.Save(_settings.Load() with { LatencyOffsetMs = offsetMs });
+    Update(connection => connection with { LatencyOffsetMs = offsetMs });
+    return true;
+  }
+
+  /// <summary>
   /// Re-reads the bridge: where it is now, and what areas it has.
   ///
   /// The area list is not static - areas are created and deleted in the Hue app while
@@ -163,7 +192,12 @@ public sealed class HueBridgeService: BackgroundService {
   /// </summary>
   public void Forget() {
     _credentials.Clear();
-    _settings.Save(HueSettings.Empty);
+
+    // The latency offset survives, and is the one thing here that should. It describes
+    // how long light takes to reach the room, which is a fact about the room and the
+    // fixtures rather than about the bridge - so re-pairing the same bridge after a
+    // network change must not silently discard a number somebody tuned by eye.
+    _settings.Save(HueSettings.Empty with { LatencyOffsetMs = _settings.Load().LatencyOffsetMs });
     _logger.LogInformation("The paired bridge has been forgotten.");
 
     Update(connection => connection with {

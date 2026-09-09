@@ -62,6 +62,14 @@ public enum HueConnectionState {
 /// beat display never invents a tempo: a countdown of zero is a claim about time
 /// running out, and there is no window to run out.
 /// </param>
+/// <param name="LatencyOffsetMs">
+/// Milliseconds light is shifted against the beat, positive being early.
+///
+/// Part of this snapshot rather than read separately, because the slider is on the
+/// same screen as everything else here and two phones must not be able to show
+/// different values for it. Always a real number: unlike the countdown, there is no
+/// situation in which no offset is in force.
+/// </param>
 /// <param name="Message">
 /// English prose for a human, set when <see cref="State"/> is
 /// <see cref="HueConnectionState.Failed"/>. Never parsed, and never the thing a
@@ -74,9 +82,18 @@ public sealed record HueConnection(
   IReadOnlyList<HueArea> Areas,
   Guid? SelectedAreaId,
   int? PairingSecondsRemaining,
+  int LatencyOffsetMs,
   string? Message) {
   /// <summary>The state before anything has been attempted.</summary>
-  public static HueConnection Initial(HueConnectionState state) {
-    return new HueConnection(state, Bridge: null, [], [], SelectedAreaId: null, PairingSecondsRemaining: null, Message: null);
+  public static HueConnection Initial(HueConnectionState state, int latencyOffsetMs) {
+    return new HueConnection(
+      state,
+      Bridge: null,
+      [],
+      [],
+      SelectedAreaId: null,
+      PairingSecondsRemaining: null,
+      latencyOffsetMs,
+      Message: null);
   }
 }
