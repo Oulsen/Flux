@@ -81,6 +81,21 @@ no client anywhere that could have depended on those fields being present. The
 message was specified before it had a producer, and it was the specification that
 turned out to be wrong about what could honestly be measured.
 
+Version 1 grew again in Phase 3 and again did not break: a `hue` message, seven
+inbound messages to drive the bridge, and a `light` object on `state`. Every one
+of those is an addition, and an older page ignores a `type` it does not know by
+the rule above, so the worst it suffers is a build whose lights it cannot see -
+a degradation and not a misreading. Nothing existing changed name, unit or
+meaning.
+
+Phase 2's lesson about `devices` is worth repeating rather than filing, because
+this document is once again describing messages before anything produces them.
+Where that left a field's honesty uncertain the field is nullable rather than
+promised: `light` is null unless a stream is genuinely running, and `fps` is a
+measurement or it is absent along with the object holding it. If a promise made
+here turns out to be one Flux cannot keep, correcting it increments the version
+unless no build ever sent the field.
+
 ## Units and conventions
 
 | Field | Unit |
@@ -93,12 +108,17 @@ turned out to be wrong about what could honestly be measured.
 | `confidence` | 0 to 1, how much a source trusts its own tempo |
 | `rms`, `peak`, band levels | 0 to 1, linear amplitude, not decibels |
 | Spectrum `bins` | 0 to 255 integers, already scaled for display |
+| `offsetMs` | Milliseconds, and **signed**: positive sends light early |
 
-**There is no clock synchronisation and no latency compensation in version 1.**
-Server and client clocks are unrelated, so `beat` messages are rendered on
-arrival and never scheduled against a timestamp. The latency offset arrives in
-Phase 5 as a user-set slider, which is the only honest form it can take across
-devices.
+**There is no clock synchronisation, and nothing a browser renders is
+compensated for latency.** Server and client clocks are unrelated, so `beat`
+messages are rendered on arrival and never scheduled against a timestamp.
+
+The latency offset is a different quantity that is easy to mistake for that one.
+It shifts the *lights* against the beat, it is applied on the server where the
+lights are driven from, and it changes nothing a page draws. A page sets it and
+reads it back because a human watching the room is the only instrument that can
+measure it - not because the page is corrected by it. See `setLatencyOffset`.
 
 ## Server to client
 
@@ -153,6 +173,7 @@ changed. It is a snapshot and is never a delta.
     "barAligned": false
   },
   "alignment": { "aligned": false, "method": null },
+  "light": { "fps": 49.7 },
   "diagnostics": { "reanchorMaxBeats": 0.0, "packets": 4821 }
 }}
 ```
@@ -164,6 +185,7 @@ changed. It is a snapshot and is never a delta.
 | `sources` | array | Every source this build has, whether or not it is the active one |
 | `grid` | object or **null** | Null exactly when `sourceState` is `"waiting"` |
 | `alignment` | object | Whether the bar has been anchored, and by what |
+| `light` | object or **null** | Null exactly when Flux is not streaming to a bridge |
 | `diagnostics` | object | Health counters for the active source |
 
 `sourceState` distinguishes three situations that a single boolean would blur:
@@ -233,6 +255,41 @@ An alignment is a beat index, so anything that renumbers the beat - a tempo
 change, a session change, a source switch, a tap - clears it and it has to be
 made again. That is a property of the beat numbering rather than a shortcoming
 of the anchor: see `beat` below.
+
+### `state.light`
+
+What the light stream is actually achieving, and the single authority on whether
+Flux is streaming at all.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `fps` | number | Frames a second the stream is achieving, measured over the last second. Not the configured rate |
+
+It rides the 20 Hz feed rather than the `hue` message because it is a moving
+measurement, and `hue` is pushed on change: a frame rate belongs with the other
+numbers that are different every time they are read, not with a list of
+entertainment areas that would then be re-sent once a second for nothing.
+
+**`fps` is measured, never the configured rate echoed back**, which is the whole
+point of the field. Flux aims at `Hue:StreamHz`, and a stream that is quietly
+achieving half of it looks identical from the outside to one that is not - the
+lights are simply less smooth than somebody expected, on a night when everything
+else is also a suspect.
+
+Rates that are all correct and all different get confused here, so this one names
+its layer: `light.fps` counts frames Flux sent to the *bridge*. A bulb renders
+roughly 25 updates a second over Zigbee whatever this says, because the bridge
+forwards at its own rate and drops the rest, and a gap between those two is the
+design rather than a fault. It is also **not** `diagnostics.fps`, which is the
+audio analyzer at the far end of the chain: one is how fast Flux is listening,
+the other is how fast it is speaking, and they have no reason to match.
+
+Null exactly when Flux is not streaming, on the same principle that makes `grid`
+null while waiting: there is no honest frame rate for a stream that is not
+running, and a zero would read as a stream that is running and failing. Why it
+is not running is `hue`'s question, not this one's - no bridge, no area chosen,
+somebody pressed stop, or the bridge's one session belongs to another
+application.
 
 ### `state.diagnostics`
 
@@ -398,6 +455,120 @@ that is present but far too quiet has a low peak, while a signal that is
 clipping has a peak pinned at 1 with an rms well below it. A meter drawn from
 either one alone hides one of those.
 
+### `hue`
+
+Everything the page knows about the bridge, as one snapshot. Sent once
+immediately after `hello`, and then **only when something changes**.
+
+```json
+{ "type": "hue", "data": {
+  "state": "ready",
+  "bridge": { "id": "001788fffe1a2b3c", "address": "192.168.1.42" },
+  "discovered": [
+    { "id": "001788fffe1a2b3c", "address": "192.168.1.42" }
+  ],
+  "areas": [
+    { "id": "6f3a1c58-0c1e-4f1a-9b7d-2f8e5a0d4c11", "name": "Booth", "channelCount": 7, "streaming": false }
+  ],
+  "selectedAreaId": "6f3a1c58-0c1e-4f1a-9b7d-2f8e5a0d4c11",
+  "pairingSecondsRemaining": null,
+  "latencyOffsetMs": 90,
+  "message": null
+}}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `state` | string | Which of the seven situations below the user is in |
+| `bridge` | object or **null** | The paired bridge. Null before there is one |
+| `discovered` | array | What the last discovery found. May be empty, and may contain the paired bridge |
+| `areas` | array | The bridge's entertainment areas. Empty until it is reachable |
+| `selectedAreaId` | string (uuid) or **null** | The area lights will be streamed to. Null until one is chosen |
+| `pairingSecondsRemaining` | int or **null** | Seconds left in the pairing window. Non-null **exactly** when `state` is `"pairing"` |
+| `latencyOffsetMs` | int | The current light latency offset, signed. See `setLatencyOffset` |
+| `message` | string or **null** | English prose for a human, when there is something to say |
+
+**This is a separate message rather than a field on `state`, and the area list is
+the reason.** `state` goes out twenty times a second; an entertainment area list
+sent at that rate is twelve hundred copies a minute of something that changes
+when a user opens the Hue app, which is roughly never. Pushing on change instead
+also means a page can render the pairing screen from the message it was sent
+rather than from a diff it computed.
+
+A frame is sent immediately on connect so a page that joins mid-session is not
+blank until the next thing happens. That matters more here than anywhere else on
+this socket: pairing is driven from a phone that may have connected thirty
+seconds ago, and "nothing has changed yet" and "the bridge is unreachable" must
+not look the same.
+
+#### `hue.state`
+
+Seven values rather than a paired boolean, because each one is a different
+screen and collapsing any two of them sends somebody to a hall cupboard for
+nothing.
+
+| Value | Meaning |
+|---|---|
+| `disabled` | Lights are switched off in the settings (`Hue:Enabled`). Nothing will be attempted, and no button on the page will change that |
+| `unpaired` | No credentials. The pairing screen is the whole of the UI here |
+| `discovering` | Listening for bridges |
+| `pairing` | Asking the bridge to register, once a second, waiting for the link button |
+| `connecting` | Paired, and asking the bridge what it has |
+| `ready` | Paired, reachable, and the areas are known |
+| `failed` | Something failed that the user has to know about, and `message` says what |
+
+**`unpaired` with a `message` is the normal end of a pairing attempt nobody
+answered, and it is deliberately not `failed`.** Nothing broke: the button is on
+a physical object in another room and it was not pressed in time. A client that
+paints that red teaches its user to distrust red.
+
+`disabled` is not an error either, and a client should say what it is rather than
+showing a pairing screen that cannot work. It exists so that a build with the
+lights switched off and a build that cannot find a bridge stop looking identical
+from the outside.
+
+#### `hue.bridge` and `hue.discovered`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | The bridge's own identifier, and the only value `pairBridge` accepts |
+| `address` | string | Where it answered from, this time |
+
+**`address` is for display and for nothing else.** It is expected to change
+between sessions, because DHCP moves a bridge and Flux stores only the id: every
+reconnect re-discovers where that id currently answers. A client that remembers
+an address has remembered the one part of this that is not durable.
+
+The discovered list is kept while pairing rather than cleared, because that list
+is what the pairing screen is showing. A user who cannot see their bridge needs
+to know whether none were found or whether theirs was not among them, and an
+empty list during pairing answers a question nobody asked.
+
+#### `hue.areas`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string (uuid) | The configuration id, which is what a stream is opened against, and the only value `selectArea` accepts |
+| `name` | string | What it is called in the Hue app |
+| `channelCount` | int | How many channels the area drives |
+| `streaming` | bool | Whether something is already streaming to this area |
+
+`channelCount` is worth showing beside the name because a user with two areas has
+usually named them badly and can still tell three lights from ten.
+
+**`streaming` is the pre-flight, and it is the most valuable field in this
+message.** A bridge allows exactly one streaming session, and a second one does
+not fail with a message saying so - it fails as a DTLS handshake that times out,
+which is indistinguishable from a wrong key, a moved bridge or a network
+problem. Asking the bridge cheaply, before anything opens a socket, is what turns
+that into a sentence a user can act on. The usual cause is Hue Sync still running
+in the tray.
+
+It does not say *who* is streaming, because the bridge does not offer a name to
+blame. It also does not distinguish Flux's own stream from another
+application's: when Flux is streaming to the selected area, that area reports
+`streaming` too. `state.light` is the field that answers "is this us".
+
 ### `pong`
 
 The reply to `ping`, echoing `t` unchanged, so the client can measure a
@@ -550,6 +721,175 @@ source goes back to `"waiting"`, and if it was the active source the grid stops
 reporting a tempo at all - a cleared tempo that kept extrapolating would be the
 one reading a beat display must never invent.
 
+### The Hue messages
+
+Seven messages drive the bridge, and **none of them is answered with a reply.**
+Each is confirmed by the broadcast that follows - a `hue` frame for the five that
+change the bridge picture, `state.light` for `startStream` and `stopStream` - or
+by `error` when the server declines. That is not a shortcut: pairing is normally
+watched on two screens at once, a phone in a hallway and a laptop in the booth,
+and a reply addressed to one of them would leave the other showing a state that
+had already moved. The broadcast is the answer, and everybody gets it.
+
+So a client shows a pressed button as pending until the feed agrees with it,
+exactly as `selectSource` requires. A page that lights its own button on click
+will keep lying about it after a rejection.
+
+`rejected` is the answer to a request that was well formed and could not be
+honoured, and it needs no new error code: an unknown bridge id and an area the
+bridge never reported are both the ordinary race of a screen that went stale
+while somebody was walking, which is precisely what `rejected` already means.
+
+### `discoverBridges`
+
+```json
+{ "type": "discoverBridges", "data": { } }
+```
+
+Looks for bridges and puts the result in `discovered`. `data` is empty and is
+ignored.
+
+**Discovery does not disturb a working pairing.** It is how an unpaired user
+finds a bridge, and it is also how a paired one checks that theirs is still on
+the network, so it never clears credentials or the chosen area. Anyone may ask
+at any time.
+
+It takes seconds rather than milliseconds, because mDNS answers arrive over time
+and Flux waits for them: `state` goes to `discovering` for the duration, which is
+what a client should render rather than a spinner of its own invention. A bridge
+that answers after the window is missed, not broken, and asking again is the fix.
+
+### `pairBridge`
+
+```json
+{ "type": "pairBridge", "data": { "bridgeId": "001788fffe1a2b3c" } }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `bridgeId` | string | The `id` of a bridge from `discovered` |
+
+Asks that bridge to register Flux, once a second for about a minute, until
+somebody presses its link button. `state` is `"pairing"` throughout and
+`pairingSecondsRemaining` counts down; when the window closes unanswered the
+state returns to `unpaired` with a `message`, which is not a failure.
+
+**The countdown is redrawn from a real attempt rather than from a timer running
+beside one**, which is what makes it honest. Anything that makes it lie costs
+somebody a walk down a hall.
+
+Answered with `rejected` for a bridge id that is not in the discovered list. The
+usual cause is a pairing screen left open while the network changed underneath
+it, so a client should offer discovery again rather than repeat the request.
+
+A second `pairBridge` arriving mid-countdown does not start a competing loop:
+commands are serialised server-side, and two phones on the same page is the
+normal case rather than an exotic one.
+
+**Flux never reuses another application's credentials**, Hue Sync's included.
+Pairing creates Flux's own whitelist entry on the bridge, which is the only
+form that can be revoked without taking something else down with it.
+
+### `selectArea`
+
+```json
+{ "type": "selectArea", "data": { "areaId": "6f3a1c58-0c1e-4f1a-9b7d-2f8e5a0d4c11" } }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `areaId` | string (uuid) | The `id` of an area from `areas` |
+
+Chooses the entertainment area lights are streamed to, and remembers it across
+restarts. Answered with `rejected` for an area the bridge did not report.
+
+A remembered area the bridge no longer has is dropped when Flux connects rather
+than offered, because it was deleted in the Hue app between sessions and
+streaming to it would fail at the one moment nobody is watching a screen.
+
+Selecting an area that another application is already streaming to is allowed and
+is not rejected: the bridge's one session may well be free again by the time
+anybody presses start, and refusing the choice now would be answering a question
+about the future.
+
+### `startStream`
+
+```json
+{ "type": "startStream", "data": { } }
+```
+
+Opens the light stream to the selected area. `data` is empty and is ignored.
+Confirmed by `state.light` becoming non-null, not by a `hue` frame alone.
+
+Answered with `rejected` when there is nothing to stream to - no bridge, no area
+chosen, or a bridge that is not currently reachable. A busy area is refused the
+same way and is the one case worth a specific sentence on screen, because the
+fix is in another application rather than in this one.
+
+### `stopStream`
+
+```json
+{ "type": "stopStream", "data": { } }
+```
+
+Closes the stream and releases the bridge's session. `data` is empty and is
+ignored.
+
+**Stopping is idempotent and is never rejected.** A stop that arrives when
+nothing is running has got exactly what it asked for, and answering it with an
+error would put a red message on screen for a user whose lights are already off.
+
+### `forgetBridge`
+
+```json
+{ "type": "forgetBridge", "data": { } }
+```
+
+Discards the stored credentials and the chosen area, returning `state` to
+`unpaired`. `data` is empty and is ignored.
+
+**This is Flux forgetting the bridge and not the other way round.** The bridge
+keeps its whitelist entry until somebody deletes it in the Hue app, and pairing
+again creates a second entry rather than reusing the first. Worth saying on
+screen, because "forget" reads as undoing the pairing and it is only half of
+that.
+
+Like stopping, it is never rejected: forgetting a bridge that was never paired
+leaves the world exactly as the caller wanted it.
+
+### `setLatencyOffset`
+
+```json
+{ "type": "setLatencyOffset", "data": { "offsetMs": 90 } }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `offsetMs` | int | Milliseconds to shift light against the beat, from -500 to 500. Positive sends light early |
+
+The light path runs roughly 60 to 140 ms behind the music - the bridge, the
+Zigbee hop and the bulb itself all take their share - so a change sent the
+instant a beat lands is seen late, and a positive offset sends it early to
+compensate. Negative values delay the lights instead, which is what a rig with a
+long audio path rather than a long light one needs.
+
+**A slider exists for this because a rebuild is the wrong unit of adjustment.**
+It is the one number that decides whether the light looks like it lands on the
+music, the right value depends on the room and the fixtures, and the only
+instrument that can measure it is somebody standing in front of the lights while
+the music plays. `Hue:LatencyOffsetMs` sets the value the session starts at and
+the page owns it from there.
+
+The value is server-side and is echoed in every `hue` frame, so a second phone
+opening the page sees the offset that is actually in force rather than its own
+slider's idea of one.
+
+Outside -500..500 is answered with `rejected` rather than clamped, on the same
+argument as `setBpm`: at 120 BPM half a second is a whole beat, so an offset past
+that is not a late light but a light on the wrong beat, and clamping a typo into a
+plausible wrong answer is worse than refusing it. Anything that is not an integer
+is `invalid_data`.
+
 ## Backpressure
 
 Each client has a bounded outbound queue. When it is full the **oldest** queued
@@ -564,6 +904,17 @@ beat scheduler thread, and the light show must never wait for a browser.
 `hello`, `pong` and `error` are queued the same way. A client slow enough to
 lose its `hello` is slow enough to be losing everything else too.
 
+**`hue` is queued the same way too, and it is the one message where that costs
+something**, because it is the only one pushed on change: a dropped `state` is
+replaced fifty milliseconds later, while a dropped `hue` leaves a stale bridge
+picture on screen until the bridge next changes, which may be never. It is
+queued normally anyway rather than given a slot of its own, for two reasons. It
+is a handful of frames an hour outside pairing, so a queue full at that exact
+moment means the client is already losing beats and has a worse problem. And
+during pairing - the one time `hue` frames come in a run - the countdown re-sends
+the complete picture every second, so the case with the most frames to lose is
+also the case that heals itself.
+
 **`spectrum` is queued separately, and holds exactly one frame.** A newer
 spectrum frame replaces the queued one instead of joining it, and the connection
 sends everything else first. Both halves of that are the same rule: a
@@ -574,9 +925,17 @@ push the beats out.
 
 ## Reconnection
 
-The client reconnects on its own with a capped backoff and gets a fresh `hello`.
-Because the server holds no position in any stream, a reconnect needs no
-resumption token, no replay and no sequence numbers.
+The client reconnects on its own with a capped backoff and gets a fresh `hello`,
+followed by a fresh `hue`. Because the server holds no position in any stream, a
+reconnect needs no resumption token, no replay and no sequence numbers.
+
+The two unprompted frames are unprompted for the same reason: everything else on
+this socket repeats, and those two do not. `hello` is sent once per connection by
+definition, and `hue` is pushed on change, so a page that had to wait for the
+next change would sit on an empty pairing screen through a Wi-Fi hiccup that
+happened to land between two of them. Neither is subscription-gated, because a
+phone that has switched off the spectrum to save its battery still has to be able
+to pair a bridge.
 
 **Subscriptions do not survive a reconnect** and are not meant to. A new
 connection starts with everything expensive switched off, so a client that wants

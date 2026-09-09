@@ -3,7 +3,7 @@ namespace Flux.Hue;
 /// <summary>
 /// Where Flux has got to with a bridge.
 ///
-/// Six states rather than a paired boolean, for the same reason the sync sources
+/// Seven states rather than a paired boolean, for the same reason the sync sources
 /// report three: the useful question is never "connected or not", it is which of
 /// several honest situations the user is looking at, and each of these calls for a
 /// different screen.
