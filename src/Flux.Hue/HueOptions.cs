@@ -44,6 +44,24 @@ public sealed class HueOptions {
   public TimeSpan DiscoveryTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
   /// <summary>
+  /// How long Flux keeps asking the bridge to register after the user says "pair".
+  ///
+  /// The link button's own window is about 30 seconds, and this is deliberately
+  /// longer: the person pressing it is walking to a cupboard with a phone in their
+  /// hand, and a window that expires while they are still on the stairs turns a
+  /// successful pairing into a failure message.
+  /// </summary>
+  public TimeSpan PairingWindow { get; set; } = TimeSpan.FromSeconds(60);
+
+  /// <summary>
+  /// How often to ask, inside that window.
+  ///
+  /// Once a second, which is what makes the countdown on screen honest: it is
+  /// redrawn from a real attempt rather than from a timer counting down beside one.
+  /// </summary>
+  public TimeSpan PairingPollInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+  /// <summary>
   /// Frames a second sent to the bridge while streaming.
   ///
   /// 50 is the official guidance and the default for that reason. It is not the

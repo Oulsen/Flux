@@ -89,6 +89,8 @@ backend.
 | `Audio:RecordAudioPath` | `null` | File to write the captured audio to as a mono WAVE recording, for questions about the analyzer itself rather than the detector; about 11 MB a minute, off unless set |
 | `Midi:Enabled` | `true` | Whether to watch a MIDI controller, so a cue press on an audible deck can anchor the bar; observation is read-only and does not disturb rekordbox |
 | `Midi:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the MIDI input to watch; empty watches nothing, because the notes Flux reads were measured on one controller |
+| `Hue:Enabled` | `true` | Whether Flux contacts a Hue bridge at all. Off gives the beat lab back unchanged, for the sessions where the question is the grid rather than the show |
+| `Hue:BridgeAddress` | `null` | The bridge's address, when discovery should not be asked; `null` discovers it. Set this only where mDNS cannot reach the bridge, never as a shortcut, since DHCP moves it |
 | `Console:BeatLog` | `false` | Print one console line per beat, for debugging the beat grid without a browser |
 | `Console:AudioMeter` | `false` | Print the capture level four times a second, for identifying an audio device without a browser |
 
@@ -125,7 +127,7 @@ npm test
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, and a spectrum frame |
 | `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
-| `src/Flux.Hue` | Hue bridge settings and the encrypted store the bridge keys live in. No lights yet |
+| `src/Flux.Hue` | Bridge discovery, pairing, entertainment areas, and the encrypted store the bridge keys live in. No lights yet |
 | `src/Flux.Web.Server` | WebSocket hub, beat broadcaster, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable |

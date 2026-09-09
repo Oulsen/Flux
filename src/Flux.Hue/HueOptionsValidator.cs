@@ -43,6 +43,16 @@ internal sealed class HueOptionsValidator: IValidateOptions<HueOptions> {
         $"Hue:DiscoveryTimeout must be above zero and at most {MaxDiscoveryTimeout.TotalSeconds} seconds.");
     }
 
+    if(options.PairingWindow <= TimeSpan.Zero) {
+      return ValidateOptionsResult.Fail("Hue:PairingWindow must be above zero. It is how long the link button is waited for.");
+    }
+
+    if(options.PairingPollInterval <= TimeSpan.Zero || options.PairingPollInterval > options.PairingWindow) {
+      return ValidateOptionsResult.Fail(
+        "Hue:PairingPollInterval must be above zero and no longer than Hue:PairingWindow. "
+        + "A poll slower than the window means the bridge is asked once and the countdown is decoration.");
+    }
+
     if(options.StreamHz is < MinStreamHz or > MaxStreamHz) {
       return ValidateOptionsResult.Fail(
         $"Hue:StreamHz must be between {MinStreamHz} and {MaxStreamHz}. The bridge's own guidance is 50 to 60; "

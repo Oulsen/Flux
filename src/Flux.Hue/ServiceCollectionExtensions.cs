@@ -34,11 +34,24 @@ public static class ServiceCollectionExtensions {
 
     // %APPDATA%\Flux - per-user, user-writable and surviving an update, which is the
     // combination an installed app needs and the install directory has none of. The
-    // path is resolved here rather than inside the store so that a test can point the
-    // same class at a temporary folder without a setting existing for it.
+    // path is resolved here rather than inside the stores so that a test can point the
+    // same classes at a temporary folder without a setting existing for it.
+    string directory = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Flux");
+
     services.AddSingleton<ICredentialStore>(provider => new DpapiCredentialStore(
-      System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Flux"),
+      directory,
       provider.GetRequiredService<ILogger<DpapiCredentialStore>>()));
+    services.AddSingleton<IHueSettingsStore>(provider => new JsonHueSettingsStore(
+      directory,
+      provider.GetRequiredService<ILogger<JsonHueSettingsStore>>()));
+
+    services.AddSingleton<IHueBridgeClient, HueApiBridgeClient>();
+
+    // Registered as itself and as the hosted service, because the web layer calls it
+    // by name: a second instance would hold a second, disagreeing picture of the same
+    // bridge, and the page would show whichever one answered.
+    services.AddSingleton<HueBridgeService>();
+    services.AddHostedService(provider => provider.GetRequiredService<HueBridgeService>());
 
     return services;
   }
