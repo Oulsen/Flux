@@ -16,8 +16,9 @@ there is not checkable by anyone.
   Microsoft.Testing.Platform). Run the test projects directly instead:
   `dotnet run --project tests/Flux.Beat.Tests`,
   `dotnet run --project tests/Flux.Audio.Tests`,
-  `dotnet run --project tests/Flux.Midi.Tests` and
-  `dotnet run --project tests/Flux.Web.Server.Tests`.
+  `dotnet run --project tests/Flux.Midi.Tests`,
+  `dotnet run --project tests/Flux.Web.Server.Tests` and
+  `dotnet run --project tests/Flux.Hue.Tests`.
 - Frontend checks, from `src/Flux.Web.Frontend`: `npm run check`
   (svelte-check) and `npm test` (node --test). Both must pass; `npm run check`
   is the frontend's only type gate.

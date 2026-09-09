@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- net10.0, deliberately, even though the credential store underneath is
+       Windows-only. Flux.Audio had to go net10.0-windows because WASAPI is the
+       whole project, and that cost a second project (Flux.Audio.Contract) to give
+       the web layer shapes it could reference. Nothing here is like that: the
+       bridge is HTTP and UDP, and the one Windows-only call is DPAPI, which is
+       annotated at its own class instead. So the web layer references this project
+       directly and there is no contract assembly to keep in step. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <!-- The pairing state machine, the busy pre-flight and the colour engine are
+       internal: they exist for this assembly, and the only outside caller they
+       need is the test project. That split is the testing strategy - the bridge
+       needs a human at its link button, and everything else must not. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Flux.Hue.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="HueApi" Version="3.3.0" />
+    <PackageReference Include="HueApi.ColorConverters" Version="3.3.0" />
+    <PackageReference Include="HueApi.Entertainment" Version="3.3.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
+  </ItemGroup>
+
+</Project>

@@ -107,6 +107,7 @@ dotnet run --project tests/Flux.Beat.Tests
 dotnet run --project tests/Flux.Audio.Tests
 dotnet run --project tests/Flux.Midi.Tests
 dotnet run --project tests/Flux.Web.Server.Tests
+dotnet run --project tests/Flux.Hue.Tests
 ```
 
 Frontend checks, from `src/Flux.Web.Frontend`:
@@ -124,6 +125,7 @@ npm test
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, and a spectrum frame |
 | `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
+| `src/Flux.Hue` | Hue bridge settings and the encrypted store the bridge keys live in. No lights yet |
 | `src/Flux.Web.Server` | WebSocket hub, beat broadcaster, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable |

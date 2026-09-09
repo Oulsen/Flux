@@ -1,6 +1,7 @@
 using Flux.App;
 using Flux.Audio;
 using Flux.Beat;
+using Flux.Hue;
 using Flux.Midi;
 using Flux.Web.Server;
 using Microsoft.AspNetCore.Builder;
@@ -50,6 +51,12 @@ builder.Services.AddAudioSource();
 // registers nothing with the manager and has no opinion about tempo, it only says
 // where a bar starts - so it goes after the sources rather than among them.
 builder.Services.AddFlxObserver(builder.Configuration);
+
+// The lights. Settings and the credential store only, for now: nothing here starts
+// a bridge conversation, and registering it this early is what makes a bad Hue
+// setting fail at startup with a message naming the key, rather than inside a
+// background loop where it would look like a bridge nobody switched on.
+builder.Services.AddHue(builder.Configuration);
 
 // The per-beat console line was Phase 1's stand-in for the visualizer; the web
 // app has taken that job, so it is opt-in diagnostics now - three lines a
