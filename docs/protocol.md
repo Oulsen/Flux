@@ -88,9 +88,20 @@ does not know by the rule above, so the worst it suffers is a build whose lights
 it cannot see - a degradation and not a misreading. Nothing existing changed name,
 unit or meaning.
 
-Version 1 grew once more in Phase 4 and again did not break: `state.light` gained a
-`color`, which is one added field on an existing payload. An older page ignores it and
-keeps reading the frame rate it came for.
+Version 1 grew once more in Phase 4 and again did not break, in three additions.
+`state.light` gained a `color`, which is one added field on an existing payload; an
+older page ignores it and keeps reading the frame rate it came for. A `stage` message
+and a `setStageSettings` message arrived together, and both are new types, which the
+rule above already covers.
+
+The third is the one worth arguing rather than asserting: **`spectrum.bins` went from
+64 columns to a count between 16 and 128, and the version did not move.** Narrowing a
+promise is normally exactly the change that increments it. It does not here because the
+promise was never made: this document has always said to read the array's length rather
+than to assume it, and it said so in the same paragraph that shows a shortened example.
+A client that followed that draws a finer or coarser spectrum and notices nothing else.
+One that hardcoded 64 was outside the contract before this change, which is a different
+thing from being broken by it.
 
 Phase 2's lesson about `devices` is worth repeating rather than filing, because
 this document is once again describing messages before anything produces them.
@@ -380,15 +391,24 @@ What the audio analyzer is hearing, sent only to clients that asked for it with
 
 | Field | Type | Meaning |
 |---|---|---|
-| `bins` | array of int | 64 log-spaced display columns, low frequency first, each 0 to 255 |
+| `bins` | array of int | 128 log-spaced display columns, low frequency first, each 0 to 255 |
 | `kick` | number | Bass band energy, 0 to 1 |
 | `mids` | number | Mid band energy, 0 to 1 |
 | `highs` | number | High band energy, 0 to 1 |
 | `flux` | number | Spectral flux against the previous frame: the number the beat detector actually triggers on |
 | `beat` | string | `"none"`, `"beat"` or `"strong"` - the strongest verdict the detector reached since the previous frame sent to this client |
 
-The example shows eight bins for readability. There are always exactly 64, and a
+The example shows eight bins for readability. There are always exactly 128, and a
 client should still check rather than index blindly.
+
+**The count changed from 64 to 128 and the protocol version did not move**, which is
+the rule this document sets for itself applied rather than bent: a version bump is for
+a change an existing client could misread. A client that derives its column count from
+the array it was sent, as this rule has always told it to, draws a finer spectrum and
+notices nothing else. One that hardcoded 64 was already outside the contract, and the
+sentence above is why. The derivation of the number itself, and what the transform
+underneath it can actually resolve, is in
+[docs/audio-constants.md](audio-constants.md).
 
 This is a **test instrument, not a decoration.** It exists so that a beat marker
 can be watched against the music and against the spectrum that produced it,
@@ -621,6 +641,60 @@ It does not say *who* is streaming, because the bridge does not offer a name to
 blame. It also does not distinguish Flux's own stream from another
 application's: when Flux is streaming to the selected area, that area reports
 `streaming` too. `state.light` is the field that answers "is this us".
+
+### `stage`
+
+How the visualizer draws, pushed on change and once to every client the moment it
+connects.
+
+```json
+{ "type": "stage", "data": {
+  "layout": "upward",
+  "shape": "bars",
+  "color": "randomBeat",
+  "bands": 64
+}}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `layout` | string | `"upward"` (bars from the floor, full width) or `"mirrored"` (outward from the centre, each bar centred on the axis) |
+| `shape` | string | `"bars"`, `"thinBars"`, `"chonkerBars"`, `"pixel"`, `"smooth"` or `"smoothSimple"` |
+| `color` | string | `"randomBeat"`, `"hueCycle"`, `"hueWave"`, `"hueWaveVert"` or `"static"` |
+| `bands` | int | How many display columns `spectrum.bins` carries, 16 to 128 |
+
+Its own message rather than fields on `state`, on the argument that gave `hue` one:
+state goes out twenty times a second, and a look that changes when somebody taps a
+chip would be twelve hundred identical copies a minute of something nobody moved.
+Like `hue`, that means it does not repeat, which is why a client is sent one on
+connecting.
+
+**Server-side rather than per browser, and that is a reversal worth stating.** The
+first version of these settings lived in each browser's own storage, on the argument
+that whether a phone draws a canvas is a fact about the phone. That argument survives
+for exactly one switch - whether the stage is drawn at all, which is still local and
+is not in this protocol - and fails for the rest: the look of the stage is part of the
+show, it is set by whoever is standing at the page, and it should be the same look on
+the laptop and on the phone in somebody's hand.
+
+`bands` settles it on its own, because it is not a drawing preference at all. It
+decides how many columns the **analyzer** produces, which is what makes every count
+exact: the display columns are log-spaced between fixed endpoints, so column *c* of 64
+spans precisely columns 2c and 2c+1 of 128. Folding a finer feed down in the browser
+is exact only where the counts nest like that, and a count such as 100 would leave
+some bars covering two source columns and their neighbours one - a faint comb across a
+smooth spectrum. Computing them at the source makes any count evenly spaced and sends
+less over the wire at a low one.
+
+**Size a drawing from the length of `spectrum.bins`, not from this field.** The two
+agree, but a spectrum frame already in flight when the count changed carries the old
+one, and the array is the thing being drawn.
+
+Nothing the beat detector decides is affected by `bands`. It reads band energies over
+the whole transform and never these columns, which is why this is a resolution knob
+rather than a re-calibration. The derivation of the bounds, and what the transform
+underneath can actually resolve, is in
+[docs/audio-constants.md](audio-constants.md).
 
 ### `pong`
 
@@ -1088,6 +1162,36 @@ Like the offset, these are server-side and echoed in every `hue` frame as
 force rather than its own controls' idea of them. They survive a restart, and they
 survive `forgetBridge`: a palette is a choice about how a room should look, not a
 fact about the bridge.
+
+### `setStageSettings`
+
+One complete statement of how the visualizer should draw.
+
+```json
+{ "type": "setStageSettings", "data": {
+  "layout": "upward",
+  "shape": "bars",
+  "color": "randomBeat",
+  "bands": 64
+}}
+```
+
+Every field is required, for the reason `setLightSettings` requires all of its own: a
+page that could send a shape alone would be relying on the server to remember the
+rest, and two pages doing that at once produce a look neither of them chose.
+
+Confirmed by the `stage` frame that follows rather than by a reply, and that frame goes
+to **every** client rather than to the one that asked. That is the whole point of the
+setting having moved to the server: a shape chosen on a phone has to move the laptop's
+controls too, and a reply addressed to the phone would leave the laptop showing a look
+nobody is running.
+
+A name that is not on one of the three lists is `rejected` with the name quoted back.
+A `bands` outside 16 to 128 is `rejected` rather than clamped, on the same argument as
+`setLatencyOffset`. A missing field, a non-integer `bands`, or a name that is not a
+string is `invalid_data`.
+
+These survive a restart, in `%APPDATA%\Flux\stage-settings.json`.
 
 ## Backpressure
 

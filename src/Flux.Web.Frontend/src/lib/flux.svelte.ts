@@ -15,8 +15,10 @@ import {
   type SourceReportData,
   type SourceState,
   type SpectrumData,
+  type StageData,
   type StateData,
 } from './protocol.ts';
+import { BAND_DEFAULT, COLOR_DEFAULT, LAYOUT_DEFAULT, SHAPE_DEFAULT } from './scene.ts';
 import type { ConnectionState } from './socket.ts';
 import {
   clearsPendingSelection,
@@ -118,6 +120,33 @@ export class FluxStore {
   /** Non-null exactly while Flux is streaming to a bridge. */
   light = $state<LightData | null>(null);
 
+  /**
+   * How the stage draws, as the server has it.
+   *
+   * Seeded with the same defaults the server starts from rather than left null, on the
+   * argument `quantum` and `stateHz` already run on: the real frame arrives within a
+   * handshake, and a canvas that waited for it would flash an empty window on every
+   * load. The server is still the authority - this is only what to draw for the frame
+   * or two before it says so.
+   */
+  stage = $state<StageData>({
+    layout: LAYOUT_DEFAULT,
+    shape: SHAPE_DEFAULT,
+    color: COLOR_DEFAULT,
+    bands: BAND_DEFAULT,
+  });
+
+  /**
+   * The stage settings this page has asked for and not yet seen come back.
+   *
+   * The same arrangement as `pendingEngine`, for the same reason: every control sends
+   * all four fields because that is what the message is, but composed from the server's
+   * picture with this on top. Built from the server's picture alone, tapping a shape
+   * would carry the band count this page last heard about and undo one chosen on another
+   * phone half a second ago.
+   */
+  pendingStage = $state<Partial<StageData>>({});
+
   beat = $state<BeatData | null>(null);
 
   /** Bumped once per beat, so a flash can be retriggered even on a repeat position. */
@@ -199,6 +228,16 @@ export class FluxStore {
         break;
       }
 
+      case 'stage': {
+        // Replaced wholesale rather than merged: the frame is a complete statement of
+        // the look, which is exactly what the message that set it was.
+        const stage = message.data as StageData;
+
+        this.stage = stage;
+        this.pendingStage = resolvePendingFields(this.pendingStage, stage);
+        break;
+      }
+
       case 'hue': {
         // Replaced wholesale rather than merged. The frame is a complete snapshot
         // and the server compares it field by field before sending, so anything
@@ -238,6 +277,7 @@ export class FluxStore {
           this.pendingSource = null;
           this.pendingDevice = null;
           this.pendingEngine = {};
+          this.pendingStage = {};
         }
 
         console.warn('Flux rejected a message:', error);
@@ -261,6 +301,7 @@ export class FluxStore {
     this.pendingSource = null;
     this.pendingDevice = null;
     this.pendingEngine = {};
+    this.pendingStage = {};
 
     // A subscription is a preference held by the connection that is now gone, so
     // the list it filled is gone with it. Keeping the rows would show meters

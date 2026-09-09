@@ -60,6 +60,21 @@ internal sealed class SpectrumAnalyzer: IHostedService, IDisposable {
   private readonly IAudioSamples samples;
   private readonly IMonotonicClock clock;
   private readonly ILogger<SpectrumAnalyzer> log;
+
+  /// <summary>
+  /// Where the display column count comes from, or null to produce the ceiling.
+  ///
+  /// Read once per frame on the analyzer thread rather than cached, because the whole
+  /// point of it being an interface is that somebody is dragging a slider.
+  ///
+  /// Nullable but **not optional**, and the difference cost an evening. A default value
+  /// here is silently skipped by a factory lambda that lists its arguments, which is how
+  /// every registration in this project builds its services - so the band count reached
+  /// the server, was stored, was echoed to every page and moved every control, and the
+  /// analyzer went on producing the ceiling. With no default, every construction site
+  /// has to say which it means, and a host with no visualizer says so by passing null.
+  /// </summary>
+  private readonly ISpectrumBands? bands;
   private readonly CancellationTokenSource stopping = new CancellationTokenSource();
 
   private readonly float[] window = new float[AudioConstants.FftSize];
@@ -95,10 +110,15 @@ internal sealed class SpectrumAnalyzer: IHostedService, IDisposable {
   /// </summary>
   private int generation;
 
-  public SpectrumAnalyzer(IAudioSamples samples, IMonotonicClock clock, ILogger<SpectrumAnalyzer> log) {
+  public SpectrumAnalyzer(
+    IAudioSamples samples,
+    IMonotonicClock clock,
+    ILogger<SpectrumAnalyzer> log,
+    ISpectrumBands? bands) {
     this.samples = samples ?? throw new ArgumentNullException(nameof(samples));
     this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
     this.log = log ?? throw new ArgumentNullException(nameof(log));
+    this.bands = bands;
 
     for(int index = 0; index < this.taper.Length; index++) {
       this.taper[index] = FastFourierTransform.HannWindow(index, this.taper.Length);
@@ -245,7 +265,7 @@ internal sealed class SpectrumAnalyzer: IHostedService, IDisposable {
     SpectrumFrame frame = new SpectrumFrame(
       nowMicros,
       rate,
-      SpectrumScale.DisplayColumns(this.spectrum, rate),
+      SpectrumScale.DisplayColumns(this.spectrum, rate, this.bands?.Count ?? AudioConstants.DisplayBins),
       SpectrumScale.BandEnergy(this.spectrum, this.kickBand.Low, this.kickBand.High),
       SpectrumScale.BandEnergy(this.spectrum, this.midBand.Low, this.midBand.High),
       SpectrumScale.BandEnergy(this.spectrum, this.highBand.Low, this.highBand.High),

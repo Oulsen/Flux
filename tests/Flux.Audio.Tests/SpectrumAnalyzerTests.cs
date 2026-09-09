@@ -35,6 +35,15 @@ internal sealed class ToneSamples: IAudioSamples {
   }
 }
 
+/// <summary>A band count somebody can move while the analyzer is running.</summary>
+internal sealed class FixedBands: ISpectrumBands {
+  public FixedBands(int count) {
+    this.Count = count;
+  }
+
+  public int Count { get; set; }
+}
+
 public class SpectrumAnalyzerTests {
   /// <summary>
   /// Bin 43 at 48 kHz over 2048 samples, which is 1007.8125 Hz exactly. A bin
@@ -45,9 +54,13 @@ public class SpectrumAnalyzerTests {
   private const double ToneHz = 43 * 48_000.0 / AudioConstants.FftSize;
 
   /// <summary>
-  /// The column bin 43 lands in.
+  /// The column bin 43 lands in: 71 of 128, spanning about 977 to 1026 Hz.
+  ///
+  /// Hardcoded rather than derived from the spacing, so that a change to
+  /// <see cref="AudioConstants.DisplayBins"/> or to either display edge fails here
+  /// instead of quietly moving the picture. It was 35 of 64.
   /// </summary>
-  private const int ToneColumn = 35;
+  private const int ToneColumn = 71;
 
   /// <summary>
   /// A tone at the middle of the decibel window, which is the only level worth
@@ -128,6 +141,53 @@ public class SpectrumAnalyzerTests {
       // nothing to do with a kick drum.
       Assert.True(frame.Highs > frame.Kick, "The tone did not land in the band it belongs to.");
       Assert.InRange(frame.Kick, 0, 0.001);
+    } finally {
+      await Stop(analyzer);
+    }
+  }
+
+  [Fact]
+  public async Task ProducesTheNumberOfColumnsItWasAskedFor() {
+    // The claim the whole ISpectrumBands seam exists to make, and the one that was
+    // false for an evening: the count reached the server, was stored, was echoed to
+    // every page and moved every control, while the analyzer went on producing the
+    // ceiling because a factory lambda had skipped an optional argument. Asserted
+    // through a produced frame rather than through the field, because the field was
+    // never the thing that was wrong.
+    ToneSamples source = new ToneSamples { Amplitude = 0.5, Frequency = ToneHz };
+    FixedBands bands = new FixedBands(32);
+    SpectrumAnalyzer analyzer = Build(source, bands);
+
+    await analyzer.StartAsync(TestContext.Current.CancellationToken);
+
+    try {
+      Assert.True(await WaitUntil(() => analyzer.Latest is not null, Patience), "Nothing was ever analyzed.");
+      Assert.Equal(32, Assert.IsType<SpectrumFrame>(analyzer.Latest).Bins.Length);
+
+      // And it is read per frame rather than cached, which is the point of it being an
+      // interface: somebody is dragging a slider while the music plays.
+      bands.Count = 96;
+
+      Assert.True(
+        await WaitUntil(() => analyzer.Latest?.Bins.Length == 96, Patience),
+        "The analyzer kept its old column count after the setting moved.");
+    } finally {
+      await Stop(analyzer);
+    }
+  }
+
+  [Fact]
+  public async Task ProducesTheCeilingWithNobodyToAsk() {
+    // A host with no web layer - a recorder, a console build - has no opinion about the
+    // count and should get the whole picture rather than a default somebody guessed.
+    ToneSamples source = new ToneSamples { Amplitude = 0.5, Frequency = ToneHz };
+    SpectrumAnalyzer analyzer = Build(source);
+
+    await analyzer.StartAsync(TestContext.Current.CancellationToken);
+
+    try {
+      Assert.True(await WaitUntil(() => analyzer.Latest is not null, Patience), "Nothing was ever analyzed.");
+      Assert.Equal(AudioConstants.DisplayBins, Assert.IsType<SpectrumFrame>(analyzer.Latest).Bins.Length);
     } finally {
       await Stop(analyzer);
     }
@@ -231,8 +291,12 @@ public class SpectrumAnalyzerTests {
     Assert.Equal(analyzer.Frames, seen);
   }
 
-  private static SpectrumAnalyzer Build(IAudioSamples source) {
-    return new SpectrumAnalyzer(source, new MonotonicClock(), NullLogger<SpectrumAnalyzer>.Instance);
+  /// <summary>
+  /// A default is fine on a test helper, where every call site is visible and named -
+  /// unlike the constructor itself, where one silently skipped an argument.
+  /// </summary>
+  private static SpectrumAnalyzer Build(IAudioSamples source, ISpectrumBands? bands = null) {
+    return new SpectrumAnalyzer(source, new MonotonicClock(), NullLogger<SpectrumAnalyzer>.Instance, bands);
   }
 
   private static async Task Stop(SpectrumAnalyzer analyzer) {

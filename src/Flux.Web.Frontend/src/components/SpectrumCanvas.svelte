@@ -1,25 +1,58 @@
 <script lang="ts">
   /*
-   * The drawing half of the visualizer, and deliberately only that half.
+   * The drawing half of the stage, and deliberately only that half.
    *
-   * Every decision about what a bar's height should be at this instant lives in
-   * `lib/spectrum.ts`, under tests, because that is the part that can be wrong
-   * without looking wrong. What is left here is the part no test can settle: a
-   * canvas, a redraw loop and the two pieces of browser bookkeeping a canvas
-   * always needs, which are the pixel ratio and its own size.
+   * What a bar's height should be lives in `lib/spectrum.ts` and where it should go
+   * lives in `lib/scene.ts`, both under tests, because those are the parts that can be
+   * wrong without looking wrong. What is left here is the part no test can settle: a
+   * canvas, a redraw loop, the two pieces of browser bookkeeping a canvas always needs,
+   * and the handful of gradients that are objects a context has to make.
    *
-   * This is a test instrument rather than decoration, which is what
-   * `docs/protocol.md` says of the feed and what governs the choices below: the
-   * beat marker is drawn from what the detector decided, not from the beat grid,
-   * so the picture can disagree with the grid and show that it does. Comparing
-   * the two is the entire reason the feed exists.
+   * This is a test instrument as well as the show, which is what `docs/protocol.md`
+   * says of the spectrum feed and what governs two choices below. The beat marker is
+   * drawn from what the detector decided rather than from the beat grid, so the picture
+   * can disagree with the grid and show that it does. And under `randomBeat` the colour
+   * is the colour the bridge was sent, read back off the wire - never a second engine
+   * computed here, because two implementations of one tuned behaviour would put a
+   * screen and a room in disagreement with nobody able to say which was right.
+   *
+   * The picture lags the room slightly and by construction: the bridge gets 50 frames a
+   * second and this gets the 20 Hz state feed. `approachColor` is what keeps that from
+   * reading as a staircase, and the residual offset is a property of the design rather
+   * than a fault to be chased.
    *
    * prefers-reduced-motion is not honoured, on the same argument `BeatIndicator`
    * makes: a still spectrum is not a calmer spectrum, it is no instrument at all.
    */
 
-  import type { SpectrumData } from '../lib/protocol.ts';
-  import { advanceVisual, barGeometry, emptyVisual, receiveFrame } from '../lib/spectrum.ts';
+  import type { LightColorData, SpectrumData, StageData } from '../lib/protocol.ts';
+  import {
+    approachColor,
+    barRect,
+    barThickness,
+    hueCss,
+    hueShift,
+    HUE_SPEED_DEFAULT,
+    isSmooth,
+    NEUTRAL_COLOR,
+    pixelCapRects,
+    rainbowStops,
+    rgbCss,
+    sectionColor,
+    sectionOf,
+    smoothPoints,
+    smoothStride,
+    STATIC_STOPS,
+    upwardBarRect,
+    upwardPixelCapRect,
+    upwardSectionOf,
+    upwardSmoothPoints,
+    WAVE_PHASE_TURNS,
+    type SceneColor,
+    type Side,
+    type StageSize,
+  } from '../lib/scene.ts';
+  import { advanceVisual, emptyVisual, receiveFrame } from '../lib/spectrum.ts';
 
   interface Props {
     /**
@@ -30,15 +63,52 @@
      * absence rather than as a flat spectrum.
      */
     frame: SpectrumData | null;
+    /**
+     * The colour the bridge was last sent, or null while Flux is not streaming.
+     *
+     * Null draws a neutral colour rather than black. A dark stage during setup is
+     * indistinguishable from a broken page, and the HUD already says the lights are
+     * idle - so the absence is stated in words and not by turning the picture off.
+     */
+    color: LightColorData | null;
+    /** The rate that colour arrives at, which is what it is interpolated over. */
+    stateHz: number;
+    /**
+     * How to draw, as the server has it with this page's own unconfirmed changes over
+     * it.
+     *
+     * On the wire rather than in local storage because the look is part of the show. Its
+     * `bands` is deliberately *not* read here: the count is what the analyzer produced,
+     * so the frame's own length is the authority and a frame in flight when the setting
+     * changed still draws correctly.
+     */
+    stage: StageData;
   }
 
-  const { frame }: Props = $props();
+  const { frame, color, stateHz, stage }: Props = $props();
 
   /** Below this the flash is already invisible and not worth the draw call. */
   const FLASH_FLOOR = 0.01;
 
   /** How tall the beat marker is drawn along the top edge, in CSS pixels. */
   const FLASH_RIM_PX = 3;
+
+  /** Both halves of the mirrored picture, in the order they are drawn. */
+  const SIDES: readonly Side[] = ['right', 'left'];
+
+  /**
+   * The four quadrants a smooth outline is filled into, as sign pairs.
+   *
+   * One path filled four times under mirroring transforms rather than four paths, which
+   * is both cheaper and the only arrangement in which the quadrants cannot disagree
+   * about where a bar tip was.
+   */
+  const QUADRANTS: readonly { x: number; y: number }[] = [
+    { x: 1, y: 1 },
+    { x: 1, y: -1 },
+    { x: -1, y: 1 },
+    { x: -1, y: -1 },
+  ];
 
   let canvas = $state<HTMLCanvasElement | null>(null);
 
@@ -60,14 +130,15 @@
     }
 
     // A machine that cannot give a 2d context cannot be drawn on, and that is a
-    // blank panel rather than a broken page: everything else on it still works.
+    // blank stage rather than a broken page: everything else on it still works.
     const context = element.getContext('2d');
     if (context === null) {
       return;
     }
 
-    const barColor = paletteColor(element, '--live', '#4ade80');
-    const flashColor = paletteColor(element, '--accent', '#60a5fa');
+    const liveColor = paletteColor(element, '--live', '#4ade80');
+    const accentColor = paletteColor(element, '--accent', '#60a5fa');
+    const surfaceColor = paletteColor(element, '--surface', '#0b0d12');
 
     let visual = emptyVisual(0);
 
@@ -82,6 +153,9 @@
      * numbers are still two separate statements about the music.
      */
     let taken: SpectrumData | null = null;
+
+    /** The colour on screen, which is behind the wire by up to one feed interval. */
+    let shown: SceneColor = NEUTRAL_COLOR;
 
     let cssWidth = element.clientWidth;
     let cssHeight = element.clientHeight;
@@ -99,7 +173,7 @@
     observer.observe(element);
 
     /*
-     * The three below are consts holding functions rather than declarations, and
+     * The functions below are consts holding functions rather than declarations, and
      * that is a type-system requirement rather than a style choice: a hoisted
      * declaration could in principle run before the two null guards above, so
      * TypeScript refuses to carry the narrowing into one and every use of the
@@ -128,34 +202,291 @@
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
     };
 
-    const draw = (): void => {
-      context.clearRect(0, 0, cssWidth, cssHeight);
+    /**
+     * A gradient along the frequency axis, whichever way the picture is built.
+     *
+     * Upward spans the width once and shows every stop. Mirrored runs from the centre
+     * outward over twice the half it covers, which is the scene's arrangement and is
+     * load-bearing rather than incidental: only the first half of the stops is ever
+     * visible, so eleven stops covering two turns of the wheel show one turn across
+     * each half. Either way the window ends up with the same two turns across it, which
+     * is what keeps switching layout from also changing how busy the colour is.
+     */
+    const axisGradient = (side: Side): CanvasGradient => {
+      if (stage.layout === 'upward') {
+        return context.createLinearGradient(0, 0, cssWidth, 0);
+      }
 
+      const centre = cssWidth / 2;
+      const far = side === 'right' ? centre + cssWidth : centre - cssWidth;
+
+      return context.createLinearGradient(centre, 0, far, 0);
+    };
+
+    const waveGradient = (side: Side, now: number): CanvasGradient => {
+      const phase = hueShift(now, HUE_SPEED_DEFAULT) * WAVE_PHASE_TURNS;
+      const gradient = axisGradient(side);
+
+      for (const stop of rainbowStops(phase)) {
+        gradient.addColorStop(stop.offset, hueCss(stop.hue));
+      }
+
+      return gradient;
+    };
+
+    /** The same rainbow down the picture instead of across it, and not mirrored. */
+    const verticalWaveGradient = (now: number): CanvasGradient => {
+      const phase = hueShift(now, HUE_SPEED_DEFAULT) * WAVE_PHASE_TURNS;
+      const gradient = context.createLinearGradient(0, 0, 0, cssHeight);
+
+      for (const stop of rainbowStops(phase)) {
+        gradient.addColorStop(stop.offset, hueCss(stop.hue));
+      }
+
+      return gradient;
+    };
+
+    const staticGradient = (side: Side): CanvasGradient => {
+      const gradient = axisGradient(side);
+
+      for (const stop of STATIC_STOPS) {
+        gradient.addColorStop(stop.offset, stop.first ? liveColor : accentColor);
+      }
+
+      return gradient;
+    };
+
+    /**
+     * What one side is painted with, for the four styles the room has no equivalent of.
+     *
+     * `randomBeat` is absent on purpose: it is painted per column, because a column is
+     * what knows which colour section it belongs to.
+     */
+    const sidePaint = (side: Side, now: number): string | CanvasGradient => {
+      switch (stage.color) {
+        case 'hueCycle':
+          return hueCss(hueShift(now, HUE_SPEED_DEFAULT));
+        case 'hueWave':
+          return waveGradient(side, now);
+        case 'hueWaveVert':
+          return verticalWaveGradient(now);
+        case 'static':
+          return staticGradient(side);
+        case 'randomBeat':
+          return rgbCss(shown);
+      }
+    };
+
+    /*
+     * The fill style is only assigned when it changes, and that is worth the two lines.
+     * With one colour section every bar on both sides is the same paint, so the
+     * straightforward version reassigns it a hundred and twenty-eight times a frame on
+     * a phone that is already filling the whole canvas twice.
+     */
+    let painted: string | CanvasGradient | null = null;
+
+    const paintWith = (paint: string | CanvasGradient): void => {
+      if (paint !== painted) {
+        context.fillStyle = paint;
+        painted = paint;
+      }
+    };
+
+    const draw = (now: number): void => {
+      const size: StageSize = { width: cssWidth, height: cssHeight };
+
+      /*
+       * Filled rather than cleared, so the canvas is opaque over whatever the page puts
+       * behind it. The reference scene repaints at partial alpha here instead, which is
+       * what makes its picture smear; that setting is not carried across - it ships off
+       * in the scene too, and a screen fade belongs with the light engine's own
+       * background fade rather than arriving before it.
+       */
+      painted = null;
+      context.fillStyle = surfaceColor;
+      context.fillRect(0, 0, size.width, size.height);
+
+      /*
+       * However many the frame carries, which is the count the analyzer was asked for.
+       * Read from the array rather than from `stage.bands` because a frame already in
+       * flight when the setting changed carries the old count, and the array is the
+       * thing being drawn.
+       */
       const columns = visual.levels.length;
-      const { slot, width } = barGeometry(cssWidth, columns);
+      if (columns === 0 || size.width <= 0 || size.height <= 0) {
+        return;
+      }
 
-      if (slot > 0) {
-        context.fillStyle = barColor;
+      const bars = visual.levels;
 
-        for (let index = 0; index < columns; index++) {
-          const height = (visual.levels[index] ?? 0) * cssHeight;
-
-          if (height > 0) {
-            context.fillRect(index * slot, cssHeight - height, width, height);
-          }
-        }
+      if (isSmooth(stage.shape)) {
+        drawSmooth(bars, size, columns, now);
+      } else {
+        drawBars(bars, size, columns, now);
       }
 
       // Intensity is the whole distinction between a beat and a strong one:
       // `flashFor` hands them 0.5 and 1, and both then fall on the same curve.
-      // Drawn as an edge rather than a wash over the bars, because the bars are
+      // Drawn as an edge rather than a wash over the picture, because the picture is
       // the evidence the marker is meant to be judged against.
       if (visual.flash > FLASH_FLOOR) {
         context.globalAlpha = Math.min(1, visual.flash);
-        context.fillStyle = flashColor;
-        context.fillRect(0, 0, cssWidth, FLASH_RIM_PX);
+        context.fillStyle = accentColor;
+        context.fillRect(0, 0, size.width, FLASH_RIM_PX);
         context.globalAlpha = 1;
+        painted = null;
       }
+    };
+
+    const drawBars = (
+      bars: readonly number[],
+      size: StageSize,
+      columns: number,
+      now: number,
+    ): void => {
+      /*
+       * One colour, until the engine sends one per section.
+       *
+       * The section mapping is already read through here rather than added later,
+       * which is what makes step 4 a longer array and not a new drawing path: with one
+       * colour every section resolves to it and the picture is solid. Resolved to
+       * strings once a frame rather than per bar, because that is a hundred and
+       * twenty-eight allocations a frame for one value.
+       */
+      const colors: SceneColor[] = [shown];
+      const sections = colors.length;
+      const sectionPaints = colors.map((_, index) => rgbCss(sectionColor(colors, index)));
+
+      const pixel = stage.shape === 'pixel';
+      const thickness = barThickness(stage.shape, stage.layout);
+
+      /*
+       * The paint per side, resolved once a frame, or null where a column decides it.
+       *
+       * Only `randomBeat` is per column, because only it has sections: the other four
+       * are one colour or one gradient across a whole side, and rebuilding a gradient
+       * inside the column loop would make a hundred and twenty-eight of them a frame.
+       */
+      const sides = SIDES.map((side) => ({
+        side,
+        paint: stage.color === 'randomBeat' ? null : sidePaint(side, now),
+      }));
+
+      // One picture, one pass, every band its own bar. The mirrored path below draws
+      // each band twice and is the reason it shows half as many of them.
+      if (stage.layout === 'upward') {
+        const paint = sides[0]?.paint ?? null;
+
+        for (let index = 0; index < columns; index++) {
+          const level = bars[index] ?? 0;
+
+          if (level <= 0 && !pixel) {
+            continue;
+          }
+
+          paintWith(
+            paint ?? sectionPaints[upwardSectionOf(index, columns, sections)] ?? liveColor,
+          );
+
+          const rect = pixel
+            ? upwardPixelCapRect(index, level, size, columns)
+            : upwardBarRect(index, level, size, columns, thickness);
+
+          context.fillRect(rect.x, rect.y, rect.width, rect.height);
+        }
+
+        return;
+      }
+
+      for (let index = 0; index < columns; index++) {
+        const level = bars[index] ?? 0;
+
+        // A silent column has nothing to paint under the bar styles, where a
+        // zero-height rectangle is a wasted call. `pixel` is the exception: its caps
+        // sit on the axis and are the baseline of the picture.
+        if (level <= 0 && !pixel) {
+          continue;
+        }
+
+        for (const { side, paint } of sides) {
+          paintWith(
+            paint ?? sectionPaints[sectionOf(index, columns, sections, side)] ?? liveColor,
+          );
+
+          if (pixel) {
+            for (const cap of pixelCapRects(index, level, size, columns, side)) {
+              context.fillRect(cap.x, cap.y, cap.width, cap.height);
+            }
+          } else {
+            const bar = barRect(index, level, size, columns, thickness, side);
+            context.fillRect(bar.x, bar.y, bar.width, bar.height);
+          }
+        }
+      }
+    };
+
+    /**
+     * One outline through the bar tips, filled once upward or into four quadrants
+     * mirrored.
+     *
+     * Mirrored, the paint is the right-hand one in every quadrant: the transform is
+     * what puts a gradient on the left rather than a second gradient built backwards,
+     * and two of them would be two chances to disagree.
+     */
+    const drawSmooth = (
+      bars: readonly number[],
+      size: StageSize,
+      columns: number,
+      now: number,
+    ): void => {
+      const stride = smoothStride(stage.shape);
+      const points =
+        stage.layout === 'upward'
+          ? upwardSmoothPoints(bars, size, columns, stride)
+          : smoothPoints(bars, size, columns, stride);
+
+      const first = points[0];
+      if (first === undefined) {
+        return;
+      }
+
+      const path = new Path2D();
+      path.moveTo(first.x, first.y);
+
+      for (let index = 1; index < points.length; index++) {
+        const point = points[index];
+        if (point !== undefined) {
+          path.lineTo(point.x, point.y);
+        }
+      }
+
+      path.closePath();
+
+      const paint = sidePaint('right', now);
+
+      // Nothing to mirror, so one fill and no transform bookkeeping at all.
+      if (stage.layout === 'upward') {
+        paintWith(paint);
+        context.fill(path);
+
+        return;
+      }
+
+      for (const quadrant of QUADRANTS) {
+        context.save();
+        context.scale(quadrant.x, quadrant.y);
+
+        // Applied after the scale and therefore in the flipped space, which is what
+        // brings the mirrored copy back over the canvas instead of off the edge of it.
+        context.translate(quadrant.x < 0 ? -size.width : 0, quadrant.y < 0 ? -size.height : 0);
+
+        context.fillStyle = paint;
+        context.fill(path);
+        context.restore();
+      }
+
+      // The saves restored a transform, not a fill style.
+      painted = null;
     };
 
     const step = (now: number): void => {
@@ -163,10 +494,10 @@
       previous = now;
 
       /*
-       * The prop is read here, inside the callback, and that is load-bearing
-       * rather than incidental. A read in the effect body would make every
-       * arriving frame a dependency, so the loop and the observer would be torn
-       * down and rebuilt thirty times a second.
+       * The props are read here, inside the callback, and that is load-bearing rather
+       * than incidental. A read in the effect body would make every arriving frame and
+       * every setting a dependency, so the loop and the observer would be torn down and
+       * rebuilt thirty times a second.
        */
       const arrived = frame;
       if (arrived !== null && arrived !== taken) {
@@ -175,9 +506,10 @@
       }
 
       visual = advanceVisual(visual, elapsed);
+      shown = approachColor(shown, color ?? NEUTRAL_COLOR, elapsed, 1000 / Math.max(1, stateHz));
 
       resize();
-      draw();
+      draw(now);
 
       handle = requestAnimationFrame(step);
     };
@@ -204,9 +536,7 @@
 
 <style>
   /* Fills whatever box it is given and decides nothing about its own size, which is
-     the caller's business now that the caller is the whole window. It previously
-     carried a clamped height and a panel's border, both of which belonged to the
-     panel it used to sit in rather than to a spectrum. */
+     the caller's business now that the caller is the whole window. */
   .visualizer {
     position: relative;
     width: 100%;

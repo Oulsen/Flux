@@ -58,6 +58,14 @@ public sealed class SocketHub {
   private readonly HueBridgeService? hue;
 
   /// <summary>
+  /// How the stage looks, which every page is told on arrival and on every change.
+  ///
+  /// Not nullable, unlike the two above it: a build without a bridge still has a stage,
+  /// and a build without audio still has one somebody can restyle.
+  /// </summary>
+  private readonly StageService stage;
+
+  /// <summary>
   /// Null in a build with no Hue support. Starting answers <c>rejected</c> and
   /// stopping does nothing, which is the same pair of answers a build with a bridge
   /// and no chosen area gives.
@@ -98,6 +106,7 @@ public sealed class SocketHub {
     IAudioDevices? audio,
     HueBridgeService? hue,
     HueStreamService? stream,
+    StageService stage,
     IHostApplicationLifetime lifetime,
     ILogger<SocketHub> log) {
     ArgumentNullException.ThrowIfNull(options);
@@ -110,6 +119,7 @@ public sealed class SocketHub {
     this.audio = audio;
     this.hue = hue;
     this.stream = stream;
+    this.stage = stage ?? throw new ArgumentNullException(nameof(stage));
     this.stopping = lifetime.ApplicationStopping;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
 
@@ -194,6 +204,11 @@ public sealed class SocketHub {
     if(this.hue is not null) {
       client.Enqueue(HueFrames.Snapshot(this.hue.Connection));
     }
+
+    // And the stage's look, for exactly the same reason: it is pushed on change, so a
+    // page that waited for the next one would draw the defaults over somebody's chosen
+    // look until the next time anybody touched a control.
+    client.Enqueue(StageFrames.Snapshot(this.stage.Settings));
 
     this.clients[id] = client;
     this.log.LogInformation("Web client connected. {Count} now watching.", this.clients.Count);
@@ -422,6 +437,10 @@ public sealed class SocketHub {
 
       case "setLightSettings":
         this.SetLightSettings(client, envelope.Data);
+        break;
+
+      case "setStageSettings":
+        this.SetStageSettings(client, envelope.Data);
         break;
 
       default:
@@ -713,6 +732,45 @@ public sealed class SocketHub {
       client.Enqueue(Frames.Error(
         "rejected",
         $"Colour changes must be between 0 and {LightSettings.MaxColorChangeBars} bars, a pulse between 0 and {LightSettings.MaxPulseMs} ms, and brightness and depth between 0 and {LightSettings.MaxPercent} per cent."));
+    }
+  }
+
+  /// <summary>
+  /// Applies a complete stage look, or says why it did not.
+  ///
+  /// No acknowledgement on success: the <c>stage</c> frame that follows carries what was
+  /// applied, and it goes to every page rather than to this one. That is the whole point
+  /// of the setting having moved to the server - a shape chosen on a phone has to move
+  /// the laptop's chips too, and a reply addressed to the phone would leave the laptop
+  /// showing a look nobody is running.
+  /// </summary>
+  private void SetStageSettings(Client client, JsonElement data) {
+    if(!Frames.TryReadStage(data, out StageData requested)) {
+      client.Enqueue(Frames.Error(
+        "invalid_data",
+        "Setting the stage needs strings 'data.layout', 'data.shape' and 'data.color' and an integer 'data.bands'."));
+      return;
+    }
+
+    if(!StageFrames.TryParse(requested.Layout, out StageLayout layout)) {
+      client.Enqueue(Frames.Error("rejected", $"No layout named '{Frames.Quote(requested.Layout)}'."));
+      return;
+    }
+
+    if(!StageFrames.TryParse(requested.Shape, out StageShape shape)) {
+      client.Enqueue(Frames.Error("rejected", $"No shape named '{Frames.Quote(requested.Shape)}'."));
+      return;
+    }
+
+    if(!StageFrames.TryParse(requested.Color, out StageColor color)) {
+      client.Enqueue(Frames.Error("rejected", $"No colour style named '{Frames.Quote(requested.Color)}'."));
+      return;
+    }
+
+    if(!this.stage.TrySet(new StageSettings(layout, shape, color, requested.Bands))) {
+      client.Enqueue(Frames.Error(
+        "rejected",
+        $"The band count must be between {SpectrumBands.Min} and {SpectrumBands.Max}."));
     }
   }
 

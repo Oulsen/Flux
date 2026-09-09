@@ -38,7 +38,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub();
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     socket.Client("""{"type":"ping","data":{"t":1755950400123}}""");
 
@@ -101,7 +101,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub();
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     socket.Client(new string('x', Frames.MaxInboundBytes + 1));
     await serving;
@@ -123,7 +123,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub();
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     socket.Client(message);
 
@@ -145,7 +145,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub();
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     socket.Client("""{"type":"ping","data":{"t":42}}""");
 
@@ -163,7 +163,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub();
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     socket.ClientBinary(1, 2, 3);
     await serving;
@@ -179,8 +179,8 @@ public sealed class SocketHubTests {
 
     Task servingFirst = hub.ServeAsync(first, CancellationToken.None);
     Task servingSecond = hub.ServeAsync(second, CancellationToken.None);
-    await first.NextAsync();
-    await second.NextAsync();
+    await SkipOpeningAsync(first);
+    await SkipOpeningAsync(second);
 
     hub.Broadcast(Frames.Beat(new BeatData(7, 3, BarAligned: false, 128.0)));
 
@@ -207,7 +207,7 @@ public sealed class SocketHubTests {
     Assert.False(hub.HasClients);
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
     Assert.True(hub.HasClients);
 
     socket.ClientClose();
@@ -222,7 +222,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub();
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     Assert.False(hub.HasSpectrumSubscribers);
 
@@ -265,8 +265,8 @@ public sealed class SocketHubTests {
 
     Task servingWatcher = hub.ServeAsync(watching, CancellationToken.None);
     Task servingListener = hub.ServeAsync(listening, CancellationToken.None);
-    await watching.NextAsync();
-    await listening.NextAsync();
+    await SkipOpeningAsync(watching);
+    await SkipOpeningAsync(listening);
 
     await SettleAsync(watching, """{"type":"subscribe","data":{"spectrum":true,"deviceLevels":false}}""");
 
@@ -302,7 +302,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub();
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
     await SettleAsync(socket, """{"type":"subscribe","data":{"spectrum":true,"deviceLevels":false}}""");
 
     Task stalled = socket.StallAsync();
@@ -330,7 +330,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub();
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
     await SettleAsync(socket, """{"type":"subscribe","data":{"spectrum":true,"deviceLevels":false}}""");
 
     Task stalled = socket.StallAsync();
@@ -362,7 +362,7 @@ public sealed class SocketHubTests {
     _ = new SilentSource("audio", rig.Sources);
 
     Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     await SettleAsync(socket, """{"type":"selectSource","data":{"source":"audio"}}""");
 
@@ -404,7 +404,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub(audio);
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     // No acknowledgement on success, by design: the next devices frame carries the
     // selection, and that confirmation comes from the thing that made the change.
@@ -429,7 +429,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub(audio);
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     socket.Client("""{"type":"selectAudioDevice","data":{"deviceId":"{0.0.9}"}}""");
 
@@ -461,7 +461,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub(audio);
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     socket.Client("""{"type":"subscribe","data":{"spectrum":false,"deviceLevels":true}}""");
 
@@ -487,7 +487,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub(audio);
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     // The pong is the proof: it was queued after the subscribe was handled, so
     // arriving first means no devices frame was queued ahead of it.
@@ -503,7 +503,7 @@ public sealed class SocketHubTests {
     Rig rig = NewRig();
 
     Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     await SettleAsync(socket, """{"type":"tap","data":{}}""");
     await SettleAsync(socket, """{"type":"tap","data":{}}""");
@@ -520,7 +520,7 @@ public sealed class SocketHubTests {
     Rig rig = NewRig();
 
     Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     await SettleAsync(socket, """{"type":"setBpm","data":{"bpm":128.5}}""");
     Assert.Equal(128.5, rig.Manual.Bpm);
@@ -570,7 +570,7 @@ public sealed class SocketHubTests {
     SocketHub hub = NewHub();
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     socket.Client(message);
 
@@ -618,6 +618,7 @@ public sealed class SocketHubTests {
       audio,
       hue: null,
       stream: null,
+      new StageService(new MemoryStageSettingsStore()),
       new FakeHostLifetime(),
       NullLogger<SocketHub>.Instance);
 
@@ -658,4 +659,19 @@ public sealed class SocketHubTests {
       return new SyncSourceStatus(SyncSourceState.Waiting, Confidence: 0);
     }
   }
+
+  /// <summary>
+  /// Reads past the frames every connection opens with, so a test can assert on the
+  /// first one it actually asked for.
+  ///
+  /// Named rather than counted inline, because the count changes whenever a
+  /// push-on-change message is added - the stage's look was the second - and a test
+  /// that skipped the wrong number of frames fails somewhere unrelated to whatever it
+  /// was testing.
+  /// </summary>
+  private static async Task SkipOpeningAsync(FakeWebSocket socket) {
+    await socket.NextAsync();
+    await socket.NextAsync();
+  }
+
 }

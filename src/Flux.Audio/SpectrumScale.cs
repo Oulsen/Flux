@@ -121,11 +121,24 @@ internal static class SpectrumScale {
   /// the bass, which is exactly what the detector is triggering on and what the
   /// picture exists to check. The value taken is the loudest bin in the column and
   /// not the average, so a narrow peak stays visible after 1024 bins have been
-  /// folded into 64 - a visualizer read as an instrument must not average away the
-  /// thing being looked for.
+  /// folded into a display column - a visualizer read as an instrument must not
+  /// average away the thing being looked for.
+  ///
+  /// The endpoints are fixed and only the count varies, which gives the counts a
+  /// property worth knowing: the frequency span of column c of 64 is exactly that of
+  /// columns 2c and 2c+1 of 128, so halving the count is the same picture at lower
+  /// resolution rather than a different reduction of it, and no count is a special
+  /// case. It holds wherever a column resolves a whole bin, which above about 470 Hz
+  /// at 128 columns is everywhere; below that <see cref="BandRange"/>'s floor gives
+  /// neighbouring columns the same single bin and the two counts round to different
+  /// ones. Neither is wrong there - both report a bin beside their own frequency - and
+  /// a test pins the boundary rather than the claim.
+  ///
+  /// The count is clamped into <see cref="SpectrumBands"/>' bounds rather than trusted,
+  /// because it arrives from a setting a browser sent.
   /// </summary>
-  public static int[] DisplayColumns(ReadOnlySpan<int> spectrum, int sampleRate) {
-    int[] columns = new int[AudioConstants.DisplayBins];
+  public static int[] DisplayColumns(ReadOnlySpan<int> spectrum, int sampleRate, int count) {
+    int[] columns = new int[Math.Clamp(count, SpectrumBands.Min, SpectrumBands.Max)];
     if(sampleRate <= 0) {
       return columns;
     }

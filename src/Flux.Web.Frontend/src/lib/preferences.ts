@@ -1,15 +1,17 @@
 /*
  * What this device wants the page to look like, remembered between visits.
  *
- * Deliberately per device and never on the server. Everything else this page can
- * change is a fact about the show and belongs to whoever is standing at it, which is
- * why the light settings are shared and echoed back over the socket. This is the
- * opposite kind of setting: whether a phone should draw a 30 Hz canvas is a fact about
- * the phone, and syncing it would let the booth laptop switch the visualizer off on
+ * Deliberately per device and never on the server, and deliberately down to one thing.
+ *
+ * How the stage *looks* started out here and moved to the server, because the look is
+ * part of the show: it is set by whoever is standing at the page, and it should be the
+ * same on the laptop and on the phone in somebody's hand. What is left is the switch
+ * that argument never covered - whether this device draws a canvas at all is a fact
+ * about this device, and syncing it would let the booth laptop blank the visualizer on
  * somebody's handset.
  */
 
-/** The one key this module owns. Namespaced, because a browser origin is shared. */
+/** Whether the stage is drawn. Namespaced, because a browser origin is shared. */
 const STAGE_KEY = 'flux.stage';
 
 /**

@@ -189,6 +189,7 @@ public sealed class StateSnapshotTests {
       audio: null,
       hue: null,
       stream: null,
+      new StageService(new MemoryStageSettingsStore()),
       new FakeHostLifetime(),
       NullLogger<SocketHub>.Instance);
   }

@@ -44,6 +44,26 @@ public static class WebHostExtensions {
     builder.Services.AddSingleton<IValidateOptions<WebOptions>, WebOptionsValidator>();
     builder.Services.AddOptions<WebOptions>().Bind(section).ValidateOnStart();
 
+    /*
+     * The stage's look, and the analyzer's band count behind the same object.
+     *
+     * %APPDATA%\Flux, the same per-user folder the Hue and audio settings use: writable
+     * without elevation, surviving an update, and none of which the install directory
+     * is. Resolved here rather than inside the store so a test can point the same class
+     * at a temporary folder without a setting existing for it.
+     *
+     * Registered as itself and as ISpectrumBands, one instance behind both, because the
+     * band count would otherwise exist in two places and eventually disagree with
+     * itself. The audio project reads it through the interface and never sees the rest.
+     */
+    string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Flux");
+
+    builder.Services.AddSingleton<IStageSettingsStore>(provider => new JsonStageSettingsStore(
+      settings,
+      provider.GetRequiredService<ILogger<JsonStageSettingsStore>>()));
+    builder.Services.AddSingleton<StageService>();
+    builder.Services.AddSingleton<ISpectrumBands>(provider => provider.GetRequiredService<StageService>());
+
     // Built by a factory rather than by constructor discovery, because the audio
     // seam is genuinely optional: this container may hold no IAudioDevices at all,
     // and GetService is the only resolution that answers null instead of throwing.
@@ -58,6 +78,7 @@ public static class WebHostExtensions {
       provider.GetService<IAudioDevices>(),
       provider.GetService<HueBridgeService>(),
       provider.GetService<HueStreamService>(),
+      provider.GetRequiredService<StageService>(),
       provider.GetRequiredService<IHostApplicationLifetime>(),
       provider.GetRequiredService<ILogger<SocketHub>>()));
 
@@ -91,6 +112,12 @@ public static class WebHostExtensions {
     builder.Services.AddHostedService(provider => new HueBroadcaster(
       provider.GetRequiredService<SocketHub>(),
       provider.GetService<HueBridgeService>()));
+
+    // Nor has the stage feed, for the same reason and with one difference: it has no
+    // optional seam either, because every build has a stage.
+    builder.Services.AddHostedService(provider => new StageBroadcaster(
+      provider.GetRequiredService<SocketHub>(),
+      provider.GetRequiredService<StageService>()));
 
     // Listening is configured rather than described in a URL string: the address
     // has just been parsed and checked, and handing Kestrel the parsed value

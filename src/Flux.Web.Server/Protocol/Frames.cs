@@ -60,6 +60,10 @@ public static class Frames {
     return Encode("hue", hue, ProtocolJson.Default.EnvelopeHueData);
   }
 
+  public static ReadOnlyMemory<byte> Stage(StageData stage) {
+    return Encode("stage", stage, ProtocolJson.Default.EnvelopeStageData);
+  }
+
   public static ReadOnlyMemory<byte> Pong(long t) {
     return Encode("pong", new EchoData(t), ProtocolJson.Default.EnvelopeEchoData);
   }
@@ -224,6 +228,32 @@ public static class Frames {
   }
 
   /// <summary>
+  /// Reads a complete statement of how the stage should look.
+  ///
+  /// Every field required, on the argument the light settings run on: a page that could
+  /// send a shape alone would be relying on the server for the rest, and two pages doing
+  /// that at once produce a look neither chose.
+  ///
+  /// The three names come back as the strings they arrived as. Whether they name
+  /// anything is not a question about shape, and its answer is <c>rejected</c> with the
+  /// offending name quoted - which this cannot produce and the caller can.
+  /// </summary>
+  public static bool TryReadStage(JsonElement data, out StageData stage) {
+    stage = new StageData(string.Empty, string.Empty, string.Empty, 0);
+
+    if(data.ValueKind != JsonValueKind.Object
+      || !TryReadString(data, "layout", out string layout)
+      || !TryReadString(data, "shape", out string shape)
+      || !TryReadString(data, "color", out string color)
+      || !TryReadInt(data, "bands", out int bands)) {
+      return false;
+    }
+
+    stage = new StageData(layout, shape, color, bands);
+    return true;
+  }
+
+  /// <summary>
   /// Shortens a client-supplied string before it is quoted back in an error.
   /// </summary>
   public static string Quote(string value) {
@@ -315,6 +345,7 @@ public static class Frames {
 [JsonSerializable(typeof(Envelope<SpectrumData>))]
 [JsonSerializable(typeof(Envelope<DevicesData>))]
 [JsonSerializable(typeof(Envelope<HueData>))]
+[JsonSerializable(typeof(Envelope<StageData>))]
 [JsonSerializable(typeof(Envelope<EchoData>))]
 [JsonSerializable(typeof(Envelope<ErrorData>))]
 [JsonSerializable(typeof(ClientEnvelope))]

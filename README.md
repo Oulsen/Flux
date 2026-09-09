@@ -144,6 +144,14 @@ it, readable only by the Windows account that paired. `Hue:LatencyOffsetMs` is
 the one setting that goes both ways, and that is the point of it - the lag is a
 property of a rig worth pinning, while the page still owns it during a set.
 
+How the visualizer draws - the layout, the bar shape, the colour style and how many
+bands the spectrum is divided into - is shared the same way, in
+`%APPDATA%\Flux\stage-settings.json`. It lives on the server rather than in each
+browser because the look of the stage is part of the show and should be the same on
+the laptop and on the phone in somebody's hand; the band count could never have been
+per-screen anyway, since it decides how many columns the analyzer produces. The one
+thing each device keeps to itself is whether it draws the visualizer at all.
+
 The audio device works the same way, in `%APPDATA%\Flux\audio-settings.json`.
 Picking one on the page is remembered, so a rig whose capture device is not the
 one `Audio:PreferDeviceNamed` describes is set up once rather than at the start
@@ -184,10 +192,10 @@ npm test
 |---|---|
 | `src/Flux.Beat` | Sync source abstraction and manager, Ableton Link listener, packet decoding, manual tap source, beat grid, bar anchor, beat scheduler |
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
-| `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, and a spectrum frame |
+| `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, a spectrum frame, and how many columns the visualizer wants it in |
 | `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
 | `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, the light engine that turns beats into colour, and the encrypted store the bridge keys live in |
-| `src/Flux.Web.Server` | WebSocket hub, beat, spectrum, device and bridge broadcasters, web hosting |
+| `src/Flux.Web.Server` | WebSocket hub, beat, spectrum, device, bridge and stage broadcasters, the stage's own settings and their store, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable |
 | `docs/protocol.md` | The WebSocket wire contract; where it and anything else disagree, it wins |

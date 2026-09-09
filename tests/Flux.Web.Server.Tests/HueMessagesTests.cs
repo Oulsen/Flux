@@ -405,6 +405,7 @@ public sealed class HueMessagesTests {
         audio: null,
         this.Bridge,
         stream: null,
+        new StageService(new MemoryStageSettingsStore()),
         new FakeHostLifetime(),
         NullLogger<SocketHub>.Instance);
 
@@ -425,8 +426,12 @@ public sealed class HueMessagesTests {
 
     public StubSettingsStore Settings { get; } = new StubSettingsStore();
 
-    /// <summary>Reads past the two frames every connection opens with.</summary>
+    /// <summary>
+    /// Reads past the three frames a connection to a rig with a bridge opens with:
+    /// hello, the stage's look, and the bridge picture.
+    /// </summary>
     public async Task SkipGreetingAsync(FakeWebSocket socket) {
+      await socket.NextAsync();
       await socket.NextAsync();
       await socket.NextAsync();
     }

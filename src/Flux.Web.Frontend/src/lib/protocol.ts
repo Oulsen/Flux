@@ -19,6 +19,43 @@ export type SpectrumBeat = 'none' | 'beat' | 'strong';
 
 export type DeviceKind = 'capture' | 'loopback';
 
+/** Which way the stage builds its picture. */
+export type StageLayout = 'upward' | 'mirrored';
+
+/** The shape of the bars. The reference scene's six. */
+export type StageShape = 'bars' | 'thinBars' | 'chonkerBars' | 'pixel' | 'smooth' | 'smoothSimple';
+
+/**
+ * Where the stage's colour comes from.
+ *
+ * `randomBeat` is the only one the room also does: under it the canvas draws the colour
+ * the bridge was sent, read back off `state.light`. The other four are screen
+ * embellishments the lights have no equivalent of, which is exactly why they are
+ * allowed to be computed here.
+ */
+export type StageColorStyle = 'randomBeat' | 'hueCycle' | 'hueWave' | 'hueWaveVert' | 'static';
+
+/**
+ * How the visualizer draws, which lives on the server and is shared by every page.
+ *
+ * The one stage setting that is *not* here is whether the stage is drawn at all: that
+ * one is genuinely a fact about the device and stays in the browser's own storage. The
+ * rest are part of the show.
+ */
+export interface StageData {
+  layout: StageLayout;
+  shape: StageShape;
+  color: StageColorStyle;
+  /**
+   * How many display columns the analyzer produces, 16 to 128.
+   *
+   * Size a drawing from the length of `spectrum.bins` rather than from this: the two
+   * agree, but a frame in flight when this changed carries the old count, and the array
+   * is the thing being drawn.
+   */
+  bands: number;
+}
+
 export type DeviceState = 'signal' | 'digitalSilence' | 'noData' | 'failed';
 
 /**
@@ -315,6 +352,14 @@ export interface SetLatencyOffsetData {
 export type SetLightSettingsData = HueEngineData;
 
 /**
+ * One complete statement of how the stage should draw, never a patch.
+ *
+ * Confirmed by the `stage` frame that follows, which goes to every page rather than to
+ * the one that asked - that being the whole point of the setting living on the server.
+ */
+export type SetStageSettingsData = StageData;
+
+/**
  * None of these is answered with a reply.
  *
  * Each is confirmed by the broadcast that follows - a `hue` frame for the bridge
@@ -341,7 +386,8 @@ export type ClientMessage =
   | { type: 'stopStream'; data: Record<string, never> }
   | { type: 'forgetBridge'; data: Record<string, never> }
   | { type: 'setLatencyOffset'; data: SetLatencyOffsetData }
-  | { type: 'setLightSettings'; data: SetLightSettingsData };
+  | { type: 'setLightSettings'; data: SetLightSettingsData }
+  | { type: 'setStageSettings'; data: SetStageSettingsData };
 
 /**
  * An inbound message decoded only as far as its type tag.

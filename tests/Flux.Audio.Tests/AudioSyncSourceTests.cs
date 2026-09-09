@@ -253,7 +253,8 @@ public sealed class AudioSyncSourceTests {
       SpectrumAnalyzer analyzer = new SpectrumAnalyzer(
         new NoSamples(),
         this.Clock,
-        NullLogger<SpectrumAnalyzer>.Instance);
+        NullLogger<SpectrumAnalyzer>.Instance,
+        bands: null);
 
       this.source = new AudioSyncSource(
         analyzer,

@@ -39,10 +39,26 @@ internal static class AudioConstants {
   public const int FrameRateHz = 60;
 
   /// <summary>
-  /// Columns in the spectrum the protocol sends. Part of the wire contract, so it
-  /// lives here rather than in the encoder.
+  /// The most display columns the spectrum is ever reduced to, and what the analyzer
+  /// produces when nothing has asked for fewer.
+  ///
+  /// Raised from a fixed 64 once the visualizer became the whole page: at a window's
+  /// width a picture of 64 columns reads as blocks rather than as a spectrum. It stopped
+  /// being fixed at the same time, because the number that reads best is taste and is
+  /// now a setting somebody drags - see <see cref="ISpectrumBands"/> for why that
+  /// request reaches the analyzer rather than being applied to the finished columns.
+  ///
+  /// What the ceiling buys is bounded by the transform and not by this number.
+  /// <see cref="FftSize"/> at 48 kHz resolves 23.4 Hz per bin, while log spacing asks
+  /// these columns to be narrower than that below about 470 Hz: the bottom 56 of 128
+  /// share around 20 bins and repeat each other, and the 72 above them resolve detail
+  /// 64 could not. Fixing the bass end means a longer transform, which is a change to a
+  /// tuned number with a beat detector downstream of it, and is deliberately not this.
+  ///
+  /// The declaration lives in the contract rather than here because the web layer
+  /// validates an incoming request against the same bound and cannot see this class.
   /// </summary>
-  public const int DisplayBins = 64;
+  public const int DisplayBins = SpectrumBands.Max;
 
   /// <summary>
   /// The span the display columns are spread over, log-spaced.

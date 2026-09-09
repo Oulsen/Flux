@@ -12,10 +12,11 @@
   import Diagnostics from './components/Diagnostics.svelte';
   import SourceSelector from './components/SourceSelector.svelte';
   import SpectrumCanvas from './components/SpectrumCanvas.svelte';
+  import StagePanel from './components/StagePanel.svelte';
   import AnchorPad from './components/AnchorPad.svelte';
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
-  import type { HueEngineData } from './lib/protocol.ts';
+  import type { HueEngineData, StageData } from './lib/protocol.ts';
   import { bridgeNeedsSetup, colorChangeLabel, showsRooms } from './lib/hue.ts';
   import { browserStorage, readStageOn, writeStageOn } from './lib/preferences.ts';
   import { FluxSocket, socketUrl } from './lib/socket.ts';
@@ -78,6 +79,9 @@
   /** The engine as this page believes it to be: the server's picture under its own unconfirmed changes. */
   const engine = $derived(store.hue === null ? null : { ...store.hue.engine, ...store.pendingEngine });
 
+  /** The same, for the stage. Never null: the store seeds it with the server's own defaults. */
+  const stage = $derived({ ...store.stage, ...store.pendingStage });
+
   /*
    * The drawer shows itself once, the first time Flux says the bridge needs setting up.
    *
@@ -120,6 +124,18 @@
   function setStageOn(on: boolean): void {
     stageOn = on;
     writeStageOn(storage, on);
+  }
+
+  /**
+   * Sends one complete statement of how the stage should draw, from a change to one part.
+   *
+   * Composed exactly as `setLightSettings` is, and for the same reason: built from the
+   * server's picture alone, a control would carry the other three fields as this page
+   * last heard them, so two phones inside one round trip undo each other field by field.
+   */
+  function setStage(change: Partial<StageData>): void {
+    store.pendingStage = { ...store.pendingStage, ...change };
+    socket?.send({ type: 'setStageSettings', data: { ...store.stage, ...store.pendingStage } });
   }
 
   function selectSource(source: string): void {
@@ -244,7 +260,15 @@
 -->
 <div class="stage" aria-hidden="true">
   {#if stageOn}
-    <SpectrumCanvas frame={store.latestSpectrum} />
+    <!-- The colour comes off the wire rather than being computed here, which is the
+         whole reason it is on the wire: a second engine in the browser would drift from
+         the one driving the bulbs and neither could be called wrong. -->
+    <SpectrumCanvas
+      frame={store.latestSpectrum}
+      color={store.light?.color ?? null}
+      stateHz={store.stateHz}
+      {stage}
+    />
   {/if}
 </div>
 
@@ -296,9 +320,19 @@
       around one control.
     -->
     <div class="centre">
-      <!-- On the stage rather than only in the drawer: this is pressed on the downbeat
-           while music is playing, which is exactly when nobody is opening a panel. -->
-      <AnchorButton manual={store.source === 'manual'} {tap} />
+      <!--
+        On the stage rather than only in the drawer: this is pressed on the downbeat
+        while music is playing, which is exactly when nobody is opening a panel.
+
+        The wrapper is what takes the pointer back from the HUD, and it is a wrapper
+        rather than a rule on the button because the button's own class is scoped to its
+        component: reaching it from here would need `:global`, which would then apply to
+        the copy in the drawer that never wanted this. Without it the control is a
+        painting of a button - no hover, no press, and no tap on a phone.
+      -->
+      <div class="control">
+        <AnchorButton manual={store.source === 'manual'} {tap} />
+      </div>
 
       <div class="cluster">
         <BeatIndicator quantum={store.quantum} position={store.positionInBar} tick={store.beatTick} />
@@ -403,19 +437,17 @@
   </section>
 
   <!--
-    The one setting on this page that is about the device rather than about the show,
-    which is why it is remembered here and never sent to the server.
+    The settings on this page that are about the device rather than about the show,
+    which is why they are remembered here and never sent to the server.
   -->
   <section class="panel">
-    <button
-      type="button"
-      class="disclosure"
-      aria-pressed={!stageOn}
-      onclick={() => setStageOn(!stageOn)}
-    >
-      <span class="heading">stage</span>
-      <span class="toggle">{stageOn ? 'numbers only' : 'show visualizer'}</span>
-    </button>
+    <StagePanel
+      on={stageOn}
+      {stage}
+      lit={store.light?.color !== undefined}
+      setOn={setStageOn}
+      {setStage}
+    />
   </section>
 
   <section class="panel">
@@ -548,6 +580,13 @@
 
   .centre .cluster {
     align-items: center;
+  }
+
+  /* Taken back from the sheet of glass, and sized to the control so the reclaimed
+     area is the circle rather than a rectangle around it. */
+  .control {
+    pointer-events: auto;
+    display: flex;
   }
 
   /* Sized to their contents and pushed to their own edges. A grid stretches its
