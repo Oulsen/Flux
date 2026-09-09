@@ -1,5 +1,6 @@
-using Flux.Audio;
+﻿using Flux.Audio;
 using Flux.Beat;
+using Flux.Hue;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Hosting;
@@ -55,9 +56,21 @@ public static class WebHostExtensions {
       provider.GetRequiredService<SyncSourceManager>(),
       provider.GetRequiredService<ManualSource>(),
       provider.GetService<IAudioDevices>(),
+      provider.GetService<HueBridgeService>(),
+      provider.GetService<HueStreamService>(),
+      provider.GetRequiredService<IHostApplicationLifetime>(),
       provider.GetRequiredService<ILogger<SocketHub>>()));
 
-    builder.Services.AddHostedService<BeatBroadcaster>();
+    // A factory rather than constructor discovery, now that it has an optional seam
+    // of its own: GetService is the only resolution that answers null for a build
+    // with no Hue support instead of failing to start it.
+    builder.Services.AddHostedService(provider => new BeatBroadcaster(
+      provider.GetRequiredService<SocketHub>(),
+      provider.GetRequiredService<BeatScheduler>(),
+      provider.GetRequiredService<BeatGrid>(),
+      provider.GetRequiredService<SyncSourceManager>(),
+      provider.GetService<HueStreamService>(),
+      provider.GetRequiredService<IOptions<WebOptions>>()));
 
     // Both audio feeds are registered whether or not this build has audio. Each one
     // starts nothing when its seam is absent, which keeps the decision in one place
@@ -72,6 +85,12 @@ public static class WebHostExtensions {
       provider.GetRequiredService<SocketHub>(),
       provider.GetService<IAudioDevices>(),
       provider.GetRequiredService<IOptions<WebOptions>>()));
+
+    // The bridge feed has no rate of its own: it fires when the picture changes, so
+    // there is no WebOptions entry to hand it and nothing to tune.
+    builder.Services.AddHostedService(provider => new HueBroadcaster(
+      provider.GetRequiredService<SocketHub>(),
+      provider.GetService<HueBridgeService>()));
 
     // Listening is configured rather than described in a URL string: the address
     // has just been parsed and checked, and handing Kestrel the parsed value

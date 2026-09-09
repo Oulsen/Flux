@@ -1,6 +1,8 @@
-using Flux.Audio;
+﻿using Flux.Audio;
 using Flux.Beat;
+using Flux.Hue;
 using Flux.Web.Server.Protocol;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
@@ -48,6 +50,31 @@ public sealed class SocketHub {
   /// </summary>
   private readonly IAudioDevices? audio;
 
+  /// <summary>
+  /// Null in a build with no Hue support. Every bridge message answers
+  /// <c>rejected</c> in that case, except the two the protocol promises never to
+  /// refuse.
+  /// </summary>
+  private readonly HueBridgeService? hue;
+
+  /// <summary>
+  /// Null in a build with no Hue support. Starting answers <c>rejected</c> and
+  /// stopping does nothing, which is the same pair of answers a build with a bridge
+  /// and no chosen area gives.
+  /// </summary>
+  private readonly HueStreamService? stream;
+
+  /// <summary>
+  /// How long a bridge command may run, and deliberately not the connection it
+  /// arrived on.
+  ///
+  /// Pairing is the reason. The person who pressed "pair" is walking to a cupboard
+  /// with a phone whose screen is about to sleep, and a socket that drops on the
+  /// stairs must not cancel the loop they are walking towards. The window bounds it
+  /// at about a minute either way.
+  /// </summary>
+  private readonly CancellationToken stopping;
+
   private readonly ILogger<SocketHub> log;
   private readonly ReadOnlyMemory<byte> greeting;
 
@@ -69,14 +96,21 @@ public sealed class SocketHub {
     SyncSourceManager sources,
     ManualSource manual,
     IAudioDevices? audio,
+    HueBridgeService? hue,
+    HueStreamService? stream,
+    IHostApplicationLifetime lifetime,
     ILogger<SocketHub> log) {
     ArgumentNullException.ThrowIfNull(options);
     ArgumentNullException.ThrowIfNull(beat);
+    ArgumentNullException.ThrowIfNull(lifetime);
 
     this.options = options.Value;
     this.sources = sources ?? throw new ArgumentNullException(nameof(sources));
     this.manual = manual ?? throw new ArgumentNullException(nameof(manual));
     this.audio = audio;
+    this.hue = hue;
+    this.stream = stream;
+    this.stopping = lifetime.ApplicationStopping;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
 
     // Every field in the greeting is fixed for the lifetime of the process, so
@@ -151,6 +185,16 @@ public sealed class SocketHub {
     // state frame that a broadcast slipped in first. The protocol promises hello
     // arrives before anything else.
     client.Enqueue(this.greeting);
+
+    // The bridge picture follows immediately, and is the only other frame sent
+    // unasked-for. Everything else on this socket repeats; hue is pushed on change,
+    // so a page that waited for the next one could show an empty pairing screen
+    // through a whole set. Sent here rather than by the broadcaster because only this
+    // knows a client has just arrived.
+    if(this.hue is not null) {
+      client.Enqueue(HueFrames.Snapshot(this.hue.Connection));
+    }
+
     this.clients[id] = client;
     this.log.LogInformation("Web client connected. {Count} now watching.", this.clients.Count);
 
@@ -348,6 +392,38 @@ public sealed class SocketHub {
         this.SetBpm(client, envelope.Data);
         break;
 
+      case "discoverBridges":
+        this.DiscoverBridges(client);
+        break;
+
+      case "pairBridge":
+        this.PairBridge(client, envelope.Data);
+        break;
+
+      case "selectArea":
+        this.SelectArea(client, envelope.Data);
+        break;
+
+      case "startStream":
+        this.StartStream(client);
+        break;
+
+      case "stopStream":
+        this.StopStream(client);
+        break;
+
+      case "forgetBridge":
+        this.ForgetBridge(client);
+        break;
+
+      case "setLatencyOffset":
+        this.SetLatencyOffset(client, envelope.Data);
+        break;
+
+      case "setLightSettings":
+        this.SetLightSettings(client, envelope.Data);
+        break;
+
       default:
         // Answered rather than ignored: the client half of this protocol is one
         // codebase, so an unrecognised type is a bug in it and should be loud.
@@ -431,6 +507,246 @@ public sealed class SocketHub {
         "rejected",
         $"A manual tempo must be between {ManualSource.MinBpm:F0} and {ManualSource.MaxBpm:F0} BPM."));
     }
+  }
+
+  /// <summary>
+  /// Looks for bridges, and re-reads what the paired one has.
+  ///
+  /// The two halves are one message because they answer one question - "what is out
+  /// there now" - and because the half that matters changes fastest. An area's
+  /// streaming flag has a lifetime of seconds, and a page that could re-run discovery
+  /// but never re-read the areas would show a stale busy flag forever with a button
+  /// beside it that looked like it should have fixed that.
+  ///
+  /// No acknowledgement and no rejection: the <c>hue</c> frame carries whatever was
+  /// found, including nothing, which is an ordinary answer rather than a failure.
+  /// </summary>
+  private void DiscoverBridges(Client client) {
+    if(this.hue is null) {
+      client.Enqueue(Frames.Error("rejected", "This build has no Hue support."));
+      return;
+    }
+
+    this.RunBridgeCommand(client, async token => {
+      if(this.hue.Connection.Bridge is null) {
+        await this.hue.DiscoverAsync(token).ConfigureAwait(false);
+      } else if(!await this.hue.TryRefreshAreasAsync(token).ConfigureAwait(false)) {
+        // The cheap read first, because it is the one somebody presses repeatedly while
+        // watching a room's busy flag. Only when the known address stops answering is
+        // the full re-discovery worth its seconds - and at that point it is the right
+        // answer, because the bridge has probably moved.
+        await this.hue.RefreshAsync(token).ConfigureAwait(false);
+      }
+
+      return true;
+    });
+  }
+
+  /// <summary>
+  /// Opens the light stream, or says why it did not.
+  ///
+  /// Run off the receive loop like the other bridge commands, because it is one: the
+  /// pre-flight is an HTTP request and the handshake that follows can take seconds, or
+  /// can hang outright when the bridge's one session is taken.
+  /// </summary>
+  private void StartStream(Client client) {
+    if(this.stream is null) {
+      client.Enqueue(Frames.Error("rejected", "This build has no Hue support."));
+      return;
+    }
+
+    this.RunBridgeCommand(
+      client,
+      token => this.stream.StartAsync(token),
+      "The lights could not be started. Choose an entertainment room that is reachable, and check that nothing else - Hue Sync especially - is already streaming to it.");
+  }
+
+  /// <summary>
+  /// Closes the light stream.
+  ///
+  /// Never refused, in any build: a stop that arrives when nothing is running has got
+  /// what it asked for, and an error there is a red message for somebody whose lights
+  /// are already off.
+  ///
+  /// Off the receive loop like every other bridge command, and for the reason this
+  /// class exists to enforce. Closing the session joins the pump thread, which is
+  /// bounded but not instant - a stop whose pump is wedged would hold this connection's
+  /// inbound processing still for two seconds, and every tap, tempo and ping queued
+  /// behind it would arrive that much late.
+  /// </summary>
+  private void StopStream(Client client) {
+    if(this.stream is null) {
+      return;
+    }
+
+    this.RunBridgeCommand(
+      client,
+      async _ => {
+        await this.stream.StopAsync().ConfigureAwait(false);
+        return true;
+      });
+  }
+
+  /// <summary>
+  /// Discards the stored credentials and the chosen area.
+  ///
+  /// Never refused, in any build. Forgetting a bridge that was never paired - or that
+  /// this build could not have paired - leaves the world exactly as the caller wanted
+  /// it, and an error there would put a red message on the screen of somebody who got
+  /// what they asked for.
+  ///
+  /// Off the receive loop because forgetting now waits its turn behind whatever else is
+  /// talking to the bridge, which is what stops a pairing countdown writing the key
+  /// back the moment after it was discarded.
+  /// </summary>
+  private void ForgetBridge(Client client) {
+    if(this.hue is null) {
+      return;
+    }
+
+    this.RunBridgeCommand(
+      client,
+      async token => {
+        await this.hue.ForgetAsync(token).ConfigureAwait(false);
+        return true;
+      });
+  }
+
+  /// <summary>
+  /// Starts the pairing loop for a discovered bridge.
+  ///
+  /// The refusal arrives promptly even though the command runs for a minute on
+  /// success: the membership test is the first thing <c>PairAsync</c> does, so a
+  /// bridge that is not in the discovered list is refused before any waiting starts.
+  /// A second request mid-countdown does not start a competing loop - the service
+  /// serialises its commands, and two phones on the same page is the normal case.
+  /// </summary>
+  private void PairBridge(Client client, JsonElement data) {
+    if(!Frames.TryReadBridgeId(data, out string bridgeId)) {
+      client.Enqueue(Frames.Error("invalid_data", "Pairing needs a string 'data.bridgeId'."));
+      return;
+    }
+
+    if(this.hue is null) {
+      client.Enqueue(Frames.Error("rejected", "This build has no Hue support."));
+      return;
+    }
+
+    this.log.LogInformation("A web client asked to pair with bridge {BridgeId}.", bridgeId);
+
+    this.RunBridgeCommand(
+      client,
+      token => this.hue.PairAsync(bridgeId, token),
+      $"No bridge with id '{Frames.Quote(bridgeId)}' has been discovered.");
+  }
+
+  /// <summary>
+  /// Chooses the entertainment area to stream to.
+  ///
+  /// A malformed id is <c>invalid_data</c> and an unknown one is <c>rejected</c>,
+  /// which is the distinction the protocol draws everywhere else: the first is a bug
+  /// in the client, the second is an area deleted in the Hue app while its button was
+  /// on screen.
+  /// </summary>
+  private void SelectArea(Client client, JsonElement data) {
+    if(!Frames.TryReadAreaId(data, out Guid areaId)) {
+      client.Enqueue(Frames.Error("invalid_data", "Selecting an area needs 'data.areaId' as a uuid string."));
+      return;
+    }
+
+    if(this.hue is null) {
+      client.Enqueue(Frames.Error("rejected", "This build has no Hue support."));
+      return;
+    }
+
+    this.RunBridgeCommand(
+      client,
+      token => this.hue.SelectAreaAsync(areaId, token),
+      $"The bridge has no entertainment area '{areaId}'.");
+  }
+
+  /// <summary>
+  /// Shifts light against the beat.
+  ///
+  /// Refused rather than clamped outside the range, on the same argument as a manual
+  /// tempo: half a second is a whole beat at 120 BPM, so a larger value aims at a
+  /// different beat, and clamping a typo produces a plausible wrong answer that
+  /// somebody then tunes around.
+  /// </summary>
+  private void SetLatencyOffset(Client client, JsonElement data) {
+    if(!Frames.TryReadLatencyOffset(data, out int offsetMs)) {
+      client.Enqueue(Frames.Error("invalid_data", "Setting the latency offset needs an integer 'data.offsetMs'."));
+      return;
+    }
+
+    if(this.hue is null || !this.hue.TrySetLatencyOffset(offsetMs)) {
+      client.Enqueue(Frames.Error(
+        "rejected",
+        $"A latency offset must be between -{HueOptions.MaxLatencyOffsetMs} and {HueOptions.MaxLatencyOffsetMs} ms."));
+    }
+  }
+
+  /// <summary>
+  /// Sets how the light engine turns beats into colour.
+  ///
+  /// Three refusals with three different sentences, because they are three different
+  /// mistakes: a payload that is not one complete statement, a palette that names
+  /// nothing, and a number outside its range. One message saying "that did not work"
+  /// would leave whoever is reading it to guess which.
+  /// </summary>
+  private void SetLightSettings(Client client, JsonElement data) {
+    if(!Frames.TryReadLightSettings(data, out HueEngineData engine)) {
+      client.Enqueue(Frames.Error(
+        "invalid_data",
+        "Setting the light engine needs a string 'data.palette' and integers 'data.colorChangeBars', 'data.pulseMs', 'data.brightness' and 'data.pulseDepth'."));
+      return;
+    }
+
+    if(!HueFrames.TryParsePalette(engine.Palette, out LightPalette palette)) {
+      client.Enqueue(Frames.Error("rejected", $"No palette named '{Frames.Quote(engine.Palette)}'."));
+      return;
+    }
+
+    LightSettings settings = new LightSettings(palette, engine.ColorChangeBars, engine.PulseMs, engine.Brightness, engine.PulseDepth);
+
+    if(this.hue is null || !this.hue.TrySetLightSettings(settings)) {
+      client.Enqueue(Frames.Error(
+        "rejected",
+        $"Colour changes must be between 0 and {LightSettings.MaxColorChangeBars} bars, a pulse between 0 and {LightSettings.MaxPulseMs} ms, and brightness and depth between 0 and {LightSettings.MaxPercent} per cent."));
+    }
+  }
+
+  /// <summary>
+  /// Runs a bridge command away from the receive loop, and answers a refusal.
+  ///
+  /// Off the loop because these talk to a device on the LAN: discovery waits seconds
+  /// for mDNS and pairing waits about a minute for a human, and a receive loop that
+  /// spent either of those blocked would stop reading everything else this client had
+  /// to say - including, during pairing, nothing at all, which is exactly when the
+  /// page needs to still be alive.
+  ///
+  /// The refusal is enqueued to the client that asked rather than broadcast, because
+  /// it is an answer to one request. If that client has since gone, the write lands in
+  /// a completed channel and is dropped, which is the correct outcome.
+  /// </summary>
+  private void RunBridgeCommand(Client client, Func<CancellationToken, Task<bool>> command, string refusal = "") {
+    _ = Task.Run(
+      async () => {
+        try {
+          if(!await command(this.stopping).ConfigureAwait(false)) {
+            client.Enqueue(Frames.Error("rejected", refusal));
+          }
+        } catch(OperationCanceledException) {
+          // The host is stopping, or a pairing countdown was cut short by a forget. In
+          // both cases the command that ended has already been answered by the state
+          // whoever cancelled it went on to set.
+        } catch(HueBridgeException ex) {
+          // Already reported to every page through the connection's Failed state and
+          // its message; logged here so the console has the detail the wire omits.
+          this.log.LogWarning(ex, "A Hue bridge command failed.");
+        }
+      },
+      CancellationToken.None);
   }
 
   private static async Task CloseAsync(

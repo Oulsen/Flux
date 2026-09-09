@@ -8,6 +8,9 @@ import {
   type ErrorData,
   type GridData,
   type HelloData,
+  type HueData,
+  type HueEngineData,
+  type LightData,
   type RawMessage,
   type SourceReportData,
   type SourceState,
@@ -15,7 +18,12 @@ import {
   type StateData,
 } from './protocol.ts';
 import type { ConnectionState } from './socket.ts';
-import { clearsPendingSelection, resolvePending, retiresHeldBeat } from './storeLogic.ts';
+import {
+  clearsPendingSelection,
+  resolvePending,
+  resolvePendingFields,
+  retiresHeldBeat,
+} from './storeLogic.ts';
 
 /**
  * Everything the page knows, which is exactly what the server has told it.
@@ -86,6 +94,30 @@ export class FluxStore {
   // claim a measurement nobody has made.
   diagnostics = $state<DiagnosticsData>({ reanchorMaxBeats: 0 });
 
+  /**
+   * The bridge picture, or null before the first frame has arrived.
+   *
+   * Null is "not told yet" and never "no bridge": the server sends one of these the
+   * moment a socket opens, so null lasts about as long as the handshake. A page that
+   * rendered "unpaired" while it was null would flash a pairing screen at somebody
+   * whose lights are already running.
+   */
+  hue = $state<HueData | null>(null);
+
+  /**
+   * The light settings this page has asked for and not yet seen come back.
+   *
+   * Per field rather than a whole record, which is what makes the message safe to send
+   * as one. Every control sends all five settings, because that is what the message is,
+   * but it composes them from the server's picture with this on top: built from the
+   * server's picture alone, a brightness drag carries the palette this page last heard
+   * about and quietly undoes one chosen on another phone half a second ago.
+   */
+  pendingEngine = $state<Partial<HueEngineData>>({});
+
+  /** Non-null exactly while Flux is streaming to a bridge. */
+  light = $state<LightData | null>(null);
+
   beat = $state<BeatData | null>(null);
 
   /** Bumped once per beat, so a flash can be retriggered even on a repeat position. */
@@ -139,6 +171,7 @@ export class FluxStore {
         this.sources = state.sources;
         this.alignment = state.alignment;
         this.grid = state.grid;
+        this.light = state.light;
         this.diagnostics = state.diagnostics;
         this.pendingSource = resolvePending(this.pendingSource, state.source);
 
@@ -163,6 +196,17 @@ export class FluxStore {
           this.pendingDevice = resolvePending(this.pendingDevice, selected);
         }
 
+        break;
+      }
+
+      case 'hue': {
+        // Replaced wholesale rather than merged. The frame is a complete snapshot
+        // and the server compares it field by field before sending, so anything
+        // that arrives is genuinely different from what is held.
+        const hue = message.data as HueData;
+
+        this.hue = hue;
+        this.pendingEngine = resolvePendingFields(this.pendingEngine, hue.engine);
         break;
       }
 
@@ -193,6 +237,7 @@ export class FluxStore {
         if (clearsPendingSelection(error.code)) {
           this.pendingSource = null;
           this.pendingDevice = null;
+          this.pendingEngine = {};
         }
 
         console.warn('Flux rejected a message:', error);
@@ -215,6 +260,7 @@ export class FluxStore {
     // pending would leave it pending until the page is reloaded.
     this.pendingSource = null;
     this.pendingDevice = null;
+    this.pendingEngine = {};
 
     // A subscription is a preference held by the connection that is now gone, so
     // the list it filled is gone with it. Keeping the rows would show meters
@@ -225,5 +271,15 @@ export class FluxStore {
     // standing on screen that looks exactly like a live one, on a display whose
     // whole job is to say what is being heard right now.
     this.latestSpectrum = null;
+
+    // A stream Flux may or may not still be running is not a measured frame rate,
+    // and this field's whole contract is that a number in it was measured.
+    this.light = null;
+
+    // `hue` is deliberately kept, unlike everything above it. A reconnect brings a
+    // fresh frame within a second, the connection badge already marks the whole page
+    // as last-known, and the one moment this matters is a phone rejoining the Wi-Fi
+    // on the way back from the cupboard - blanking the pairing screen exactly then
+    // would be the worst possible time to be tidy.
   }
 }

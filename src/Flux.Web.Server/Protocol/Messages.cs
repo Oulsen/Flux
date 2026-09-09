@@ -94,6 +94,7 @@ public sealed record DiagnosticsData(
 /// <param name="Sources">Every registered source and its health, for the selector.</param>
 /// <param name="Grid">Null exactly when nothing has ever been received, so a client cannot render an absent tempo as 0.00 BPM.</param>
 /// <param name="Alignment">Whether the bar is anchored, and by what.</param>
+/// <param name="Light">Null exactly when Flux is not streaming to a bridge. The single authority on whether it is.</param>
 /// <param name="Diagnostics">Counters for the active source, plus the grid's own drift metric.</param>
 public sealed record StateData(
   string Source,
@@ -101,7 +102,97 @@ public sealed record StateData(
   IReadOnlyList<SourceReportData> Sources,
   GridData? Grid,
   AlignmentData Alignment,
+  LightData? Light,
   DiagnosticsData Diagnostics);
+
+/// <summary>
+/// What the light stream is achieving, and the only field that says Flux is
+/// streaming at all.
+///
+/// It rides the 20 Hz state frame rather than the <c>hue</c> message because it is
+/// a moving measurement and <c>hue</c> is pushed on change: a frame rate there would
+/// re-send the entertainment area list once a second, which is the objection that
+/// gave Hue its own message in the first place.
+/// </summary>
+/// <param name="Fps">
+/// Frames a second reaching the bridge, measured over the last second and never the
+/// configured rate echoed back. Not the rate a bulb renders: the bridge forwards over
+/// Zigbee at roughly 25 updates a second per light and drops the excess, so the two
+/// are different layers and both are correct.
+/// </param>
+public sealed record LightData(double Fps);
+
+/// <summary>
+/// One bridge, found or paired.
+/// </summary>
+/// <param name="Id">The bridge's own identifier, and the only value pairBridge accepts. Credentials belong to this rather than to an address.</param>
+/// <param name="Address">Where it answered from, this time. For display only: DHCP moves it, and nothing on either side stores it.</param>
+public sealed record HueBridgeData(string Id, string Address);
+
+/// <summary>
+/// One entertainment area, as the picker has to show it.
+/// </summary>
+/// <param name="Id">The configuration id a stream is opened against, and the only value selectArea accepts.</param>
+/// <param name="Name">What it is called in the Hue app.</param>
+/// <param name="ChannelCount">How many channels the area drives. Worth showing, because a user with two areas can still tell three lights from ten.</param>
+/// <param name="Streaming">
+/// Whether something already holds this area's streaming session. The pre-flight for a
+/// failure that otherwise arrives as an opaque DTLS timeout - and deliberately not a
+/// claim about <em>who</em>, because the bridge offers no name to blame.
+/// </param>
+public sealed record HueAreaData(Guid Id, string Name, int ChannelCount, bool Streaming);
+
+/// <summary>
+/// Everything the page knows about the bridge, as one snapshot.
+///
+/// Pushed on change rather than folded into <see cref="StateData"/>: state goes out
+/// twenty times a second, and an area list sent at that rate is twelve hundred copies
+/// a minute of something that changes when a user opens the Hue app.
+///
+/// Nothing here is omitted when null. Every nullable field is a documented value
+/// rather than an absence - a null bridge is "none paired", a null countdown is "no
+/// window is running" - and a client that had to distinguish absent from null would
+/// be doing the server's job.
+/// </summary>
+/// <param name="State">"disabled", "unpaired", "discovering", "pairing", "connecting", "ready" or "failed".</param>
+/// <param name="Bridge">The paired bridge, or null before there is one.</param>
+/// <param name="Discovered">What the last discovery found. Kept while pairing, because that list is what the pairing screen is showing.</param>
+/// <param name="Areas">The bridge's entertainment areas, empty until it is reachable.</param>
+/// <param name="SelectedAreaId">The area lights will be streamed to, or null until one is chosen.</param>
+/// <param name="PairingSecondsRemaining">Seconds left in the pairing window; non-null exactly when <paramref name="State"/> is "pairing".</param>
+/// <param name="LatencyOffsetMs">The offset in force, signed, positive being early. Always a real number: there is no state in which no offset applies.</param>
+/// <param name="Engine">How the light engine is set. Always present, for the reason the offset always is.</param>
+/// <param name="Message">English prose for a human, or null. Never parsed, and never what a client branches on.</param>
+public sealed record HueData(
+  string State,
+  HueBridgeData? Bridge,
+  IReadOnlyList<HueBridgeData> Discovered,
+  IReadOnlyList<HueAreaData> Areas,
+  Guid? SelectedAreaId,
+  int? PairingSecondsRemaining,
+  int LatencyOffsetMs,
+  HueEngineData Engine,
+  string? Message);
+
+/// <summary>
+/// How the light engine turns beats into colour, as the controls for it have to show.
+///
+/// Named for the engine and not for the lights, because <c>state.light</c> already
+/// exists and means something else entirely - what the stream is achieving. Two keys
+/// spelled the same with unrelated contents is a twenty-minute detour for whoever
+/// reads the document next.
+///
+/// Its own object inside <c>hue</c> rather than three more fields alongside the bridge,
+/// because these three are set together by one message and read together by the
+/// engine. A page that had to gather them from the top level would be free to send two
+/// of them, and there is no such thing as two thirds of a look.
+/// </summary>
+/// <param name="Palette">Which colours the engine draws from: "random", "warm", "cool", "neon", "sunset", "ocean", "forest" or "party".</param>
+/// <param name="ColorChangeBars">Bars between colour changes, 0 to 16, where 0 means a new colour on every beat.</param>
+/// <param name="PulseMs">How long a beat's brightness pulse takes to fade, 0 to 2000, where 0 means a steady colour and no pulse.</param>
+/// <param name="Brightness">How bright a beat drives the lights, 0 to 100 per cent. The ceiling for everything sent, so 0 is a blackout.</param>
+/// <param name="PulseDepth">How far the light drops between beats, 0 to 100 per cent of <paramref name="Brightness"/>. 0 never dips, 100 fades to nothing.</param>
+public sealed record HueEngineData(string Palette, int ColorChangeBars, int PulseMs, int Brightness, int PulseDepth);
 
 /// <summary>
 /// One analyzer frame, for the visualiser.

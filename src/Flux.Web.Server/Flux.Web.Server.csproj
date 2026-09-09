@@ -28,6 +28,15 @@
     <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
   </ItemGroup>
 
+  <!-- Flux.Hue directly, and no contract project beside it, which is the payoff
+       for keeping that project on net10.0. The bridge is HTTP and UDP; the only
+       Windows-bound call in it is DPAPI, annotated at its own class rather than
+       pinned to the assembly. So the pairing screen reads the same types the
+       bridge service holds, and there is no second assembly to keep in step. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Flux.Hue\Flux.Hue.csproj" />
+  </ItemGroup>
+
   <!-- wwwroot is Vite's output, not source: it is gitignored and produced by
        `npm run build` in Flux.Web.Frontend before `dotnet build`. The glob is
        conditional because a fresh clone has no wwwroot yet, and a missing folder

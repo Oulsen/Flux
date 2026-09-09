@@ -56,6 +56,10 @@ public static class Frames {
     return Encode("devices", devices, ProtocolJson.Default.EnvelopeDevicesData);
   }
 
+  public static ReadOnlyMemory<byte> Hue(HueData hue) {
+    return Encode("hue", hue, ProtocolJson.Default.EnvelopeHueData);
+  }
+
   public static ReadOnlyMemory<byte> Pong(long t) {
     return Encode("pong", new EchoData(t), ProtocolJson.Default.EnvelopeEchoData);
   }
@@ -156,6 +160,69 @@ public static class Frames {
     return false;
   }
 
+  /// <summary>Reads the bridge id out of a <c>pairBridge</c> payload.</summary>
+  public static bool TryReadBridgeId(JsonElement data, out string bridgeId) {
+    return TryReadString(data, "bridgeId", out bridgeId);
+  }
+
+  /// <summary>
+  /// Reads the area id out of a <c>selectArea</c> payload.
+  ///
+  /// The id is a uuid on the wire and a <see cref="Guid"/> here, so a value that is
+  /// not one is <c>invalid_data</c> rather than <c>rejected</c>: the two codes mean
+  /// different things to whoever is reading, and a malformed id is a bug in the
+  /// client rather than a race it lost.
+  /// </summary>
+  public static bool TryReadAreaId(JsonElement data, out Guid areaId) {
+    areaId = Guid.Empty;
+
+    return TryReadString(data, "areaId", out string text) && Guid.TryParse(text, out areaId);
+  }
+
+  /// <summary>
+  /// Reads a <c>setLatencyOffset</c> payload.
+  ///
+  /// Integer milliseconds, strictly. A fractional offset is refused rather than
+  /// rounded, because the slider that sends this deals in whole milliseconds and
+  /// anything else is a client that has stopped agreeing with the document.
+  /// </summary>
+  public static bool TryReadLatencyOffset(JsonElement data, out int offsetMs) {
+    offsetMs = 0;
+
+    return data.ValueKind == JsonValueKind.Object
+      && data.TryGetProperty("offsetMs", out JsonElement value)
+      && value.ValueKind == JsonValueKind.Number
+      && value.TryGetInt32(out offsetMs);
+  }
+
+  /// <summary>
+  /// Reads a <c>setLightSettings</c> payload, as far as its shape.
+  ///
+  /// Every field is required, because the message is one complete statement of how the
+  /// lights should look rather than a patch: a page that could send a palette alone
+  /// would be relying on the server to remember the rest, and two pages doing that at
+  /// once produce a combination neither of them chose.
+  ///
+  /// The palette comes back as the string it arrived as, unparsed. Whether it names
+  /// anything is not a question about shape, and the answer to it is <c>rejected</c>
+  /// with the name quoted - which this cannot produce and the caller can.
+  /// </summary>
+  public static bool TryReadLightSettings(JsonElement data, out HueEngineData engine) {
+    engine = new HueEngineData(string.Empty, 0, 0, 0, 0);
+
+    if(data.ValueKind != JsonValueKind.Object
+      || !TryReadString(data, "palette", out string palette)
+      || !TryReadInt(data, "colorChangeBars", out int bars)
+      || !TryReadInt(data, "pulseMs", out int pulseMs)
+      || !TryReadInt(data, "brightness", out int brightness)
+      || !TryReadInt(data, "pulseDepth", out int pulseDepth)) {
+      return false;
+    }
+
+    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth);
+    return true;
+  }
+
   /// <summary>
   /// Shortens a client-supplied string before it is quoted back in an error.
   /// </summary>
@@ -189,6 +256,22 @@ public static class Frames {
         // is worth an error rather than a guess.
         return false;
     }
+  }
+
+  /// <summary>
+  /// Reads a required whole-number field.
+  ///
+  /// Strict about integers for the reason the latency offset is: every number this
+  /// protocol accepts from a client comes off a control that deals in whole units, so
+  /// a fraction is a client that has stopped agreeing with the document rather than a
+  /// value to round.
+  /// </summary>
+  private static bool TryReadInt(JsonElement data, string name, out int value) {
+    value = 0;
+
+    return data.TryGetProperty(name, out JsonElement field)
+      && field.ValueKind == JsonValueKind.Number
+      && field.TryGetInt32(out value);
   }
 
   /// <summary>Reads a required, non-empty string field.</summary>
@@ -231,6 +314,7 @@ public static class Frames {
 [JsonSerializable(typeof(Envelope<BeatData>))]
 [JsonSerializable(typeof(Envelope<SpectrumData>))]
 [JsonSerializable(typeof(Envelope<DevicesData>))]
+[JsonSerializable(typeof(Envelope<HueData>))]
 [JsonSerializable(typeof(Envelope<EchoData>))]
 [JsonSerializable(typeof(Envelope<ErrorData>))]
 [JsonSerializable(typeof(ClientEnvelope))]

@@ -33,6 +33,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Flux.Audio\Flux.Audio.csproj" />
     <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
+    <ProjectReference Include="..\Flux.Hue\Flux.Hue.csproj" />
     <ProjectReference Include="..\Flux.Midi\Flux.Midi.csproj" />
     <ProjectReference Include="..\Flux.Web.Server\Flux.Web.Server.csproj" />
   </ItemGroup>

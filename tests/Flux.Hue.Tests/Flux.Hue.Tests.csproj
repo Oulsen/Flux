@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- net10.0-windows while the project under test is plain net10.0, which is the
+       reverse of the usual reason for a Windows TFM here. Flux.Hue stays portable
+       because only its credential store is Windows-bound; this project exercises
+       that store against a real DPAPI blob, and doing so from a platform-neutral
+       assembly means arguing with the platform analyzer at every call site in a
+       build that treats warnings as errors. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Flux.Hue\Flux.Hue.csproj" />
+  </ItemGroup>
+
+</Project>

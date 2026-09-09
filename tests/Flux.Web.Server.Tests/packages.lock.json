@@ -11,6 +11,28 @@
           "xunit.v3.mtp-v2": "[4.0.0]"
         }
       },
+      "HueApi": {
+        "type": "Transitive",
+        "resolved": "3.3.0",
+        "contentHash": "gEDZuribcK6QIjN8BVCNq3zs/3qXkQClz7m4C+fcwm4lHg8H0QZZ+BZGGqtqls67D8bUrJ8/aZ9O2mICRvWpgw=="
+      },
+      "HueApi.ColorConverters": {
+        "type": "Transitive",
+        "resolved": "3.3.0",
+        "contentHash": "fz2LFMHnya+ePwFjJu/fp1lOwgSy68VgjC+Fi5bXH2fpZwInXFEVQIeHC7LSSXAFezKNX3hrubEM4W4tsrh9og==",
+        "dependencies": {
+          "HueApi": "3.3.0"
+        }
+      },
+      "HueApi.Entertainment": {
+        "type": "Transitive",
+        "resolved": "3.3.0",
+        "contentHash": "VV4qrZ3v/EvGOMW+/FwiAT9wxZ4HpzWJ79VtZW44JxfTi8VK4rVBgRtQfZLDbWJJGhQg8edVyme8ENA7JmMWVw==",
+        "dependencies": {
+          "HueApi.ColorConverters": "3.3.0",
+          "Portable.BouncyCastle": "1.9.0"
+        }
+      },
       "Microsoft.ApplicationInsights": {
         "type": "Transitive",
         "resolved": "2.23.0",
@@ -56,10 +78,20 @@
         "resolved": "5.0.0",
         "contentHash": "dDoKi0PnDz31yAyETfRntsLArTlVAVzUzCIvvEDsDsucrl33Dl8pIJG06ePTJTI3tGpeyHS9Cq7Foc/s4EeKcg=="
       },
+      "Portable.BouncyCastle": {
+        "type": "Transitive",
+        "resolved": "1.9.0",
+        "contentHash": "eZZBCABzVOek+id9Xy04HhmgykF0wZg9wpByzrWN7q8qEI0Qen9b7tfd7w8VA3dOeesumMG7C5ZPy0jk7PSRHw=="
+      },
       "System.Security.AccessControl": {
         "type": "Transitive",
         "resolved": "6.0.1",
         "contentHash": "IQ4NXP/B3Ayzvw0rDQzVTYsCKyy0Jp9KI6aYcK7UnGVlR9+Awz++TIPCQtPYfLJfOpm8ajowMR09V7quD3sEHw=="
+      },
+      "System.Security.Cryptography.ProtectedData": {
+        "type": "Transitive",
+        "resolved": "10.0.12",
+        "contentHash": "wO0W8VDMeRJZakRySOmemAnrBZMwEFRlbfBtATxUiLf2I3IhSRnCp1Vt157NWptdE4IJ7eftd5n8q9LtaKHFTQ=="
       },
       "xunit.analyzers": {
         "type": "Transitive",
@@ -135,11 +167,22 @@
       "flux.beat": {
         "type": "Project"
       },
+      "flux.hue": {
+        "type": "Project",
+        "dependencies": {
+          "Flux.Beat": "[0.3.0, )",
+          "HueApi": "[3.3.0, )",
+          "HueApi.ColorConverters": "[3.3.0, )",
+          "HueApi.Entertainment": "[3.3.0, )",
+          "System.Security.Cryptography.ProtectedData": "[10.0.12, )"
+        }
+      },
       "flux.web.server": {
         "type": "Project",
         "dependencies": {
-          "Flux.Audio.Contract": "[0.1.0, )",
-          "Flux.Beat": "[0.1.0, )"
+          "Flux.Audio.Contract": "[0.3.0, )",
+          "Flux.Beat": "[0.3.0, )",
+          "Flux.Hue": "[0.3.0, )"
         }
       }
     }

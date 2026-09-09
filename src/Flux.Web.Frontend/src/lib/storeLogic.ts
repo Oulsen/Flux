@@ -75,6 +75,31 @@ export function resolvePending<T>(pending: T | null, confirmed: T): T | null {
 }
 
 /**
+ * The same question for a record whose fields are asked for one at a time.
+ *
+ * The light engine's five settings travel as one complete statement, because that is
+ * what the message is, but they are changed by five separate controls and by more than
+ * one phone. So the outstanding set is per field: a page dragging brightness has that
+ * field unconfirmed while a palette somebody else chose is already the truth, and
+ * resolving the whole record at once would either discard the drag or keep overwriting
+ * their palette with the one this page last heard.
+ *
+ * Resolving on equality rather than on a reply, exactly as {@link resolvePending} does,
+ * so a field that arrives at the requested value by any route stops being pending.
+ */
+export function resolvePendingFields<T extends object>(pending: Partial<T>, confirmed: T): Partial<T> {
+  const outstanding: Partial<T> = {};
+
+  for (const key of Object.keys(pending) as (keyof T)[]) {
+    if (pending[key] !== confirmed[key]) {
+      outstanding[key] = pending[key];
+    }
+  }
+
+  return outstanding;
+}
+
+/**
  * Whether an error frame ends a pending selection.
  *
  * `rejected` means the server understood the request and declined it, which is
