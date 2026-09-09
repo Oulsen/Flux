@@ -161,6 +161,7 @@ public sealed record HueAreaData(Guid Id, string Name, int ChannelCount, bool St
 /// <param name="SelectedAreaId">The area lights will be streamed to, or null until one is chosen.</param>
 /// <param name="PairingSecondsRemaining">Seconds left in the pairing window; non-null exactly when <paramref name="State"/> is "pairing".</param>
 /// <param name="LatencyOffsetMs">The offset in force, signed, positive being early. Always a real number: there is no state in which no offset applies.</param>
+/// <param name="Engine">How the light engine is set. Always present, for the reason the offset always is.</param>
 /// <param name="Message">English prose for a human, or null. Never parsed, and never what a client branches on.</param>
 public sealed record HueData(
   string State,
@@ -170,7 +171,28 @@ public sealed record HueData(
   Guid? SelectedAreaId,
   int? PairingSecondsRemaining,
   int LatencyOffsetMs,
+  HueEngineData Engine,
   string? Message);
+
+/// <summary>
+/// How the light engine turns beats into colour, as the controls for it have to show.
+///
+/// Named for the engine and not for the lights, because <c>state.light</c> already
+/// exists and means something else entirely - what the stream is achieving. Two keys
+/// spelled the same with unrelated contents is a twenty-minute detour for whoever
+/// reads the document next.
+///
+/// Its own object inside <c>hue</c> rather than three more fields alongside the bridge,
+/// because these three are set together by one message and read together by the
+/// engine. A page that had to gather them from the top level would be free to send two
+/// of them, and there is no such thing as two thirds of a look.
+/// </summary>
+/// <param name="Palette">Which colours the engine draws from: "random", "warm", "cool", "neon", "sunset", "ocean", "forest" or "party".</param>
+/// <param name="ColorChangeBars">Bars between colour changes, 0 to 16, where 0 means a new colour on every beat.</param>
+/// <param name="PulseMs">How long a beat's brightness pulse takes to fade, 0 to 2000, where 0 means a steady colour and no pulse.</param>
+/// <param name="Brightness">How bright a beat drives the lights, 0 to 100 per cent. The ceiling for everything sent, so 0 is a blackout.</param>
+/// <param name="PulseDepth">How far the light drops between beats, 0 to 100 per cent of <paramref name="Brightness"/>. 0 never dips, 100 fades to nothing.</param>
+public sealed record HueEngineData(string Palette, int ColorChangeBars, int PulseMs, int Brightness, int PulseDepth);
 
 /// <summary>
 /// One analyzer frame, for the visualiser.

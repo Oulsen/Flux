@@ -60,6 +60,16 @@ public sealed class HueStreamService: IDisposable {
   private readonly ICredentialStore credentials;
   private readonly IOptions<HueOptions> options;
   private readonly ILogger<HueStreamService> logger;
+
+  /// <summary>
+  /// What decides the colour, asked once per frame.
+  ///
+  /// Optional, and null leaves the stream sending <see cref="Color"/>. That is the
+  /// beat lab's arrangement rather than a missing feature: a session opened only to
+  /// prove the bridge is reachable wants a colour that holds still while somebody
+  /// looks at it.
+  /// </summary>
+  private readonly ILightSource? lights;
   private readonly object gate = new();
   private readonly object colorGate = new();
 
@@ -88,7 +98,8 @@ public sealed class HueStreamService: IDisposable {
     HueBridgeService bridge,
     ICredentialStore credentials,
     IOptions<HueOptions> options,
-    ILogger<HueStreamService> logger) {
+    ILogger<HueStreamService> logger,
+    ILightSource? lights = null) {
     ArgumentNullException.ThrowIfNull(options);
 
     this.factory = factory ?? throw new ArgumentNullException(nameof(factory));
@@ -96,18 +107,21 @@ public sealed class HueStreamService: IDisposable {
     this.credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
     this.options = options;
     this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    this.lights = lights;
   }
 
   /// <summary>Raised when the stream starts or stops, including when it stops by itself.</summary>
   public event Action? Changed;
 
   /// <summary>
-  /// The colour every channel is sent, replaced whenever the light engine has a new
-  /// opinion.
+  /// The colour every channel is sent when no <see cref="ILightSource"/> is behind the
+  /// stream.
   ///
-  /// A property rather than a method call into the loop: the loop reads it once per
-  /// frame and never blocks on whoever is writing it, so a beat landing at the wrong
-  /// microsecond can never delay a frame.
+  /// This was going to be the light engine's seam and is not, because a colour that
+  /// only changes when something writes it cannot express a brightness pulse that
+  /// fades or a hue that slides - both of those are functions of the moment the frame
+  /// is sent, so the loop asks rather than reads. What survives here is the holding
+  /// colour and the way tests pin one.
   /// </summary>
   public HueColor Color {
     // Locked rather than volatile, because a colour is three doubles and nothing
@@ -369,7 +383,10 @@ public sealed class HueStreamService: IDisposable {
         continue;
       }
 
-      stream.SetAll(this.Color);
+      // Clamped on the way out rather than trusted, which is what the engine's
+      // envelope makes worth doing: an overshoot reaching the bridge as a wrapped or
+      // negative channel is one wrong light for one frame, and never reproducible.
+      stream.SetAll((this.lights?.Render() ?? this.Color).Clamped());
       stream.Send();
 
       this.frames++;

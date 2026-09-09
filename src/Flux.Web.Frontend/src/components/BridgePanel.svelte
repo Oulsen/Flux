@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
   import {
     areaSummary,
     bridgeStatusLabel,
@@ -7,40 +7,20 @@
     showsPairing,
     showsRooms,
   } from '../lib/hue.ts';
-  import { formatRate } from '../lib/format.ts';
-  import type { HueData, LightData } from '../lib/protocol.ts';
-  import LatencySlider from './LatencySlider.svelte';
+  import type { HueData } from '../lib/protocol.ts';
 
   interface Props {
     /** The bridge picture, or null before the first frame has arrived. */
     hue: HueData | null;
-    /** Non-null exactly while Flux is streaming. The only field that says so. */
-    light: LightData | null;
     discover: () => void;
     pair: (bridgeId: string) => void;
     selectArea: (areaId: string) => void;
     forget: () => void;
-    setOffset: (offsetMs: number) => void;
-    startStream: () => void;
-    stopStream: () => void;
     /** Whether a refresh has been asked for and not yet answered. */
     refreshing: boolean;
   }
 
-  const {
-    hue,
-    light,
-    discover,
-    pair,
-    selectArea,
-    forget,
-    setOffset,
-    startStream,
-    stopStream,
-    refreshing,
-  }: Props = $props();
-
-  const streaming = $derived(light !== null);
+  const { hue, discover, pair, selectArea, forget, refreshing }: Props = $props();
 
   const status = $derived(bridgeStatusLabel(hue));
   const countdown = $derived(countdownLabel(hue?.pairingSecondsRemaining ?? null));
@@ -57,6 +37,14 @@
   const failed = $derived(hue?.state === 'failed');
 </script>
 
+<!--
+  Setup, and only setup: finding a bridge, pairing it, choosing the room, and letting go
+  of it. Everything that gets touched with music playing moved to the lights panel.
+
+  This is deliberately the half that collapses once it is done. A bridge gets paired
+  once and a room chosen once, and leaving that on screen for the rest of the year was
+  most of why the page needed scrolling.
+-->
 <div class="bridge">
   <p class="status" class:failed>{status}</p>
 
@@ -110,33 +98,6 @@
       </div>
 
       <!--
-        Driven by state.light rather than by a flag of this page's own. The stream can
-        also stop without anybody pressing anything - the bridge allows one session and
-        another application can take it - so a button that tracked its own clicks would
-        keep offering to stop something that had already stopped.
-      -->
-      <div class="stream">
-        <button
-          type="button"
-          class="action"
-          class:live={streaming}
-          disabled={hue.selectedAreaId === null}
-          onclick={streaming ? stopStream : startStream}
-        >
-          <!-- "sync" rather than "lights": the button does not switch anything on, it
-               takes the area over from whatever had it and hands it back on stop. -->
-          {streaming ? 'stop light sync' : 'start light sync'}
-        </button>
-
-        {#if light !== null}
-          <!-- Measured, not the configured rate echoed back, which is the whole point
-               of showing it: a stream quietly achieving half its rate is otherwise
-               indistinguishable from lights that are less smooth than expected. -->
-          <p class="rate">{formatRate(light.fps)} frames a second to the bridge</p>
-        {/if}
-      </div>
-
-      <!--
         The ready state had no way to ask the bridge anything, so a room another
         application had taken went on reading as free until Flux was restarted. The
         busy flag has a lifetime of seconds and this is the control that refreshes it.
@@ -144,8 +105,6 @@
       <button type="button" class="action" disabled={refreshing || !canDiscover(hue.state)} onclick={discover}>
         {refreshing ? 'checking the bridge' : 'refresh rooms'}
       </button>
-
-      <LatencySlider offsetMs={hue.latencyOffsetMs} {setOffset} />
     {/if}
 
     {#if hue.bridge !== null}
@@ -161,7 +120,7 @@
   .bridge {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 
   .status {
@@ -186,7 +145,7 @@
   .areas {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 
   .row {
@@ -253,24 +212,6 @@
 
   .quiet {
     color: var(--ink-faint);
-  }
-
-  .stream {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  .live {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  .rate {
-    margin: 0;
-    font-size: 0.7rem;
-    color: var(--ink-faint);
-    font-variant-numeric: tabular-nums;
   }
 
   .empty {

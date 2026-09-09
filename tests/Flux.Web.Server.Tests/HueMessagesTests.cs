@@ -10,7 +10,7 @@ namespace Flux.Web.Server.Tests;
 
 /// <summary>
 /// The Hue half of the socket: the frame a client gets before it asks, and what the
-/// five bridge messages do with a payload.
+/// bridge and light messages do with a payload.
 ///
 /// No bridge and no link button anywhere in here, which is the whole reason
 /// <c>Flux.Hue</c> put the library behind one class. What is being tested is the wire
@@ -106,6 +106,137 @@ public sealed class HueMessagesTests {
   }
 
   [Fact]
+  public async Task LightSettingsAreAcceptedAndAnnouncedToEveryPage() {
+    Rig rig = new Rig();
+    FakeWebSocket socket = new FakeWebSocket();
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await rig.SkipGreetingAsync(socket);
+
+    socket.Client("""{"type":"setLightSettings","data":{"palette":"neon","colorChangeBars":8,"pulseMs":300,"brightness":60,"pulseDepth":40}}""");
+
+    using JsonDocument hue = JsonDocument.Parse(await socket.NextAsync());
+    JsonElement engine = hue.RootElement.GetProperty("data").GetProperty("engine");
+
+    Assert.Equal("neon", engine.GetProperty("palette").GetString());
+    Assert.Equal(8, engine.GetProperty("colorChangeBars").GetInt32());
+    Assert.Equal(300, engine.GetProperty("pulseMs").GetInt32());
+    Assert.Equal(60, engine.GetProperty("brightness").GetInt32());
+    Assert.Equal(40, engine.GetProperty("pulseDepth").GetInt32());
+    Assert.Equal(new LightSettings(LightPalette.Neon, 8, 300, 60, 40), rig.Bridge.Connection.Light);
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// A palette name that is not on the list is <c>rejected</c> rather than
+  /// <c>invalid_data</c>, on the precedent <c>selectSource</c> set: the field is a
+  /// string and it is a string, so the shape was right and the value was not.
+  /// </summary>
+  [Fact]
+  public async Task APaletteThatNamesNothingIsRefusedWithTheNameQuotedBack() {
+    Rig rig = new Rig();
+    FakeWebSocket socket = new FakeWebSocket();
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await rig.SkipGreetingAsync(socket);
+
+    socket.Client("""{"type":"setLightSettings","data":{"palette":"beige","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85}}""");
+
+    using JsonDocument error = JsonDocument.Parse(await socket.NextAsync());
+    JsonElement data = error.RootElement.GetProperty("data");
+
+    Assert.Equal("rejected", data.GetProperty("code").GetString());
+    Assert.Contains("beige", data.GetProperty("message").GetString());
+    Assert.Equal(LightSettings.Default, rig.Bridge.Connection.Light);
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  [Theory]
+  [InlineData(-1, 240, 100, 85)]
+  [InlineData(17, 240, 100, 85)]
+  [InlineData(4, -1, 100, 85)]
+  [InlineData(4, 2001, 100, 85)]
+  [InlineData(4, 240, -1, 85)]
+  [InlineData(4, 240, 101, 85)]
+  [InlineData(4, 240, 100, -1)]
+  [InlineData(4, 240, 100, 101)]
+  public async Task ASettingOutsideItsRangeIsRefusedRatherThanClamped(int bars, int pulseMs, int brightness, int depth) {
+    Rig rig = new Rig();
+    FakeWebSocket socket = new FakeWebSocket();
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await rig.SkipGreetingAsync(socket);
+
+    // The palette last so that no interpolation is followed by a run of closing braces,
+    // which a raw literal cannot tell from the end of an interpolation.
+    string engine = $$"""{"colorChangeBars":{{bars}},"pulseMs":{{pulseMs}},"brightness":{{brightness}},"pulseDepth":{{depth}},"palette":"warm"}""";
+
+    socket.Client($$"""{"type":"setLightSettings","data":{{engine}}}""");
+
+    using JsonDocument error = JsonDocument.Parse(await socket.NextAsync());
+    Assert.Equal("rejected", error.RootElement.GetProperty("data").GetProperty("code").GetString());
+    Assert.Equal(LightSettings.Default, rig.Bridge.Connection.Light);
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// The message is one complete statement of how the lights should look rather than a
+  /// patch, for the reason <c>subscribe</c> requires both of its flags: a page that
+  /// could send a palette alone would rely on the server to supply the rest.
+  /// </summary>
+  [Theory]
+  [InlineData("""{"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85}""")]
+  [InlineData("""{"palette":"warm","pulseMs":240,"brightness":100,"pulseDepth":85}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"brightness":100,"pulseDepth":85}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"pulseDepth":85}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":12.5,"brightness":100,"pulseDepth":85}""")]
+  [InlineData("""{"palette":4,"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85}""")]
+  public async Task AnIncompleteStatementOfTheLookIsABugRatherThanARefusal(string data) {
+    Rig rig = new Rig();
+    FakeWebSocket socket = new FakeWebSocket();
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await rig.SkipGreetingAsync(socket);
+
+    socket.Client($$"""{"type":"setLightSettings","data":{{data}}}""");
+
+    using JsonDocument error = JsonDocument.Parse(await socket.NextAsync());
+    Assert.Equal("invalid_data", error.RootElement.GetProperty("data").GetProperty("code").GetString());
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// Every palette the document lists survives the trip out and back, which is the
+  /// invariant the paired name and parse exist to hold: the page sends back exactly the
+  /// names it was given.
+  /// </summary>
+  [Theory]
+  [InlineData(LightPalette.Random)]
+  [InlineData(LightPalette.Warm)]
+  [InlineData(LightPalette.Cool)]
+  [InlineData(LightPalette.Neon)]
+  [InlineData(LightPalette.Sunset)]
+  [InlineData(LightPalette.Ocean)]
+  [InlineData(LightPalette.Forest)]
+  [InlineData(LightPalette.Party)]
+  public void EveryPaletteHasAProtocolNameThatParsesBackToIt(LightPalette palette) {
+    HueConnection connection = HueConnection.Initial(
+      HueConnectionState.Ready,
+      latencyOffsetMs: 0,
+      LightSettings.Default with { Palette = palette });
+
+    string name = Payload(HueFrames.Snapshot(connection)).GetProperty("engine").GetProperty("palette").GetString()!;
+
+    Assert.True(HueFrames.TryParsePalette(name, out LightPalette parsed));
+    Assert.Equal(palette, parsed);
+  }
+
+  [Fact]
   public async Task AnAreaIdThatIsNotAUuidIsABugRatherThanARace() {
     Rig rig = new Rig();
     FakeWebSocket socket = new FakeWebSocket();
@@ -172,6 +303,7 @@ public sealed class HueMessagesTests {
       Booth.Id,
       PairingSecondsRemaining: null,
       LatencyOffsetMs: 90,
+      new LightSettings(LightPalette.Neon, ColorChangeBars: 8, PulseMs: 120, Brightness: 70, PulseDepth: 30),
       Message: null);
 
     JsonElement data = Payload(HueFrames.Snapshot(connection));
@@ -181,6 +313,13 @@ public sealed class HueMessagesTests {
     Assert.Equal(Bridge.Address, data.GetProperty("bridge").GetProperty("address").GetString());
     Assert.Equal(1, data.GetProperty("discovered").GetArrayLength());
     Assert.Equal(90, data.GetProperty("latencyOffsetMs").GetInt32());
+
+    JsonElement light = data.GetProperty("engine");
+    Assert.Equal("neon", light.GetProperty("palette").GetString());
+    Assert.Equal(8, light.GetProperty("colorChangeBars").GetInt32());
+    Assert.Equal(120, light.GetProperty("pulseMs").GetInt32());
+    Assert.Equal(70, light.GetProperty("brightness").GetInt32());
+    Assert.Equal(30, light.GetProperty("pulseDepth").GetInt32());
 
     JsonElement area = data.GetProperty("areas")[0];
     Assert.Equal(Booth.Id, area.GetProperty("id").GetGuid());
@@ -197,7 +336,7 @@ public sealed class HueMessagesTests {
   /// </summary>
   [Fact]
   public void ComposeSendsItsNullsRatherThanLeavingThemOut() {
-    JsonElement data = Payload(HueFrames.Snapshot(HueConnection.Initial(HueConnectionState.Unpaired, 0)));
+    JsonElement data = Payload(HueFrames.Snapshot(HueConnection.Initial(HueConnectionState.Unpaired, 0, LightSettings.Default)));
 
     Assert.Equal(JsonValueKind.Null, data.GetProperty("bridge").ValueKind);
     Assert.Equal(JsonValueKind.Null, data.GetProperty("selectedAreaId").ValueKind);
@@ -222,7 +361,7 @@ public sealed class HueMessagesTests {
   [InlineData(HueConnectionState.Failed)]
   public void EveryStateHasAProtocolNameAndOnlyPairingHasACountdown(HueConnectionState state) {
     int? countdown = state == HueConnectionState.Pairing ? 42 : null;
-    HueConnection connection = HueConnection.Initial(state, 0) with { PairingSecondsRemaining = countdown };
+    HueConnection connection = HueConnection.Initial(state, 0, LightSettings.Default) with { PairingSecondsRemaining = countdown };
 
     JsonElement data = Payload(HueFrames.Snapshot(connection));
 

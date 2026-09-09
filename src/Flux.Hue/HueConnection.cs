@@ -70,6 +70,15 @@ public enum HueConnectionState {
 /// different values for it. Always a real number: unlike the countdown, there is no
 /// situation in which no offset is in force.
 /// </param>
+/// <param name="Light">
+/// How the light engine is set: which colours, how often they change, how hard a beat
+/// hits.
+///
+/// Here beside the offset and for the same reason - these are all controls on one
+/// screen, and two phones showing different values for the same knob is the failure
+/// this snapshot exists to prevent. Always a real value: there is no situation in
+/// which the engine is running on no settings at all.
+/// </param>
 /// <param name="Message">
 /// English prose for a human, set when <see cref="State"/> is
 /// <see cref="HueConnectionState.Failed"/>. Never parsed, and never the thing a
@@ -83,9 +92,10 @@ public sealed record HueConnection(
   Guid? SelectedAreaId,
   int? PairingSecondsRemaining,
   int LatencyOffsetMs,
+  LightSettings Light,
   string? Message) {
   /// <summary>The state before anything has been attempted.</summary>
-  public static HueConnection Initial(HueConnectionState state, int latencyOffsetMs) {
+  public static HueConnection Initial(HueConnectionState state, int latencyOffsetMs, LightSettings light) {
     return new HueConnection(
       state,
       Bridge: null,
@@ -94,6 +104,7 @@ public sealed record HueConnection(
       SelectedAreaId: null,
       PairingSecondsRemaining: null,
       latencyOffsetMs,
+      light,
       Message: null);
   }
 }

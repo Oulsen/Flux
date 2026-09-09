@@ -43,14 +43,22 @@ public sealed class HueBridgeService: BackgroundService {
     _options = options;
     _logger = logger;
 
+    HueSettings stored = settings.Load();
+
     // A stored offset wins over the configured one, and null is the difference between
     // "nobody has touched the slider" and "somebody decided this rig needs no
     // correction". Read once here rather than on every broadcast: it is the user's
     // number from this point on, and the settings file is only where it survives a
     // restart.
+    //
+    // Stored light settings are checked rather than trusted, which the offset does not
+    // need to be because the offset arrives through a bound and validated option. This
+    // file is plain JSON in a folder a person can open, and a hand-edited palette that
+    // names nothing would otherwise reach the engine.
     _connection = HueConnection.Initial(
       options.Value.Enabled ? HueConnectionState.Unpaired : HueConnectionState.Disabled,
-      settings.Load().LatencyOffsetMs ?? options.Value.LatencyOffsetMs);
+      stored.LatencyOffsetMs ?? options.Value.LatencyOffsetMs,
+      stored.Light is { } light && light.IsValid() ? light : LightSettings.Default);
   }
 
   /// <summary>The current picture. Complete on every read, never a delta.</summary>
@@ -173,6 +181,29 @@ public sealed class HueBridgeService: BackgroundService {
   }
 
   /// <summary>
+  /// Sets how the light engine turns beats into colour, and remembers it.
+  ///
+  /// One call for all three settings rather than one each, because they are changed
+  /// together and read together: the engine consults the whole record on every frame,
+  /// and three separate commands would let a page put a palette and an interval on the
+  /// wire in an order that briefly means something nobody asked for.
+  ///
+  /// Returns false for anything outside the documented ranges, refused rather than
+  /// clamped on the same argument as the offset. Not gated on a paired bridge either -
+  /// these describe a look rather than the hardware, and there is no reason somebody
+  /// waiting for a bridge to answer should not be able to choose a palette.
+  /// </summary>
+  public bool TrySetLightSettings(LightSettings settings) {
+    if(settings is null || !settings.IsValid()) {
+      return false;
+    }
+
+    _settings.Save(_settings.Load() with { Light = settings });
+    Update(connection => connection with { Light = settings });
+    return true;
+  }
+
+  /// <summary>
   /// Says something to every page, without claiming anything broke.
   ///
   /// <see cref="HueConnection.Message"/> reaches every screen at once, which a
@@ -258,11 +289,13 @@ public sealed class HueBridgeService: BackgroundService {
   public void Forget() {
     _credentials.Clear();
 
-    // The latency offset survives, and is the one thing here that should. It describes
-    // how long light takes to reach the room, which is a fact about the room and the
-    // fixtures rather than about the bridge - so re-pairing the same bridge after a
-    // network change must not silently discard a number somebody tuned by eye.
-    _settings.Save(HueSettings.Empty with { LatencyOffsetMs = _settings.Load().LatencyOffsetMs });
+    // The latency offset and the light settings survive, and they are the only things
+    // here that should. One describes how long light takes to reach the room and the
+    // other describes how the room is meant to look, and neither is a fact about the
+    // bridge - so re-pairing after a network change must not silently discard a number
+    // somebody tuned by eye or a palette they picked for the night.
+    HueSettings previous = _settings.Load();
+    _settings.Save(HueSettings.Empty with { LatencyOffsetMs = previous.LatencyOffsetMs, Light = previous.Light });
     _logger.LogInformation("The paired bridge has been forgotten.");
 
     Update(connection => connection with {

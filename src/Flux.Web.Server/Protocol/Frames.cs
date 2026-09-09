@@ -196,6 +196,34 @@ public static class Frames {
   }
 
   /// <summary>
+  /// Reads a <c>setLightSettings</c> payload, as far as its shape.
+  ///
+  /// Every field is required, because the message is one complete statement of how the
+  /// lights should look rather than a patch: a page that could send a palette alone
+  /// would be relying on the server to remember the rest, and two pages doing that at
+  /// once produce a combination neither of them chose.
+  ///
+  /// The palette comes back as the string it arrived as, unparsed. Whether it names
+  /// anything is not a question about shape, and the answer to it is <c>rejected</c>
+  /// with the name quoted - which this cannot produce and the caller can.
+  /// </summary>
+  public static bool TryReadLightSettings(JsonElement data, out HueEngineData engine) {
+    engine = new HueEngineData(string.Empty, 0, 0, 0, 0);
+
+    if(data.ValueKind != JsonValueKind.Object
+      || !TryReadString(data, "palette", out string palette)
+      || !TryReadInt(data, "colorChangeBars", out int bars)
+      || !TryReadInt(data, "pulseMs", out int pulseMs)
+      || !TryReadInt(data, "brightness", out int brightness)
+      || !TryReadInt(data, "pulseDepth", out int pulseDepth)) {
+      return false;
+    }
+
+    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth);
+    return true;
+  }
+
+  /// <summary>
   /// Shortens a client-supplied string before it is quoted back in an error.
   /// </summary>
   public static string Quote(string value) {
@@ -228,6 +256,22 @@ public static class Frames {
         // is worth an error rather than a guess.
         return false;
     }
+  }
+
+  /// <summary>
+  /// Reads a required whole-number field.
+  ///
+  /// Strict about integers for the reason the latency offset is: every number this
+  /// protocol accepts from a client comes off a control that deals in whole units, so
+  /// a fraction is a client that has stopped agreeing with the document rather than a
+  /// value to round.
+  /// </summary>
+  private static bool TryReadInt(JsonElement data, string name, out int value) {
+    value = 0;
+
+    return data.TryGetProperty(name, out JsonElement field)
+      && field.ValueKind == JsonValueKind.Number
+      && field.TryGetInt32(out value);
   }
 
   /// <summary>Reads a required, non-empty string field.</summary>

@@ -38,6 +38,56 @@ export type HueState =
   | 'ready'
   | 'failed';
 
+/**
+ * Which colours the light engine draws from.
+ *
+ * `random` is any hue on the wheel; the rest are curated sets of eight. `ocean` and
+ * `warm` are tight on purpose, so they change by less than the others and that is not
+ * a fault.
+ */
+export type HuePalette =
+  | 'random'
+  | 'warm'
+  | 'cool'
+  | 'neon'
+  | 'sunset'
+  | 'ocean'
+  | 'forest'
+  | 'party';
+
+/**
+ * How the light engine turns beats into colour.
+ *
+ * Named for the engine and not for the lights, because `state.light` already means
+ * something else - what the stream is achieving, measured. These are settings.
+ *
+ * Both zeroes read backwards and both are deliberate: no interval means the colour
+ * changes as often as it can, and no pulse means a steady colour rather than an
+ * instantaneous flash.
+ */
+export interface HueEngineData {
+  palette: HuePalette;
+  /** Bars between colour changes, 0 to 16, where 0 means every beat. */
+  colorChangeBars: number;
+  /**
+   * How long a beat's pulse takes to fade, 0 to 2000 ms, where 0 means no pulse.
+   *
+   * Under about 80 ms is honoured and may not be visible: the bridge forwards to a bulb
+   * at roughly 25 updates a second, so a pulse that short is one or two Zigbee frames.
+   */
+  pulseMs: number;
+  /** How bright a beat drives the lights, 0 to 100 per cent. The ceiling for everything sent, so 0 is a blackout. */
+  brightness: number;
+  /**
+   * How far the light drops between beats, 0 to 100 per cent of `brightness`.
+   *
+   * A fraction of the ceiling rather than a floor of its own, which is what makes a
+   * short pulse usable: at a low depth a quick flash sits on a bright room instead of
+   * leaving a dark one. 0 never dips; 100 fades to nothing.
+   */
+  pulseDepth: number;
+}
+
 export interface HelloData {
   protocol: number;
   app: string;
@@ -190,6 +240,7 @@ export interface HueData {
   pairingSecondsRemaining: number | null;
   /** Signed milliseconds; positive sends light early. Always a real number. */
   latencyOffsetMs: number;
+  engine: HueEngineData;
   message: string | null;
 }
 
@@ -240,6 +291,15 @@ export interface SetLatencyOffsetData {
 }
 
 /**
+ * One complete statement of how the lights should look, never a patch.
+ *
+ * Every field goes out every time for the reason `subscribe` sends both of its flags:
+ * a message carrying a palette alone would rely on the server to supply the rest, and
+ * two phones doing that at once produce a look neither of them chose.
+ */
+export type SetLightSettingsData = HueEngineData;
+
+/**
  * None of these is answered with a reply.
  *
  * Each is confirmed by the broadcast that follows - a `hue` frame for the bridge
@@ -265,7 +325,8 @@ export type ClientMessage =
   | { type: 'startStream'; data: Record<string, never> }
   | { type: 'stopStream'; data: Record<string, never> }
   | { type: 'forgetBridge'; data: Record<string, never> }
-  | { type: 'setLatencyOffset'; data: SetLatencyOffsetData };
+  | { type: 'setLatencyOffset'; data: SetLatencyOffsetData }
+  | { type: 'setLightSettings'; data: SetLightSettingsData };
 
 /**
  * An inbound message decoded only as far as its type tag.

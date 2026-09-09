@@ -2,11 +2,24 @@
 import { test } from 'node:test';
 import {
   areaSummary,
+  brightnessLabel,
   bridgeStatusLabel,
   canDiscover,
+  COLOR_CHANGE_BARS,
+  colorChangeLabel,
   countdownLabel,
   LATENCY_OFFSET_LIMIT_MS,
+  MIN_RENDERABLE_PULSE_MS,
+  offsetBeatsLabel,
+  offsetInBeats,
+  offsetIsNearABeat,
   offsetLabel,
+  PALETTES,
+  PERCENT_LIMIT,
+  pulseDepthLabel,
+  PULSE_LIMIT_MS,
+  pulseLabel,
+  renderablePulseMs,
   showsPairing,
   showsRooms,
 } from './hue.ts';
@@ -21,6 +34,7 @@ function connection(over: Partial<HueData> = {}): HueData {
     selectedAreaId: null,
     pairingSecondsRemaining: null,
     latencyOffsetMs: 0,
+    engine: { palette: 'random', colorChangeBars: 4, pulseMs: 240, brightness: 100, pulseDepth: 85 },
     message: null,
     ...over,
   };
@@ -123,4 +137,104 @@ test('the slider cannot ask for a value the server will refuse', () => {
   // Mirrored from HueOptions.MaxLatencyOffsetMs. If the two ever disagree, the
   // symptom is a slider that rejects at one end and nowhere else.
   assert.equal(LATENCY_OFFSET_LIMIT_MS, 500);
+});
+
+test('an interval of no bars reads as every beat rather than as every zero bars', () => {
+  // The setting reads backwards on purpose: switching the interval off does not stop
+  // the colours changing, it removes the interval.
+  assert.equal(colorChangeLabel(0), 'every beat');
+  assert.equal(colorChangeLabel(1), 'every bar');
+  assert.equal(colorChangeLabel(4), 'every 4 bars');
+  assert.equal(colorChangeLabel(Number.NaN), 'every beat');
+});
+
+test('no pulse reads as no pulse rather than as a pulse of no length', () => {
+  assert.equal(pulseLabel(0), 'no pulse');
+  assert.equal(pulseLabel(240), '240 ms');
+  assert.equal(pulseLabel(Number.NaN), 'no pulse');
+});
+
+test('the controls offer exactly the palettes the server accepts', () => {
+  // Mirrored from LightPalette. If the two disagree the symptom is a chip that comes
+  // straight back as rejected, on one palette, for whoever picked it.
+  assert.deepEqual(PALETTES, ['random', 'warm', 'cool', 'neon', 'sunset', 'ocean', 'forest', 'party']);
+});
+
+test('every interval and pulse the controls offer is inside the documented range', () => {
+  assert.equal(PULSE_LIMIT_MS, 2000);
+
+  for (const bars of COLOR_CHANGE_BARS) {
+    assert.ok(Number.isInteger(bars) && bars >= 0 && bars <= 16, `${bars} bars is outside 0 to 16`);
+  }
+});
+
+test('an offset is measured in beats, which is the reading milliseconds cannot give', () => {
+  // 130 BPM is a 461.5 ms beat, so 400 ms is most of one - which is how a sensible
+  // looking number moved every colour change onto the beat before the intended one.
+  assert.equal(offsetInBeats(400, 130)?.toFixed(2), '0.87');
+  assert.equal(offsetInBeats(90, 130)?.toFixed(2), '0.20');
+
+  // Sign does not matter: late by most of a beat is just as wrong as early by it.
+  assert.equal(offsetInBeats(-400, 130)?.toFixed(2), '0.87');
+});
+
+test('there is no offset in beats without a tempo to measure it against', () => {
+  assert.equal(offsetInBeats(400, null), null);
+  assert.equal(offsetInBeats(400, 0), null);
+  assert.equal(offsetInBeats(400, Number.NaN), null);
+  assert.equal(offsetBeatsLabel(400, null), null);
+});
+
+test('an offset far enough into a beat says so, and a small one does not', () => {
+  assert.equal(offsetIsNearABeat(400, 130), true);
+  assert.equal(offsetIsNearABeat(90, 130), false);
+  assert.match(offsetBeatsLabel(400, 130) ?? '', /wrong beat/);
+  assert.doesNotMatch(offsetBeatsLabel(90, 130) ?? '', /wrong beat/);
+});
+
+test('an offset of nothing has no beat reading, because there is nothing to report', () => {
+  assert.equal(offsetBeatsLabel(0, 130), null);
+});
+
+test('brightness of nothing reads as off rather than as a percentage', () => {
+  // A light at zero is indistinguishable from a stream that never opened, and this
+  // label is the only thing that can say which it is.
+  assert.equal(brightnessLabel(0), 'off');
+  assert.equal(brightnessLabel(60), '60%');
+  assert.equal(brightnessLabel(Number.NaN), 'off');
+});
+
+test('both ends of the pulse depth are named, because both are a different behaviour', () => {
+  assert.equal(pulseDepthLabel(0), 'no dip');
+  assert.equal(pulseDepthLabel(100), 'down to black');
+  assert.equal(pulseDepthLabel(40), '40%');
+});
+
+test('the percentage controls cannot ask for more than the server accepts', () => {
+  // Mirrored from LightSettings.MaxPercent.
+  assert.equal(PERCENT_LIMIT, 100);
+});
+
+test('the pulse slider cannot rest on a length a bulb renders inconsistently', () => {
+  // Not "invisible" - aliased. A bulb samples about every 40 ms, so below two samples
+  // some beats catch the peak and some catch the tail, which flickers at no setting
+  // anybody chose. The control snaps out of the band rather than explaining it.
+  assert.equal(MIN_RENDERABLE_PULSE_MS, 80);
+
+  assert.equal(renderablePulseMs(70), 80);
+  assert.equal(renderablePulseMs(40), 80);
+  assert.equal(renderablePulseMs(30), 0);
+  assert.equal(renderablePulseMs(10), 0);
+});
+
+test('no pulse stays reachable, because it is a setting rather than a short pulse', () => {
+  assert.equal(renderablePulseMs(0), 0);
+  assert.equal(renderablePulseMs(-50), 0);
+  assert.equal(renderablePulseMs(Number.NaN), 0);
+});
+
+test('a pulse long enough to render is left exactly as it was asked for', () => {
+  assert.equal(renderablePulseMs(80), 80);
+  assert.equal(renderablePulseMs(240), 240);
+  assert.equal(renderablePulseMs(2000), 2000);
 });

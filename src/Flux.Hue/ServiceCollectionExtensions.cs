@@ -48,6 +48,15 @@ public static class ServiceCollectionExtensions {
     services.AddSingleton<IHueBridgeClient, HueApiBridgeClient>();
     services.AddSingleton<IHueStreamFactory, HueApiStreamFactory>();
 
+    // One instance behind three registrations, resolved rather than constructed each
+    // time, for the reason the bridge service is: the engine carries the transition and
+    // the pulse across frames, so a second one would render a second envelope and the
+    // page would see whichever answered. It is a hosted service only to subscribe to
+    // the beat scheduler at start and come off it at stop - it opens nothing.
+    services.AddSingleton<LightEngine>();
+    services.AddSingleton<ILightSource>(provider => provider.GetRequiredService<LightEngine>());
+    services.AddHostedService(provider => provider.GetRequiredService<LightEngine>());
+
     // Not a hosted service, unlike the bridge conversation. Nothing should open a
     // DTLS session because Flux started: the bridge allows exactly one, and taking it
     // at launch would mean a beat-lab session nobody asked for was holding the show's

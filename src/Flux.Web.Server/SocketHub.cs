@@ -427,6 +427,10 @@ public sealed class SocketHub {
         this.SetLatencyOffset(client, envelope.Data);
         break;
 
+      case "setLightSettings":
+        this.SetLightSettings(client, envelope.Data);
+        break;
+
       default:
         // Answered rather than ignored: the client half of this protocol is one
         // codebase, so an unrecognised type is a bug in it and should be loud.
@@ -635,6 +639,36 @@ public sealed class SocketHub {
       client.Enqueue(Frames.Error(
         "rejected",
         $"A latency offset must be between -{HueOptions.MaxLatencyOffsetMs} and {HueOptions.MaxLatencyOffsetMs} ms."));
+    }
+  }
+
+  /// <summary>
+  /// Sets how the light engine turns beats into colour.
+  ///
+  /// Three refusals with three different sentences, because they are three different
+  /// mistakes: a payload that is not one complete statement, a palette that names
+  /// nothing, and a number outside its range. One message saying "that did not work"
+  /// would leave whoever is reading it to guess which.
+  /// </summary>
+  private void SetLightSettings(Client client, JsonElement data) {
+    if(!Frames.TryReadLightSettings(data, out HueEngineData engine)) {
+      client.Enqueue(Frames.Error(
+        "invalid_data",
+        "Setting the light engine needs a string 'data.palette' and integers 'data.colorChangeBars', 'data.pulseMs', 'data.brightness' and 'data.pulseDepth'."));
+      return;
+    }
+
+    if(!HueFrames.TryParsePalette(engine.Palette, out LightPalette palette)) {
+      client.Enqueue(Frames.Error("rejected", $"No palette named '{Frames.Quote(engine.Palette)}'."));
+      return;
+    }
+
+    LightSettings settings = new LightSettings(palette, engine.ColorChangeBars, engine.PulseMs, engine.Brightness, engine.PulseDepth);
+
+    if(this.hue is null || !this.hue.TrySetLightSettings(settings)) {
+      client.Enqueue(Frames.Error(
+        "rejected",
+        $"Colour changes must be between 0 and {LightSettings.MaxColorChangeBars} bars, a pulse between 0 and {LightSettings.MaxPulseMs} ms, and brightness and depth between 0 and {LightSettings.MaxPercent} per cent."));
     }
   }
 

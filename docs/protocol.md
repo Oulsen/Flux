@@ -81,12 +81,12 @@ no client anywhere that could have depended on those fields being present. The
 message was specified before it had a producer, and it was the specification that
 turned out to be wrong about what could honestly be measured.
 
-Version 1 grew again in Phase 3 and again did not break: a `hue` message, seven
-inbound messages to drive the bridge, and a `light` object on `state`. Every one
-of those is an addition, and an older page ignores a `type` it does not know by
-the rule above, so the worst it suffers is a build whose lights it cannot see -
-a degradation and not a misreading. Nothing existing changed name, unit or
-meaning.
+Version 1 grew again in Phase 3 and again did not break: a `hue` message, eight
+inbound messages to drive the bridge and the lights, and a `light` object on
+`state`. Every one of those is an addition, and an older page ignores a `type` it
+does not know by the rule above, so the worst it suffers is a build whose lights
+it cannot see - a degradation and not a misreading. Nothing existing changed name,
+unit or meaning.
 
 Phase 2's lesson about `devices` is worth repeating rather than filing, because
 this document is once again describing messages before anything produces them.
@@ -473,6 +473,7 @@ immediately after `hello`, and then **only when something changes**.
   "selectedAreaId": "6f3a1c58-0c1e-4f1a-9b7d-2f8e5a0d4c11",
   "pairingSecondsRemaining": null,
   "latencyOffsetMs": 90,
+  "engine": { "palette": "random", "colorChangeBars": 4, "pulseMs": 240, "brightness": 100, "pulseDepth": 85 },
   "message": null
 }}
 ```
@@ -486,6 +487,7 @@ immediately after `hello`, and then **only when something changes**.
 | `selectedAreaId` | string (uuid) or **null** | The area lights will be streamed to. Null until one is chosen |
 | `pairingSecondsRemaining` | int or **null** | Seconds left in the pairing window. Non-null **exactly** when `state` is `"pairing"` |
 | `latencyOffsetMs` | int | The current light latency offset, signed. See `setLatencyOffset` |
+| `engine` | object | How the light engine turns beats into colour. See `hue.engine` |
 | `message` | string or **null** | English prose for a human, when there is something to say |
 
 **This is a separate message rather than a field on `state`, and the area list is
@@ -526,6 +528,29 @@ paints that red teaches its user to distrust red.
 showing a pairing screen that cannot work. It exists so that a build with the
 lights switched off and a build that cannot find a bridge stop looking identical
 from the outside.
+
+#### `hue.engine`
+
+How the light engine turns beats into colour. Set with `setLightSettings`, which
+documents the ranges and what each value does; this is what is in force now.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `palette` | string | Which colours the engine draws from |
+| `colorChangeBars` | int | Bars between colour changes, 0 to 16, where **0 means every beat** |
+| `pulseMs` | int | How long a beat's brightness pulse takes to fade, 0 to 2000, where **0 means no pulse** |
+| `brightness` | int | How bright a beat drives the lights, 0 to 100 per cent. The ceiling for everything sent |
+| `pulseDepth` | int | How far the light drops between beats, 0 to 100 per cent of `brightness` |
+
+**Named `engine` and not `light`, because `state.light` already exists and means
+something else** - what the stream is achieving, as a measurement. These are
+settings. Two keys spelled the same with unrelated contents would cost whoever
+reads this next twenty minutes for nothing.
+
+It is an object rather than three more fields on `hue` because it is set as one
+message and read as one record. A page that could send a palette on its own would
+be relying on the server to supply the rest, and two pages doing that at once
+produce a combination neither of them chose.
 
 #### `hue.bridge` and `hue.discovered`
 
@@ -723,10 +748,10 @@ one reading a beat display must never invent.
 
 ### The Hue messages
 
-Seven messages drive the bridge, and **none of them is answered with a reply.**
-Each is confirmed by the broadcast that follows - a `hue` frame for the five that
-change the bridge picture, `state.light` for `startStream` and `stopStream` - or
-by `error` when the server declines. That is not a shortcut: pairing is normally
+Eight messages drive the bridge and the lights, and **none of them is answered
+with a reply.** Each is confirmed by the broadcast that follows - a `hue` frame
+for the six that change the bridge picture, `state.light` for `startStream` and
+`stopStream` - or by `error` when the server declines. That is not a shortcut: pairing is normally
 watched on two screens at once, a phone in a hallway and a laptop in the booth,
 and a reply addressed to one of them would leave the other showing a state that
 had already moved. The broadcast is the answer, and everybody gets it.
@@ -878,6 +903,12 @@ that.
 Like stopping, it is never rejected: forgetting a bridge that was never paired
 leaves the world exactly as the caller wanted it.
 
+**`latencyOffsetMs` and `engine` survive it**, and they are the only things that
+do. One says how long light takes to reach the room and the other says how the
+room should look; neither is a fact about the bridge, so re-pairing after a network
+change must not discard a number somebody tuned by eye or a palette they picked for
+the night.
+
 ### `setLatencyOffset`
 
 ```json
@@ -910,6 +941,97 @@ argument as `setBpm`: at 120 BPM half a second is a whole beat, so an offset pas
 that is not a late light but a light on the wrong beat, and clamping a typo into a
 plausible wrong answer is worse than refusing it. Anything that is not an integer
 is `invalid_data`.
+
+### `setLightSettings`
+
+```json
+{ "type": "setLightSettings", "data": {
+  "palette": "neon",
+  "colorChangeBars": 4,
+  "pulseMs": 240,
+  "brightness": 100,
+  "pulseDepth": 85
+}}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `palette` | string | `random`, `warm`, `cool`, `neon`, `sunset`, `ocean`, `forest` or `party` |
+| `colorChangeBars` | int | Bars between colour changes, 0 to 16. **0 means a new colour on every beat** |
+| `pulseMs` | int | How long a beat's brightness pulse takes to fade, 0 to 2000. **0 means no pulse** |
+| `brightness` | int | How bright a beat drives the lights, 0 to 100 per cent. **0 is a blackout** |
+| `pulseDepth` | int | How far the light drops between beats, 0 to 100 per cent of `brightness`. **0 never dips, 100 fades to nothing** |
+
+Sets how beats become colour. **Every field is required**: this is one complete
+statement of how the lights should look, not a patch, for the reason `subscribe`
+requires both of its flags. A message that could carry a palette alone would rely
+on the server to supply the rest, and two phones doing that at once produce a look
+neither of them asked for.
+
+The engine works in two layers at two rates, and the settings are how a person
+sets each one. A hue is chosen every `colorChangeBars` bars and slides to its new
+value; brightness is knocked to full on every beat and fades over `pulseMs`. That
+separation is the point - one setting doing both jobs gives either lights that sit
+still for eight seconds between colours or lights that strobe through the palette
+four times a bar.
+
+**Colour changes land on the downbeat**, not merely every fourth beat. Flux counts
+bars from the beat grid's own bar position, so the changes stay on the bar across a
+re-anchor rather than drifting off it for the rest of the night. Where no downbeat
+is known - `alignment.method` of `none` - it falls back to every `4 x n`-th beat
+from wherever the numbering starts, because changing on a guessed phase is worth
+more than not changing at all.
+
+**Both zeroes read backwards and both are deliberate.** `colorChangeBars` of 0
+does not stop the colours changing, it removes the interval, so they change as
+often as they can - every beat. `pulseMs` of 0 does not make the pulse
+instantaneous, it removes it, leaving a steady colour: a one-frame flash at 50 Hz
+is a 20 ms strobe nobody would ask for, while holding the colour is what the change
+interval looks like on its own.
+
+**`brightness` is a ceiling and `pulseDepth` is a fraction of it, rather than a
+floor and a peak.** Two reasons, and the second is the useful one. A floor given
+absolutely can be set above the ceiling, and there is nothing sensible to do with
+that. And depth is the number somebody actually means - how much should a beat
+stand out - which is what makes a short pulse usable: a `pulseMs` of 40 at a depth
+of 85 leaves the room at 15 per cent almost all of the time, and the same 40 ms at
+a depth of 20 puts the identical flash on top of a bright room.
+
+So a spent pulse fades to `brightness x (100 - pulseDepth)` per cent, and at any
+depth below 100 that is a dim room rather than darkness - which is the argument
+that makes the holding colour a dim white. A light that goes out between beats is
+indistinguishable from one that has stopped receiving anything, and between beats
+is most of the time. A depth of exactly 100 does fade to nothing, because somebody
+asking for that has said so explicitly.
+
+**A `pulseMs` between 1 and about 80 is honoured and should not be sent.** The
+bridge forwards to a bulb at roughly 25 updates a second, so a bulb samples the
+envelope about every 40 ms and a pulse that short is one or two frames. The result
+is not a dimmer flash but an inconsistent one: some beats are sampled near the peak
+and some near the tail, so the room flickers unevenly at no setting anybody chose.
+It is the same two-rates confusion `state.light` warns about, met from the other
+end.
+
+The server accepts it, because it is a legal instruction and narrowing a published
+range is a different kind of change. **Flux's own page does not offer it** - its
+pulse control snaps to 0 or 80 - and any other client should do the same. Zero
+stays reachable there because no pulse is a setting rather than a very short one.
+
+The palettes are eight curated sets of hues plus `random`, which is any hue on the
+wheel. Two of them - `ocean` and `warm` - are tight on purpose, and a curated
+palette that cannot produce a large enough change gives the largest one it has
+rather than repeating itself.
+
+Values outside the ranges are `rejected` rather than clamped, on the same argument
+as `setLatencyOffset`. A palette name that is not on the list is also `rejected`,
+with the name quoted back; a missing field, a non-integer, or a palette that is not
+a string is `invalid_data`.
+
+Like the offset, these are server-side and echoed in every `hue` frame as
+`hue.engine`, so a second phone opening the page sees the settings actually in
+force rather than its own controls' idea of them. They survive a restart, and they
+survive `forgetBridge`: a palette is a choice about how a room should look, not a
+fact about the bridge.
 
 ## Backpressure
 

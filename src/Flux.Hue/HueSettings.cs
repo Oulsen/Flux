@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Flux.Hue;
 
@@ -30,7 +31,18 @@ namespace Flux.Hue;
 /// asking whatever answers there for its id, so a stale one is discarded rather than
 /// believed.
 /// </param>
-public sealed record HueSettings(Guid? EntertainmentAreaId, int? LatencyOffsetMs = null, string? LastBridgeAddress = null) {
+/// <param name="Light">
+/// How the user has the light engine set, or null while they have never changed it.
+///
+/// Null rather than a copy of <see cref="LightSettings.Default"/>, on the same
+/// argument as the offset: writing the defaults out the first time Flux runs would
+/// freeze them, and a default that can never move again is not a default.
+/// </param>
+public sealed record HueSettings(
+  Guid? EntertainmentAreaId,
+  int? LatencyOffsetMs = null,
+  string? LastBridgeAddress = null,
+  LightSettings? Light = null) {
   /// <summary>Nothing chosen yet.</summary>
   public static HueSettings Empty { get; } = new HueSettings(EntertainmentAreaId: null);
 }
@@ -56,7 +68,21 @@ public interface IHueSettingsStore {
 internal sealed class JsonHueSettingsStore: IHueSettingsStore {
   private const string FileName = "hue-settings.json";
 
-  private static readonly JsonSerializerOptions Formatted = new JsonSerializerOptions { WriteIndented = true };
+  /// <summary>
+  /// Indented, and enums by name rather than by number.
+  ///
+  /// The naming is not cosmetic. A palette stored as <c>1</c> means "whichever member
+  /// of <see cref="LightPalette"/> happens to sit at index one", so inserting a palette
+  /// into the middle of that enum would silently repaint a choice somebody had already
+  /// made - a change with no compile error and no runtime error, only different
+  /// colours. By name it is immune to reordering, and the file says <c>"warm"</c> to
+  /// whoever opens it, which is the point of keeping preferences out of the encrypted
+  /// store in the first place.
+  /// </summary>
+  private static readonly JsonSerializerOptions Formatted = new JsonSerializerOptions {
+    WriteIndented = true,
+    Converters = { new JsonStringEnumConverter() },
+  };
 
   private readonly string _directory;
   private readonly ILogger<JsonHueSettingsStore> _logger;
@@ -79,7 +105,11 @@ internal sealed class JsonHueSettingsStore: IHueSettingsStore {
       }
 
       try {
-        return JsonSerializer.Deserialize<HueSettings>(File.ReadAllText(Path)) ?? HueSettings.Empty;
+        // The same options as the write, which matters rather than being tidy: without
+        // them a palette written as "warm" would not read back at all. Numbers still
+        // load, because the converter accepts both, so a file written by an earlier
+        // build keeps working.
+        return JsonSerializer.Deserialize<HueSettings>(File.ReadAllText(Path), Formatted) ?? HueSettings.Empty;
       } catch(Exception e) when(e is JsonException or IOException) {
         // A preference nobody can read is not worth failing a launch over: the cost
         // is one forgotten choice, and the alternative is an application that will

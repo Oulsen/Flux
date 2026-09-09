@@ -4,6 +4,7 @@
   import BeatIndicator from './components/BeatIndicator.svelte';
   import BpmReadout from './components/BpmReadout.svelte';
   import BridgePanel from './components/BridgePanel.svelte';
+  import LightsPanel from './components/LightsPanel.svelte';
   import ConnectionBadge from './components/ConnectionBadge.svelte';
   import DevicePicker from './components/DevicePicker.svelte';
   import Diagnostics from './components/Diagnostics.svelte';
@@ -12,6 +13,8 @@
   import AnchorPad from './components/AnchorPad.svelte';
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
+  import type { HueEngineData } from './lib/protocol.ts';
+  import { showsRooms } from './lib/hue.ts';
   import { FluxSocket, socketUrl } from './lib/socket.ts';
 
   /** How often the round trip is measured. Often enough to notice, rarely enough to ignore. */
@@ -27,6 +30,29 @@
 
   /** Closed by default, so nothing subscribes to the device feed unasked. */
   let devicesOpen = $state(false);
+
+  /*
+   * Whether somebody has asked to see the bridge setup, which is not the same as
+   * whether it is showing.
+   *
+   * Setup collapses once it is done and is forced open while there is anything to do
+   * there, so the toggle only decides the case where the panel is genuinely finished:
+   * a bridge paired, a room chosen, nothing to fix. Collapsing a panel that still needs
+   * attention would hide the pairing screen from the person walking to the cupboard.
+   */
+  let bridgeToggled = $state(false);
+
+  const bridgeNeedsAttention = $derived(!showsRooms(store.hue) || store.hue?.selectedAreaId === null);
+  const bridgeOpen = $derived(bridgeNeedsAttention || bridgeToggled);
+
+  /*
+   * What the collapsed row says, so closing the panel does not also hide the answer to
+   * "which room is this driving". That question is asked far more often than the room
+   * is changed, which is the whole argument for collapsing the rest of it.
+   */
+  const bridgeSummary = $derived(
+    store.hue?.areas.find((area) => area.id === store.hue?.selectedAreaId)?.name ?? 'ready',
+  );
 
   /** Wide enough that the spectrum is an instrument rather than a stripe. */
   const VISUALIZER_WIDTH = '(min-width: 640px)';
@@ -130,6 +156,10 @@
     socket?.send({ type: 'setLatencyOffset', data: { offsetMs } });
   }
 
+  function setLightSettings(engine: HueEngineData): void {
+    socket?.send({ type: 'setLightSettings', data: engine });
+  }
+
   function startStream(): void {
     socket?.send({ type: 'startStream', data: {} });
   }
@@ -199,25 +229,54 @@
 
   <div class="consult">
     <!--
-      Not a disclosure panel, unlike the two below it. Those are closed by default
-      because opening them costs traffic; this one costs nothing - the bridge frame is
-      pushed on change to every client whether or not anything is drawing it - and
-      when it matters it is the whole reason somebody has the page open.
+      The lights first, because this is the panel somebody has the page open for: it is
+      what gets touched with music playing. Not a disclosure, unlike the feeds below -
+      those are closed by default because opening them costs traffic, and the bridge
+      frame is pushed to every client whether or not anything draws it.
+    -->
+    {#if showsRooms(store.hue) && store.hue !== null}
+      <section class="panel">
+        <h2>lights</h2>
+        <LightsPanel
+          hue={store.hue}
+          light={store.light}
+          bpm={store.grid?.bpm ?? null}
+          setEngine={setLightSettings}
+          setOffset={setLatencyOffset}
+          {startStream}
+          {stopStream}
+        />
+      </section>
+    {/if}
+
+    <!--
+      Setup, and collapsed once it is done. Forced open whenever there is something to
+      do here - unpaired, pairing, failed, or paired with no room chosen - because a
+      collapsed panel is only an improvement when the thing inside it is finished.
     -->
     <section class="panel">
-      <h2>bridge</h2>
-      <BridgePanel
-        hue={store.hue}
-        light={store.light}
-        discover={discoverBridges}
-        pair={pairBridge}
-        {selectArea}
-        forget={forgetBridge}
-        setOffset={setLatencyOffset}
-        {startStream}
-        {stopStream}
-        {refreshing}
-      />
+      <button
+        type="button"
+        class="disclosure"
+        class:open={bridgeOpen}
+        aria-expanded={bridgeOpen}
+        disabled={bridgeNeedsAttention}
+        onclick={() => (bridgeToggled = !bridgeToggled)}
+      >
+        <span class="heading">bridge</span>
+        <span class="toggle">{bridgeNeedsAttention ? 'set up' : bridgeOpen ? 'hide' : bridgeSummary}</span>
+      </button>
+
+      {#if bridgeOpen}
+        <BridgePanel
+          hue={store.hue}
+          discover={discoverBridges}
+          pair={pairBridge}
+          {selectArea}
+          forget={forgetBridge}
+          {refreshing}
+        />
+      {/if}
     </section>
 
     <section class="panel">
