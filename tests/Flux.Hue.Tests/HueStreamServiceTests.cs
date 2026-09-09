@@ -349,6 +349,55 @@ public class HueStreamServiceTests {
     Assert.Equal(new HueColor(1, 0, 0), harness.Stream.Last);
   }
 
+  /// <summary>
+  /// A page draws the room from this reading, so it has to be the colour the bridge
+  /// received and not a second opinion about what it should have been. Asserting it
+  /// against the stream's own last frame is what makes the difference observable: a
+  /// reading recomputed on demand would satisfy an equality against the engine and fail
+  /// this one.
+  /// </summary>
+  [Fact]
+  public async Task TheColourReportedIsTheOneTheBridgeWasSent() {
+    Harness harness = await Harness.ReadyAsync();
+    harness.Service.Color = new HueColor(1.4, 0.25, -0.2);
+
+    await harness.Service.StartAsync(TestContext.Current.CancellationToken);
+    await WaitUntilAsync(() => harness.Stream.Sends > 0);
+
+    HueStreamStatus status = harness.Service.Status();
+    harness.Service.Stop();
+
+    // Clamped, because clamped is what went out. A reading taken before the clamp hands
+    // a page a red of 1.4 and a blue of -0.2, neither of which any bulb ever showed.
+    Assert.Equal(new HueColor(1, 0.25, 0), status.Color);
+    Assert.Equal(harness.Stream.Last, status.Color);
+  }
+
+  /// <summary>
+  /// Published after the send rather than before it, which is the whole difference
+  /// between reporting what happened and reporting what was about to. A pump wedged
+  /// inside its first send has told the bridge nothing at all, and a page drawing a
+  /// colour from it would be showing a room that never changed.
+  /// </summary>
+  [Fact]
+  public async Task NoColourIsReportedUntilAFrameHasActuallyGoneOut() {
+    Harness harness = await Harness.ReadyAsync();
+    harness.Stream.HoldSends();
+
+    Assert.True(await harness.Service.StartAsync(TestContext.Current.CancellationToken));
+    await WaitUntilAsync(() => harness.Stream.Sends > 0);
+
+    HueStreamStatus status = harness.Service.Status();
+
+    Assert.True(status.Running, "the session is open - it is the frame that has not landed");
+    Assert.Null(status.Color);
+
+    harness.Stream.ReleaseSends();
+    await WaitUntilAsync(() => harness.Service.Status().Color is not null);
+
+    harness.Service.Stop();
+  }
+
   private static async Task WaitUntilAsync(Func<bool> condition) {
     Stopwatch waited = Stopwatch.StartNew();
 

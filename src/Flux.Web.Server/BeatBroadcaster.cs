@@ -222,13 +222,20 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
   /// Null rather than a zeroed object on the same rule that makes <c>grid</c> null
   /// while waiting: there is no honest frame rate for a stream that is not open, and
   /// a zero would read as one that is open and failing.
+  ///
+  /// The colour follows the same rule one level down. A stream that has opened but not
+  /// yet sent its first frame has a running light object and no colour in it, which
+  /// lasts a single frame and is still worth saying rather than filling with black -
+  /// black is a colour the engine can legitimately send.
   /// </summary>
   private LightData? Reading() {
     if(this.stream?.Status() is not { Running: true } status) {
       return null;
     }
 
-    return new LightData(status.Fps);
+    return new LightData(
+      status.Fps,
+      status.Color is { } color ? new LightColorData(color.R, color.G, color.B) : null);
   }
 
   /// <summary>

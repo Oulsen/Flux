@@ -88,6 +88,10 @@ does not know by the rule above, so the worst it suffers is a build whose lights
 it cannot see - a degradation and not a misreading. Nothing existing changed name,
 unit or meaning.
 
+Version 1 grew once more in Phase 4 and again did not break: `state.light` gained a
+`color`, which is one added field on an existing payload. An older page ignores it and
+keeps reading the frame rate it came for.
+
 Phase 2's lesson about `devices` is worth repeating rather than filing, because
 this document is once again describing messages before anything produces them.
 Where that left a field's honesty uncertain the field is nullable rather than
@@ -264,6 +268,30 @@ Flux is streaming at all.
 | Field | Type | Meaning |
 |---|---|---|
 | `fps` | number | Frames a second the stream is achieving, measured over the last second. Not the configured rate |
+| `color` | object or **absent** | The colour the most recent frame carried: `{ "r": 0.8, "g": 0.2, "b": 0.55 }`, linear 0 to 1 per channel. Absent until a frame has gone out |
+
+**`color` is what the bridge was sent, read back**, and it is here so that a page can
+draw the room rather than compute its own opinion of it. The alternative - a second
+beat-to-colour engine in the browser - needs no protocol at all and was rejected: two
+implementations of one tuned behaviour drift apart the first time either is retuned, and
+what a viewer then has is a screen and a room that disagree with no way to tell which is
+right. **Anything a bulb also does is decided on the server and read from here.**
+Embellishments a bulb cannot do, such as a hue gradient across the frequency axis, remain
+the page's own business.
+
+It rides the 20 Hz state feed rather than getting a feed of its own, and the rate is
+defensible rather than merely convenient: a bulb renders roughly 25 updates a second over
+Zigbee whatever the stream sends, so a 20 Hz preview is within a hair of the fidelity the
+room itself has. A client should still interpolate between frames rather than stepping,
+because a brightness pulse of 240 ms is only five frames long here.
+
+The values are linear, on the same 0 to 1 scale the spectrum bands use, and **no gamma
+correction has been applied to them - by anything, anywhere, in this build.** Flux does
+not correct gamma yet. When it does, the correction belongs on the path to the bridge and
+this field keeps carrying what was sent, so a page that corrected them a second time
+would be drawing a room nobody is standing in. Absent rather than black before the first
+frame, because black is a colour the engine can legitimately send and "not yet" is not
+it.
 
 It rides the 20 Hz feed rather than the `hue` message because it is a moving
 measurement, and `hue` is pushed on change: a frame rate belongs with the other

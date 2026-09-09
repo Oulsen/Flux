@@ -127,6 +127,53 @@ public sealed class WireFormatTests {
   }
 
   /// <summary>
+  /// The colour goes out linear and unrounded, because the page is drawing the room
+  /// from it rather than reading it. Rounding for the wire would be a conversion nobody
+  /// asked for in the one place where both ends agree what the numbers mean.
+  /// </summary>
+  [Fact]
+  public void StateCarriesTheColourTheLightsWereSent() {
+    StateData state = new StateData(
+      "audio",
+      "live",
+      [],
+      new GridData(128.0, 4.0, 4, 1, BarAligned: true),
+      new AlignmentData(Aligned: true, Method: "tap"),
+      new LightData(49.7, new LightColorData(0.8, 0.25, 0.55)),
+      new DiagnosticsData(0));
+
+    JsonElement color = Payload(Frames.State(state), "state").GetProperty("light").GetProperty("color");
+
+    Assert.Equal(0.8, color.GetProperty("r").GetDouble());
+    Assert.Equal(0.25, color.GetProperty("g").GetDouble());
+    Assert.Equal(0.55, color.GetProperty("b").GetDouble());
+  }
+
+  /// <summary>
+  /// Omitted rather than sent as null, and the distinction is the one this file already
+  /// pins for <c>grid</c> from the other direction: a documented value survives as a
+  /// null, while something that does not apply yet is left out. A page can then tell
+  /// "no frame has gone out" from a colour, which matters because black is a colour the
+  /// engine can legitimately send.
+  /// </summary>
+  [Fact]
+  public void StateOmitsTheColourUntilAFrameHasGoneOut() {
+    StateData state = new StateData(
+      "audio",
+      "live",
+      [],
+      new GridData(128.0, 4.0, 4, 1, BarAligned: true),
+      new AlignmentData(Aligned: true, Method: "tap"),
+      new LightData(0),
+      new DiagnosticsData(0));
+
+    JsonElement light = Payload(Frames.State(state), "state").GetProperty("light");
+
+    Assert.False(light.TryGetProperty("color", out _));
+    Assert.True(light.TryGetProperty("fps", out _));
+  }
+
+  /// <summary>
   /// The two nulls in a state frame are not the same kind of null, and the
   /// serializer has to keep them apart: <c>grid</c> is a documented value that
   /// must survive, while a diagnostic belonging to another source is left out

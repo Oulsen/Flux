@@ -12,7 +12,15 @@ namespace Flux.Hue;
 /// separate field: a rate of zero on a stream that just started is honest, and a page
 /// that inferred "not streaming" from it would be wrong for one second every time.
 /// </param>
-public readonly record struct HueStreamStatus(bool Running, double Fps);
+/// <param name="Color">
+/// The colour the most recent frame carried, or null when no frame has gone out.
+///
+/// This is what the bridge was <em>sent</em>, read back after the fact, and never a
+/// second opinion about what it should have been: <see cref="ILightSource.Render"/> is
+/// documented as having exactly one caller, so a page wanting to know what the room
+/// looks like has to be told rather than allowed to ask.
+/// </param>
+public readonly record struct HueStreamStatus(bool Running, double Fps, HueColor? Color = null);
 
 /// <summary>
 /// Sends a frame to the bridge fifty times a second, and says how often it managed.
@@ -154,12 +162,13 @@ public sealed class HueStreamService: IDisposable {
   /// <summary>The current reading, complete on every read.</summary>
   public HueStreamStatus Status() {
     lock(this.gate) {
-      // The rate is read off the session rather than off the service, so a pump that
-      // outlived the stop that abandoned it cannot contribute to the number a page is
-      // shown: it is measuring into a session nothing reads any more.
+      // The rate and the colour are read off the session rather than off the service,
+      // so a pump that outlived the stop that abandoned it cannot contribute to what a
+      // page is shown: it is measuring and painting into a session nothing reads any
+      // more.
       return this.running && this.current is { } session
-        ? new HueStreamStatus(Running: true, session.Fps)
-        : new HueStreamStatus(Running: false, Fps: 0);
+        ? new HueStreamStatus(Running: true, session.Fps, session.Rendered)
+        : new HueStreamStatus(Running: false, Fps: 0, Color: null);
     }
   }
 
@@ -503,8 +512,16 @@ public sealed class HueStreamService: IDisposable {
       // Clamped on the way out rather than trusted, which is what the engine's
       // envelope makes worth doing: an overshoot reaching the bridge as a wrapped or
       // negative channel is one wrong light for one frame, and never reproducible.
-      stream.SetAll((this.lights?.Render() ?? this.Color).Clamped());
+      HueColor sent = (this.lights?.Render() ?? this.Color).Clamped();
+
+      stream.SetAll(sent);
       stream.Send();
+
+      // Published after the send and not before it, so what a page draws is a colour
+      // the bridge was given rather than one Flux was about to give it. The difference
+      // shows up on the frame a send throws on, which is the frame where a preview
+      // claiming the room changed colour would be exactly wrong.
+      session.Rendered = sent;
 
       frames++;
 
@@ -539,7 +556,9 @@ public sealed class HueStreamService: IDisposable {
   /// only after a check that it is still the current one.
   /// </summary>
   private sealed class Session: IDisposable {
+    private readonly object paint = new();
     private double fps;
+    private HueColor? rendered;
 
     public Session(Guid areaId) {
       this.AreaId = areaId;
@@ -557,6 +576,23 @@ public sealed class HueStreamService: IDisposable {
     public double Fps {
       get => Volatile.Read(ref this.fps);
       set => Volatile.Write(ref this.fps, value);
+    }
+
+    /// <summary>
+    /// The colour this session's last frame carried, written by its pump and read by
+    /// anyone. Null until one has gone out.
+    ///
+    /// Locked where <see cref="Fps"/> is volatile, and the asymmetry is the point: a
+    /// rate is one double and reads atomically, while a colour is three and does not.
+    /// The failure a lock avoids here is the same one
+    /// <see cref="HueStreamService.Color"/> documents from the other direction - a torn
+    /// read handing a page the red of one frame beside the blue of the last, on one
+    /// beat, once, never reproducibly. Its own lock and not the service's, which a
+    /// fifty-times-a-second write must never queue behind a DTLS handshake.
+    /// </summary>
+    public HueColor? Rendered {
+      get { lock(this.paint) { return this.rendered; } }
+      set { lock(this.paint) { this.rendered = value; } }
     }
 
     public void Dispose() {

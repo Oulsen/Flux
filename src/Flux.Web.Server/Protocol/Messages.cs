@@ -120,7 +120,29 @@ public sealed record StateData(
 /// Zigbee at roughly 25 updates a second per light and drops the excess, so the two
 /// are different layers and both are correct.
 /// </param>
-public sealed record LightData(double Fps);
+/// <param name="Color">
+/// The colour the most recent frame carried, or absent until one has gone out.
+///
+/// It is here so that a page can draw what the room is doing rather than compute its
+/// own guess at it. A second beat-to-colour engine in the browser would be quicker to
+/// build and would drift from this one the first time either was retuned, leaving a
+/// screen and a room that disagree with nobody able to say which is right.
+/// </param>
+public sealed record LightData(
+  double Fps,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LightColorData? Color = null);
+
+/// <summary>
+/// One colour, as the page is told about it.
+///
+/// Linear 0 to 1 per channel, which is <c>HueColor</c> unchanged and the same scale the
+/// spectrum bands already use. Deliberately not converted to a CSS colour here: gamma
+/// is Phase 4's to decide and doing it in two places would be one place too many.
+/// </summary>
+/// <param name="R">Red, 0 to 1.</param>
+/// <param name="G">Green, 0 to 1.</param>
+/// <param name="B">Blue, 0 to 1.</param>
+public sealed record LightColorData(double R, double G, double B);
 
 /// <summary>
 /// One bridge, found or paired.

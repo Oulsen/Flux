@@ -144,6 +144,21 @@ export interface DiagnosticsData {
  */
 export interface LightData {
   fps: number;
+  /**
+   * The colour the last frame carried, or absent until one has gone out.
+   *
+   * What the bridge was sent, so the page can draw the room rather than model it.
+   * Anything a bulb also does is decided on the server and read from here; a second
+   * engine in the browser would drift from this one and neither could be called wrong.
+   */
+  color?: LightColorData;
+}
+
+/** One colour, linear 0 to 1 per channel, exactly as the engine produced it. */
+export interface LightColorData {
+  r: number;
+  g: number;
+  b: number;
 }
 
 export interface StateData {
