@@ -1,4 +1,4 @@
-using HueApi;
+﻿using HueApi;
 using HueApi.BridgeLocator;
 using HueApi.Models;
 using HueApi.Models.Clip;
@@ -42,16 +42,45 @@ internal sealed class HueApiBridgeClient: IHueBridgeClient {
       return [await DescribeAsync(configured, cancellationToken).ConfigureAwait(false)];
     }
 
-    IReadOnlyList<HueBridge> found = await LocateAsync(new MdnsBridgeLocator(), timeout, cancellationToken).ConfigureAwait(false);
+    // mDNS and SSDP together, and concurrently, because they are both passive listens
+    // that cost their window and nothing else - running them in sequence would double
+    // the wait to learn what one pass already knows.
+    //
+    // SSDP is here because mDNS is not reliable enough to be the only local route. On
+    // a machine with several disconnected adapters sitting on APIPA addresses, the
+    // library's mDNS locator found nothing while SSDP found the bridge immediately, on
+    // a network where mDNS itself was demonstrably working. That is a real desk, not a
+    // hypothetical one.
+    IReadOnlyList<HueBridge>[] local = await Task.WhenAll(
+      LocateAsync(new MdnsBridgeLocator(), timeout, cancellationToken),
+      LocateAsync(new SsdpBridgeLocator(), timeout, cancellationToken)).ConfigureAwait(false);
+
+    // Merged by bridge id: a bridge that answers both is one bridge, and it is the
+    // ordinary case rather than the exception.
+    List<HueBridge> found = [.. local
+      .SelectMany(bridges => bridges)
+      .DistinctBy(bridge => bridge.Id, StringComparer.OrdinalIgnoreCase)];
+
     if(found.Count > 0) {
       return found;
     }
 
-    // The cloud lookup is a fallback and never a peer of mDNS: it is rate-limited to
-    // roughly one request per fifteen minutes, and it only knows bridges that were
-    // seen from this same public address. Asking it first would spend that budget on
-    // the answer mDNS gives for free.
-    _logger.LogInformation("No bridge answered on mDNS. Asking the discovery service, which only knows bridges seen from this network.");
+    // A subnet sweep: entirely local, and slower than a listen because it asks every
+    // address rather than waiting to be told. Worth reaching for before leaving the
+    // network, and not before, since it is the only route here that generates traffic
+    // to machines that have nothing to do with Hue.
+    _logger.LogInformation("Neither mDNS nor SSDP answered. Scanning the local network for a bridge.");
+    IReadOnlyList<HueBridge> scanned = await LocateAsync(new LocalNetworkScanBridgeLocator(), timeout, cancellationToken).ConfigureAwait(false);
+    if(scanned.Count > 0) {
+      return scanned;
+    }
+
+    // The cloud lookup is the last resort and never a peer of the others: it is
+    // rate-limited to roughly one request per fifteen minutes, it leaves the network,
+    // and it only knows bridges that were seen from this same public address. A few
+    // restarts inside that window exhaust it, which is exactly when a paired user most
+    // needs an answer.
+    _logger.LogInformation("Nothing answered on this network. Asking the discovery service, which only knows bridges seen from this address.");
     return await LocateAsync(new HttpBridgeLocator(), timeout, cancellationToken).ConfigureAwait(false);
   }
 
@@ -82,6 +111,20 @@ internal sealed class HueApiBridgeClient: IHueBridgeClient {
       throw new HueBridgeException($"The bridge at {bridge.Address} refused the pairing request: {e.Message}", e);
     } catch(HttpRequestException e) {
       throw new HueBridgeException($"The bridge at {bridge.Address} could not be reached.", e);
+    }
+  }
+
+  public async Task<HueBridge?> TryDescribeAsync(string address, CancellationToken cancellationToken) {
+    if(string.IsNullOrWhiteSpace(address)) {
+      return null;
+    }
+
+    try {
+      return await DescribeAsync(address, cancellationToken).ConfigureAwait(false);
+    } catch(HueBridgeException) {
+      // A hint that did not pay off is not a failure worth reporting: the address is
+      // remembered precisely because it might be stale.
+      return null;
     }
   }
 

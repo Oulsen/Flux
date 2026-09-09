@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace Flux.Hue;
@@ -18,7 +18,19 @@ namespace Flux.Hue;
 /// needs no correction. Collapsing them would make a configured default impossible to
 /// change back to.
 /// </param>
-public sealed record HueSettings(Guid? EntertainmentAreaId, int? LatencyOffsetMs = null) {
+/// <param name="LastBridgeAddress">
+/// Where the paired bridge last answered, kept as a hint and never as the truth.
+///
+/// Credentials still belong to a bridge id rather than to an address - discovery is
+/// asked first, every time, and this is only consulted when it finds nothing. That
+/// case is real rather than theoretical: on a network where mDNS is filtered, the only
+/// other route is a cloud lookup rate-limited to about one request every fifteen
+/// minutes, and a few restarts inside that window leave Flux unable to find a bridge
+/// it was talking to moments earlier. The hint is verified before it is used, by
+/// asking whatever answers there for its id, so a stale one is discarded rather than
+/// believed.
+/// </param>
+public sealed record HueSettings(Guid? EntertainmentAreaId, int? LatencyOffsetMs = null, string? LastBridgeAddress = null) {
   /// <summary>Nothing chosen yet.</summary>
   public static HueSettings Empty { get; } = new HueSettings(EntertainmentAreaId: null);
 }

@@ -1,4 +1,4 @@
-using Flux.Audio;
+﻿using Flux.Audio;
 using Flux.Beat;
 using Flux.Hue;
 using Flux.Web.Server.Protocol;
@@ -58,6 +58,13 @@ public sealed class SocketHub {
   private readonly HueBridgeService? hue;
 
   /// <summary>
+  /// Null in a build with no Hue support. Starting answers <c>rejected</c> and
+  /// stopping does nothing, which is the same pair of answers a build with a bridge
+  /// and no chosen area gives.
+  /// </summary>
+  private readonly HueStreamService? stream;
+
+  /// <summary>
   /// How long a bridge command may run, and deliberately not the connection it
   /// arrived on.
   ///
@@ -90,6 +97,7 @@ public sealed class SocketHub {
     ManualSource manual,
     IAudioDevices? audio,
     HueBridgeService? hue,
+    HueStreamService? stream,
     IHostApplicationLifetime lifetime,
     ILogger<SocketHub> log) {
     ArgumentNullException.ThrowIfNull(options);
@@ -101,6 +109,7 @@ public sealed class SocketHub {
     this.manual = manual ?? throw new ArgumentNullException(nameof(manual));
     this.audio = audio;
     this.hue = hue;
+    this.stream = stream;
     this.stopping = lifetime.ApplicationStopping;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
 
@@ -395,6 +404,17 @@ public sealed class SocketHub {
         this.SelectArea(client, envelope.Data);
         break;
 
+      case "startStream":
+        this.StartStream(client);
+        break;
+
+      case "stopStream":
+        // Never refused, like forgetting a bridge: a stop that arrives when nothing is
+        // running has got what it asked for, and an error there is a red message for
+        // somebody whose lights are already off.
+        this.stream?.Stop();
+        break;
+
       case "forgetBridge":
         // Never refused, in any build. Forgetting a bridge that was never paired -
         // or that this build could not have paired - leaves the world exactly as the
@@ -493,11 +513,16 @@ public sealed class SocketHub {
   }
 
   /// <summary>
-  /// Looks for bridges, without disturbing a pairing that already works.
+  /// Looks for bridges, and re-reads what the paired one has.
   ///
-  /// No acknowledgement and no rejection: the <c>hue</c> frame turns
-  /// <c>discovering</c> and then carries whatever was found, including nothing, which
-  /// is an ordinary answer rather than a failure.
+  /// The two halves are one message because they answer one question - "what is out
+  /// there now" - and because the half that matters changes fastest. An area's
+  /// streaming flag has a lifetime of seconds, and a page that could re-run discovery
+  /// but never re-read the areas would show a stale busy flag forever with a button
+  /// beside it that looked like it should have fixed that.
+  ///
+  /// No acknowledgement and no rejection: the <c>hue</c> frame carries whatever was
+  /// found, including nothing, which is an ordinary answer rather than a failure.
   /// </summary>
   private void DiscoverBridges(Client client) {
     if(this.hue is null) {
@@ -506,9 +531,37 @@ public sealed class SocketHub {
     }
 
     this.RunBridgeCommand(client, async token => {
-      await this.hue.DiscoverAsync(token).ConfigureAwait(false);
+      if(this.hue.Connection.Bridge is null) {
+        await this.hue.DiscoverAsync(token).ConfigureAwait(false);
+      } else if(!await this.hue.TryRefreshAreasAsync(token).ConfigureAwait(false)) {
+        // The cheap read first, because it is the one somebody presses repeatedly while
+        // watching a room's busy flag. Only when the known address stops answering is
+        // the full re-discovery worth its seconds - and at that point it is the right
+        // answer, because the bridge has probably moved.
+        await this.hue.RefreshAsync(token).ConfigureAwait(false);
+      }
+
       return true;
     });
+  }
+
+  /// <summary>
+  /// Opens the light stream, or says why it did not.
+  ///
+  /// Run off the receive loop like the other bridge commands, because it is one: the
+  /// pre-flight is an HTTP request and the handshake that follows can take seconds, or
+  /// can hang outright when the bridge's one session is taken.
+  /// </summary>
+  private void StartStream(Client client) {
+    if(this.stream is null) {
+      client.Enqueue(Frames.Error("rejected", "This build has no Hue support."));
+      return;
+    }
+
+    this.RunBridgeCommand(
+      client,
+      token => this.stream.StartAsync(token),
+      "The lights could not be started. Choose an entertainment room that is reachable, and check that nothing else - Hue Sync especially - is already streaming to it.");
   }
 
   /// <summary>

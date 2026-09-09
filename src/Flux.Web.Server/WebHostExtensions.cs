@@ -1,4 +1,4 @@
-using Flux.Audio;
+﻿using Flux.Audio;
 using Flux.Beat;
 using Flux.Hue;
 using Microsoft.AspNetCore.Builder;
@@ -57,10 +57,20 @@ public static class WebHostExtensions {
       provider.GetRequiredService<ManualSource>(),
       provider.GetService<IAudioDevices>(),
       provider.GetService<HueBridgeService>(),
+      provider.GetService<HueStreamService>(),
       provider.GetRequiredService<IHostApplicationLifetime>(),
       provider.GetRequiredService<ILogger<SocketHub>>()));
 
-    builder.Services.AddHostedService<BeatBroadcaster>();
+    // A factory rather than constructor discovery, now that it has an optional seam
+    // of its own: GetService is the only resolution that answers null for a build
+    // with no Hue support instead of failing to start it.
+    builder.Services.AddHostedService(provider => new BeatBroadcaster(
+      provider.GetRequiredService<SocketHub>(),
+      provider.GetRequiredService<BeatScheduler>(),
+      provider.GetRequiredService<BeatGrid>(),
+      provider.GetRequiredService<SyncSourceManager>(),
+      provider.GetService<HueStreamService>(),
+      provider.GetRequiredService<IOptions<WebOptions>>()));
 
     // Both audio feeds are registered whether or not this build has audio. Each one
     // starts nothing when its seam is absent, which keeps the decision in one place

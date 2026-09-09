@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -247,6 +247,76 @@ public class HueBridgeServiceTests {
     Assert.Empty(harness.Service.Connection.Areas);
   }
 
+  /// <summary>
+  /// The case a real network produced within an hour of the feature existing: mDNS
+  /// filtered, the cloud lookup's fifteen-minute budget spent on earlier restarts, and
+  /// a paired bridge sitting at an address Flux had been talking to minutes before.
+  /// </summary>
+  [Fact]
+  public async Task FallsBackToTheLastWorkingAddressWhenDiscoveryFindsNothing() {
+    Harness harness = new Harness(
+      stored: settings => settings.Stored = new HueSettings(null, null, LastBridgeAddress: "192.168.1.51"));
+    harness.Credentials.Stored = Credentials;
+    harness.Client.Bridges = [];
+    harness.Client.AtAddress["192.168.1.51"] = Bridge;
+    harness.Client.Areas = [Living];
+
+    await harness.RunStartupAsync();
+
+    Assert.Equal(HueConnectionState.Ready, harness.Service.Connection.State);
+    Assert.Equal(Bridge, harness.Service.Connection.Bridge);
+  }
+
+  [Fact]
+  public async Task DoesNotTalkToWhateverNowHoldsAnOldAddress() {
+    // The hint is verified rather than believed: a bridge that genuinely moved must be
+    // reported missing, not confused with the next device to take that lease.
+    Harness harness = new Harness(
+      stored: settings => settings.Stored = new HueSettings(null, null, LastBridgeAddress: "192.168.1.51"));
+    harness.Credentials.Stored = Credentials;
+    harness.Client.Bridges = [];
+    harness.Client.AtAddress["192.168.1.51"] = new HueBridge("ecb5fafffe0dbeef", "192.168.1.51");
+
+    await harness.RunStartupAsync();
+
+    Assert.Equal(HueConnectionState.Failed, harness.Service.Connection.State);
+  }
+
+  [Fact]
+  public async Task RemembersWhereTheBridgeAnsweredForNextTime() {
+    Harness harness = new Harness();
+    harness.Credentials.Stored = Credentials;
+    harness.Client.Bridges = [Bridge];
+    harness.Client.Areas = [Living];
+
+    await harness.RunStartupAsync();
+
+    Assert.Equal(Bridge.Address, harness.Settings.Stored.LastBridgeAddress);
+  }
+
+  /// <summary>
+  /// A discovery that comes back to a failed state must bring the reason with it.
+  ///
+  /// Without this the screen reads "the bridge conversation failed" and nothing else,
+  /// which is the least useful sentence a failure can produce - and it happened
+  /// exactly when somebody pressed the one button that looked like it might help.
+  /// </summary>
+  [Fact]
+  public async Task LookingForBridgesAgainDoesNotEraseWhyItFailed() {
+    Harness harness = new Harness();
+    harness.Credentials.Stored = Credentials;
+    harness.Client.Bridges = [new HueBridge("ecb5fafffe0dbeef", "192.168.1.60")];
+    await harness.RunStartupAsync();
+
+    string? reason = harness.Service.Connection.Message;
+    Assert.NotNull(reason);
+
+    await harness.Service.DiscoverAsync(TestContext.Current.CancellationToken);
+
+    Assert.Equal(HueConnectionState.Failed, harness.Service.Connection.State);
+    Assert.Equal(reason, harness.Service.Connection.Message);
+  }
+
   [Fact]
   public async Task AnnouncesEveryChangeSoAPageNeverHasToAsk() {
     Harness harness = new Harness();
@@ -334,6 +404,7 @@ public class HueBridgeServiceTests {
   }
 
   private sealed class Harness {
+    /// <param name="configure">Adjusts the options before the service reads them.</param>
     /// <param name="stored">
     /// Runs before the service is built, for the settings it reads once at
     /// construction. Assigning to <see cref="Settings"/> afterwards is too late for

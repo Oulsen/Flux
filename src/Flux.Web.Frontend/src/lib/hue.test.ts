@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   areaSummary,
@@ -8,6 +8,7 @@ import {
   LATENCY_OFFSET_LIMIT_MS,
   offsetLabel,
   showsPairing,
+  showsRooms,
 } from './hue.ts';
 import type { HueAreaData, HueData } from './protocol.ts';
 
@@ -55,7 +56,7 @@ test('an unanswered pairing window reads as a fact rather than a failure', () =>
 });
 
 test('ready without an area chosen says so instead of claiming to be ready', () => {
-  assert.equal(bridgeStatusLabel(connection({ state: 'ready' })), 'choose an entertainment area');
+  assert.equal(bridgeStatusLabel(connection({ state: 'ready' })), 'choose an entertainment room');
   assert.equal(
     bridgeStatusLabel(connection({ state: 'ready', selectedAreaId: '44444444-4444-4444-4444-444444444444' })),
     'ready',
@@ -80,6 +81,20 @@ test('a failed bridge still shows the pairing screen', () => {
   assert.equal(showsPairing('unpaired'), true);
   assert.equal(showsPairing('ready'), false);
   assert.equal(showsPairing('disabled'), false);
+});
+
+test('the room controls survive a refresh passing through connecting', () => {
+  // The panel used to be keyed on state === 'ready', so pressing refresh made the
+  // thing being refreshed vanish for as long as it took.
+  const withRooms = [area()];
+
+  assert.equal(showsRooms(connection({ state: 'ready', areas: withRooms })), true);
+  assert.equal(showsRooms(connection({ state: 'connecting', areas: withRooms })), true);
+
+  assert.equal(showsRooms(connection({ state: 'ready', areas: [] })), false);
+  assert.equal(showsRooms(connection({ state: 'unpaired', areas: withRooms })), false);
+  assert.equal(showsRooms(connection({ state: 'disabled', areas: withRooms })), false);
+  assert.equal(showsRooms(null), false);
 });
 
 test('an area says how big it is, and singular counts read as English', () => {

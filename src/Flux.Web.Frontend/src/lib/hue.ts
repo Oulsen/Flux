@@ -1,4 +1,4 @@
-import type { HueAreaData, HueData, HueState } from './protocol.ts';
+﻿import type { HueAreaData, HueData, HueState } from './protocol.ts';
 
 /**
  * The largest latency offset the server accepts, either way.
@@ -37,7 +37,7 @@ export function bridgeStatusLabel(hue: HueData | null): string {
     case 'connecting':
       return 'asking the bridge what it has';
     case 'ready':
-      return hue.selectedAreaId === null ? 'choose an entertainment area' : 'ready';
+      return hue.selectedAreaId === null ? 'choose an entertainment room' : 'ready';
     default:
       return 'the bridge conversation failed';
   }
@@ -63,6 +63,18 @@ export function canDiscover(state: HueState | null): boolean {
  */
 export function showsPairing(state: HueState | null): boolean {
   return state === 'unpaired' || state === 'discovering' || state === 'pairing' || state === 'failed';
+}
+
+/**
+ * Whether the room controls belong on screen.
+ *
+ * Driven by there being rooms to show rather than by the state being exactly `ready`,
+ * which is the fix for a panel that emptied itself. Any refresh passes briefly through
+ * `connecting`, and a screen keyed on `ready` alone blanks every control on it for the
+ * duration - so pressing a refresh button made the thing being refreshed disappear.
+ */
+export function showsRooms(hue: HueData | null): boolean {
+  return hue !== null && hue.state !== 'disabled' && !showsPairing(hue.state) && hue.areas.length > 0;
 }
 
 /**

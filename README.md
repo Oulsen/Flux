@@ -1,4 +1,4 @@
-# Flux
+﻿# Flux
 
 Music in, light out.
 
@@ -90,7 +90,8 @@ backend.
 | `Midi:Enabled` | `true` | Whether to watch a MIDI controller, so a cue press on an audible deck can anchor the bar; observation is read-only and does not disturb rekordbox |
 | `Midi:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the MIDI input to watch; empty watches nothing, because the notes Flux reads were measured on one controller |
 | `Hue:Enabled` | `true` | Whether Flux contacts a Hue bridge at all. Off gives the beat lab back unchanged, for the sessions where the question is the grid rather than the show |
-| `Hue:BridgeAddress` | `null` | The bridge's address, when discovery should not be asked; `null` discovers it. Set this only where mDNS cannot reach the bridge, never as a shortcut, since DHCP moves it |
+| `Hue:BridgeAddress` | `null` | The bridge's address, when discovery should not be asked; `null` discovers it. Discovery tries mDNS and SSDP together, then a local network scan, then the rate-limited cloud lookup, and remembers where the bridge last answered - so this is for the network none of that can cross, never a shortcut, since DHCP moves a bridge |
+| `Hue:StreamHz` | `50` | Frames a second sent to the bridge while streaming, 10 to 60. 50 is the official guidance; a bulb renders roughly 25 updates a second over Zigbee regardless, so raising this cannot make the lights smoother |
 | `Hue:LatencyOffsetMs` | `0` | Milliseconds to shift light against the beat as a session starts, from -500 to 500; positive sends it early. Only the starting value: the page owns it from there, because the instrument that measures it is somebody watching the room |
 | `Console:BeatLog` | `false` | Print one console line per beat, for debugging the beat grid without a browser |
 | `Console:AudioMeter` | `false` | Print the capture level four times a second, for identifying an audio device without a browser |
@@ -128,7 +129,7 @@ npm test
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, and a spectrum frame |
 | `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
-| `src/Flux.Hue` | Bridge discovery, pairing, entertainment areas, and the encrypted store the bridge keys live in. No lights yet |
+| `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, and the encrypted store the bridge keys live in |
 | `src/Flux.Web.Server` | WebSocket hub, beat, spectrum, device and bridge broadcasters, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable |

@@ -1,4 +1,5 @@
-using Flux.Beat;
+﻿using Flux.Beat;
+using Flux.Hue;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -45,6 +46,12 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
   private readonly SyncSourceManager sources;
   private readonly WebOptions options;
 
+  /// <summary>
+  /// Null in a build with no Hue support, which renders as a null <c>light</c> - the
+  /// same thing a build that simply is not streaming sends.
+  /// </summary>
+  private readonly HueStreamService? stream;
+
   private readonly Channel<BeatEvent> beats = Channel.CreateBounded<BeatEvent>(
     new BoundedChannelOptions(BeatQueueCapacity) {
       FullMode = BoundedChannelFullMode.DropOldest,
@@ -61,6 +68,7 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
     BeatScheduler scheduler,
     BeatGrid grid,
     SyncSourceManager sources,
+    HueStreamService? stream,
     IOptions<WebOptions> options) {
     ArgumentNullException.ThrowIfNull(options);
 
@@ -68,6 +76,7 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
     this.scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
     this.grid = grid ?? throw new ArgumentNullException(nameof(grid));
     this.sources = sources ?? throw new ArgumentNullException(nameof(sources));
+    this.stream = stream;
     this.options = options.Value;
   }
 
@@ -203,11 +212,23 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
       reading,
       new AlignmentData(snapshot.IsBarAligned, MethodName(snapshot.AlignmentMethod)),
 
-      // Null in this build because nothing streams to a bridge yet, which is the same
-      // thing it will mean once something does. The field is sent rather than omitted
-      // so a page can render "not streaming" from the state it already receives.
-      Light: null,
+      Reading(),
       Counters(active.Diagnostics, snapshot.MaxReanchorJumpBeats));
+  }
+
+  /// <summary>
+  /// What the light stream is achieving, or null when it is not running.
+  ///
+  /// Null rather than a zeroed object on the same rule that makes <c>grid</c> null
+  /// while waiting: there is no honest frame rate for a stream that is not open, and
+  /// a zero would read as one that is open and failing.
+  /// </summary>
+  private LightData? Reading() {
+    if(this.stream?.Status() is not { Running: true } status) {
+      return null;
+    }
+
+    return new LightData(status.Fps);
   }
 
   /// <summary>

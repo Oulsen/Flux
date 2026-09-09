@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onMount } from 'svelte';
   import AlignmentBadge from './components/AlignmentBadge.svelte';
   import BeatIndicator from './components/BeatIndicator.svelte';
@@ -83,15 +83,36 @@
   }
 
   /*
-   * None of the bridge controls sets a pending flag, and that is not an omission.
+   * Most bridge controls set no pending flag, and that is not an omission: pairing and
+   * the first discovery are answered by a `hue` frame carrying the state they moved to,
+   * so the screen already shows the request having been taken.
    *
-   * Every one of them is answered by a `hue` frame that carries the state it moved
-   * to - `discovering`, `pairing` - so the screen already shows the request having
-   * been taken. A second flag beside that could only ever disagree with it.
+   * Refreshing is the exception, and it earned one. For a paired bridge it deliberately
+   * does not move the state - moving it was what made the whole panel vanish for five
+   * seconds - and it answers in about eighty milliseconds with a room list that is
+   * usually identical. Nothing on screen changes, so without this the button reads as
+   * broken while working perfectly.
    */
+  let refreshing = $state(false);
+
+  /** So a refresh that is never answered cannot leave the button stuck. */
+  const REFRESH_TIMEOUT_MS = 15000;
+
   function discoverBridges(): void {
+    refreshing = true;
+    setTimeout(() => (refreshing = false), REFRESH_TIMEOUT_MS);
     socket?.send({ type: 'discoverBridges', data: {} });
   }
+
+  /*
+   * Cleared by the frame rather than by a timer, so the acknowledgement is the server's
+   * answer and not this page's guess about how long one takes.
+   */
+  $effect(() => {
+    if (store.hue !== null) {
+      refreshing = false;
+    }
+  });
 
   function pairBridge(bridgeId: string): void {
     socket?.send({ type: 'pairBridge', data: { bridgeId } });
@@ -107,6 +128,14 @@
 
   function setLatencyOffset(offsetMs: number): void {
     socket?.send({ type: 'setLatencyOffset', data: { offsetMs } });
+  }
+
+  function startStream(): void {
+    socket?.send({ type: 'startStream', data: {} });
+  }
+
+  function stopStream(): void {
+    socket?.send({ type: 'stopStream', data: {} });
   }
 
   /*
@@ -179,11 +208,15 @@
       <h2>bridge</h2>
       <BridgePanel
         hue={store.hue}
+        light={store.light}
         discover={discoverBridges}
         pair={pairBridge}
         {selectArea}
         forget={forgetBridge}
         setOffset={setLatencyOffset}
+        {startStream}
+        {stopStream}
+        {refreshing}
       />
     </section>
 

@@ -1,4 +1,4 @@
-namespace Flux.Hue;
+﻿namespace Flux.Hue;
 
 /// <summary>
 /// Everything Flux asks a bridge over HTTP, and the only seam where the Hue library
@@ -30,6 +30,16 @@ public interface IHueBridgeClient {
   /// it in exception types would put the decision in the wrong place.
   /// </summary>
   Task<HueCredentials?> TryPairAsync(HueBridge bridge, CancellationToken cancellationToken);
+
+  /// <summary>
+  /// Asks whatever is at an address to identify itself, without credentials.
+  ///
+  /// Null for anything that is not a bridge, or does not answer. Unauthenticated on
+  /// purpose: a bridge's identity is not privileged, and this runs in the one case
+  /// where discovery has already failed and the only thing left is an address that
+  /// worked before.
+  /// </summary>
+  Task<HueBridge?> TryDescribeAsync(string address, CancellationToken cancellationToken);
 
   /// <summary>The bridge's entertainment areas, including whether each is already streaming.</summary>
   Task<IReadOnlyList<HueArea>> GetAreasAsync(HueBridge bridge, HueCredentials credentials, CancellationToken cancellationToken);

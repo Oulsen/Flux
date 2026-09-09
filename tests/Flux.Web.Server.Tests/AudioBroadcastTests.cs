@@ -1,4 +1,4 @@
-using Flux.Audio;
+﻿using Flux.Audio;
 using Flux.Beat;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -207,6 +207,7 @@ public sealed class AudioBroadcastTests {
       new ManualSource(clock, sources),
       audio,
       hue: null,
+      stream: null,
       new FakeHostLifetime(),
       NullLogger<SocketHub>.Instance);
   }

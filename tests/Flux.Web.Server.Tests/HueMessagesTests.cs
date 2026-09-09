@@ -1,4 +1,4 @@
-using Flux.Beat;
+﻿using Flux.Beat;
 using Flux.Hue;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -265,6 +265,7 @@ public sealed class HueMessagesTests {
         new ManualSource(clock, sources),
         audio: null,
         this.Bridge,
+        stream: null,
         new FakeHostLifetime(),
         NullLogger<SocketHub>.Instance);
 
@@ -303,6 +304,10 @@ public sealed class HueMessagesTests {
     public Task<HueCredentials?> TryPairAsync(HueBridge bridge, CancellationToken cancellationToken) {
       this.PairAttempts++;
       return Task.FromResult<HueCredentials?>(null);
+    }
+
+    public Task<HueBridge?> TryDescribeAsync(string address, CancellationToken cancellationToken) {
+      return Task.FromResult<HueBridge?>(null);
     }
 
     public Task<IReadOnlyList<HueArea>> GetAreasAsync(HueBridge bridge, HueCredentials credentials, CancellationToken cancellationToken) {

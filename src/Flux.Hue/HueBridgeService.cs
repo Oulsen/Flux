@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
@@ -74,13 +74,22 @@ public sealed class HueBridgeService: BackgroundService {
     await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
     try {
       HueConnectionState resting = Connection.State;
+
+      // Both remembered, because both are restored. Clearing the message while the
+      // search runs is right - a stale error should not sit under a spinner - but
+      // putting the state back without it left Failed with nothing to explain it,
+      // which renders as a red line saying only that something went wrong.
+      string? reason = Connection.Message;
       Update(connection => connection with { State = HueConnectionState.Discovering, Message = null });
 
       IReadOnlyList<HueBridge> found = await _client.DiscoverAsync(_options.Value.DiscoveryTimeout, cancellationToken).ConfigureAwait(false);
       _logger.LogInformation("Bridge discovery found {Count} bridge(s).", found.Count);
 
+      bool settled = resting == HueConnectionState.Discovering;
+
       Update(connection => connection with {
-        State = resting == HueConnectionState.Discovering ? HueConnectionState.Unpaired : resting,
+        State = settled ? HueConnectionState.Unpaired : resting,
+        Message = settled ? null : reason,
         Discovered = found,
       });
     } catch(HueBridgeException e) {
@@ -161,6 +170,62 @@ public sealed class HueBridgeService: BackgroundService {
     _settings.Save(_settings.Load() with { LatencyOffsetMs = offsetMs });
     Update(connection => connection with { LatencyOffsetMs = offsetMs });
     return true;
+  }
+
+  /// <summary>
+  /// Says something to every page, without claiming anything broke.
+  ///
+  /// <see cref="HueConnection.Message"/> reaches every screen at once, which a
+  /// per-client error frame does not - and pairing and starting are both watched from
+  /// two places by design. The state is deliberately left alone: a room being busy is
+  /// a fact about somebody else's application, not a failure of this one, and
+  /// <see cref="HueConnectionState.Unpaired"/> carrying the pairing-window message set
+  /// the precedent that prose does not imply a fault.
+  /// </summary>
+  public void Note(string? message) {
+    Update(connection => connection with { Message = message });
+  }
+
+  /// <summary>
+  /// Re-reads only the areas, from the bridge Flux is already talking to.
+  ///
+  /// The cheap half of <see cref="RefreshAsync"/>, and the difference is worth a
+  /// method rather than a parameter. A full refresh re-discovers first, which is a
+  /// multi-second mDNS sweep, and it passes through
+  /// <see cref="HueConnectionState.Connecting"/> on the way - so using it to check one
+  /// flag costs five seconds and takes the whole bridge screen down while it runs.
+  /// This asks the address it already has and leaves <c>State</c> alone.
+  /// </summary>
+  /// <returns>False when there is nothing to ask, or the bridge did not answer.</returns>
+  public async Task<bool> TryRefreshAreasAsync(CancellationToken cancellationToken) {
+    if(!_options.Value.Enabled) {
+      return false;
+    }
+
+    await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+    try {
+      if(Connection.Bridge is not { } bridge || _credentials.Load() is not { } credentials) {
+        return false;
+      }
+
+      IReadOnlyList<HueArea> areas = await _client.GetAreasAsync(bridge, credentials, cancellationToken).ConfigureAwait(false);
+
+      Guid? remembered = Connection.SelectedAreaId;
+      Guid? selected = areas.Any(area => area.Id == remembered) ? remembered : null;
+
+      // The note goes with the reading it was about: a refusal that named a busy room
+      // must not still be on screen beside a fresh list showing that room as free.
+      Update(connection => connection with { Areas = areas, SelectedAreaId = selected, Message = null });
+      return true;
+    } catch(HueBridgeException e) {
+      // Not a failure of the connection, so the state is deliberately left where it
+      // was: a bridge that missed one request is still the paired bridge, and moving
+      // the screen to Failed over it would be louder than the event.
+      _logger.LogDebug(e, "The bridge did not answer a room refresh.");
+      return false;
+    } finally {
+      _gate.Release();
+    }
   }
 
   /// <summary>
@@ -312,6 +377,12 @@ public sealed class HueBridgeService: BackgroundService {
 
       _logger.LogInformation("Bridge {BridgeId} at {Address} has {Count} entertainment area(s).", bridge.Id, bridge.Address, areas.Count);
 
+      // Written on success only, so the hint is always an address that worked.
+      HueSettings stored = _settings.Load();
+      if(stored.LastBridgeAddress != bridge.Address) {
+        _settings.Save(stored with { LastBridgeAddress = bridge.Address });
+      }
+
       Update(connection => connection with {
         State = HueConnectionState.Ready,
         Bridge = bridge,
@@ -333,7 +404,28 @@ public sealed class HueBridgeService: BackgroundService {
     IReadOnlyList<HueBridge> found = await _client.DiscoverAsync(_options.Value.DiscoveryTimeout, cancellationToken).ConfigureAwait(false);
     Update(connection => connection with { Discovered = found });
 
-    return found.FirstOrDefault(bridge => string.Equals(bridge.Id, bridgeId, StringComparison.OrdinalIgnoreCase));
+    if(found.FirstOrDefault(bridge => string.Equals(bridge.Id, bridgeId, StringComparison.OrdinalIgnoreCase)) is { } located) {
+      return located;
+    }
+
+    // Discovery found nothing, which on an mDNS-hostile network is the normal state
+    // once the cloud lookup's fifteen-minute budget is spent. The last working address
+    // is tried before giving up - and verified rather than assumed, so a bridge that
+    // has genuinely moved is still reported as missing instead of Flux talking to
+    // whatever now holds that lease.
+    if(_settings.Load().LastBridgeAddress is not { Length: > 0 } hint) {
+      return null;
+    }
+
+    if(await _client.TryDescribeAsync(hint, cancellationToken).ConfigureAwait(false) is not { } remembered
+      || !string.Equals(remembered.Id, bridgeId, StringComparison.OrdinalIgnoreCase)) {
+      return null;
+    }
+
+    _logger.LogInformation("No bridge answered discovery. The paired bridge was still at its last address, {Address}.", hint);
+    Update(connection => connection with { Discovered = [remembered] });
+
+    return remembered;
   }
 
   private void Fail(HueBridgeException e) {

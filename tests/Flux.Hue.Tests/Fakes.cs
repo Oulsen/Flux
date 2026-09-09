@@ -1,4 +1,4 @@
-namespace Flux.Hue.Tests;
+﻿namespace Flux.Hue.Tests;
 
 /// <summary>
 /// A bridge that does whatever a test needs, including the two things a real one
@@ -26,6 +26,8 @@ internal sealed class FakeHueBridgeClient: IHueBridgeClient {
 
   public int DiscoverCalls { get; private set; }
 
+  public int AreaCalls { get; private set; }
+
   public Task<IReadOnlyList<HueBridge>> DiscoverAsync(TimeSpan timeout, CancellationToken cancellationToken) {
     DiscoverCalls++;
     return DiscoverThrows is not null
@@ -38,7 +40,19 @@ internal sealed class FakeHueBridgeClient: IHueBridgeClient {
     return Task.FromResult(PairAnswers.Count > 0 ? PairAnswers.Dequeue() : null);
   }
 
+  /// <summary>What answers at an address, for the fallback discovery cannot cover.</summary>
+  public Dictionary<string, HueBridge> AtAddress { get; } = [];
+
+  public int DescribeCalls { get; private set; }
+
+  public Task<HueBridge?> TryDescribeAsync(string address, CancellationToken cancellationToken) {
+    DescribeCalls++;
+    return Task.FromResult(AtAddress.GetValueOrDefault(address));
+  }
+
   public Task<IReadOnlyList<HueArea>> GetAreasAsync(HueBridge bridge, HueCredentials credentials, CancellationToken cancellationToken) {
+    AreaCalls++;
+
     return AreasThrows is not null
       ? Task.FromException<IReadOnlyList<HueArea>>(AreasThrows)
       : Task.FromResult<IReadOnlyList<HueArea>>([.. Areas]);

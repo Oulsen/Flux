@@ -1,4 +1,4 @@
-using Flux.Beat;
+﻿using Flux.Beat;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -159,6 +159,7 @@ public sealed class StateSnapshotTests {
       new BeatScheduler(grid, clock, NullLogger<BeatScheduler>.Instance),
       grid,
       sources,
+      stream: null,
       Options.Create(new WebOptions()));
 
     return new Rig(broadcaster, sources);
@@ -187,6 +188,7 @@ public sealed class StateSnapshotTests {
       new ManualSource(clock, spare),
       audio: null,
       hue: null,
+      stream: null,
       new FakeHostLifetime(),
       NullLogger<SocketHub>.Instance);
   }

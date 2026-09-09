@@ -46,6 +46,13 @@ public static class ServiceCollectionExtensions {
       provider.GetRequiredService<ILogger<JsonHueSettingsStore>>()));
 
     services.AddSingleton<IHueBridgeClient, HueApiBridgeClient>();
+    services.AddSingleton<IHueStreamFactory, HueApiStreamFactory>();
+
+    // Not a hosted service, unlike the bridge conversation. Nothing should open a
+    // DTLS session because Flux started: the bridge allows exactly one, and taking it
+    // at launch would mean a beat-lab session nobody asked for was holding the show's
+    // only slot.
+    services.AddSingleton<HueStreamService>();
 
     // Registered as itself and as the hosted service, because the web layer calls it
     // by name: a second instance would hold a second, disagreeing picture of the same

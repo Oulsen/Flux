@@ -746,8 +746,15 @@ while somebody was walking, which is precisely what `rejected` already means.
 { "type": "discoverBridges", "data": { } }
 ```
 
-Looks for bridges and puts the result in `discovered`. `data` is empty and is
-ignored.
+Looks for bridges and puts the result in `discovered`. **Once a bridge is paired
+it also re-reads that bridge's areas**, so the same message refreshes
+`areas[].streaming`. `data` is empty and is ignored.
+
+The two halves are one message because they answer one question - what is out
+there now - and because the half that matters changes fastest. An area's
+`streaming` flag has a lifetime of seconds, and a page that could re-run
+discovery but never re-read the areas would show a stale flag indefinitely with a
+button beside it that looked like it should have fixed exactly that.
 
 **Discovery does not disturb a working pairing.** It is how an unpaired user
 finds a bridge, and it is also how a paired one checks that theirs is still on
@@ -825,6 +832,20 @@ Answered with `rejected` when there is nothing to stream to - no bridge, no area
 chosen, or a bridge that is not currently reachable. A busy area is refused the
 same way and is the one case worth a specific sentence on screen, because the
 fix is in another application rather than in this one.
+
+**The area's `streaming` flag is re-read from the bridge before anything opens a
+socket, and the refusal happens on that reading rather than on the handshake.**
+This is not belt-and-braces. A bridge whose one session is taken does not refuse
+a second one: it never answers, and the handshake underneath is not cancellable,
+so a stream that waits for it waits for as long as the process lives. The
+pre-flight is the only thing standing between a busy bridge and a lock-up, which
+is why it is asked again here rather than trusted from a list a page may have
+been holding for an hour.
+
+Success is therefore not instant: the reply is an area listing plus a DTLS
+handshake, and a page should treat the button as pending until `state.light`
+appears. Failure is bounded rather than open-ended - a handshake that has not
+completed within a few seconds is abandoned and answered as a refusal.
 
 ### `stopStream`
 

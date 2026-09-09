@@ -260,6 +260,10 @@ export type ClientMessage =
   | { type: 'discoverBridges'; data: Record<string, never> }
   | { type: 'pairBridge'; data: PairBridgeData }
   | { type: 'selectArea'; data: SelectAreaData }
+  // Confirmed by state.light rather than by a hue frame: it is the only field that
+  // says whether Flux is streaming, and it is the one that carries the rate.
+  | { type: 'startStream'; data: Record<string, never> }
+  | { type: 'stopStream'; data: Record<string, never> }
   | { type: 'forgetBridge'; data: Record<string, never> }
   | { type: 'setLatencyOffset'; data: SetLatencyOffsetData };
 
