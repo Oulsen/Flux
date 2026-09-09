@@ -3,14 +3,15 @@
 Music in, light out.
 
 Flux is a standalone Windows app being built, in phases, to drive Philips Hue
-Entertainment lights from music with proper beat sync. Today it is the
-instrument that has to come first: it finds the beat, either from an Ableton
-Link session or by listening to the music itself, and shows what it found in
-any browser on the LAN, phone included. Everything the lights will eventually
-follow is visible on screen, which is the only way to tell that a beat grid is
-right before anything is wired to it.
+Entertainment lights from music with proper beat sync. It finds the beat,
+either from an Ableton Link session or by listening to the music itself, and
+drives a Hue entertainment area from it at 50 frames a second. What it found
+stays visible in any browser on the LAN, phone included, which is still the
+only way to tell that a beat grid is right - and now also the only way to
+tune the light against it, because the lag between a beat and a bulb is
+measured by somebody standing in the room watching both.
 
-## What works in 0.2.0
+## What works in 0.3.0
 
 - Finds the beat two independent ways, and either one drives the same grid.
   **Ableton Link** (rekordbox, Ableton Live, or any Link peer) is followed
@@ -27,16 +28,41 @@ right before anything is wired to it.
   grid.
 - Tracks the tempo and beat grid, keeps extrapolating when the source goes
   quiet, and reports that honestly instead of freezing or guessing.
+- Finds a Hue bridge and pairs with it from the page. Discovery tries mDNS and
+  SSDP together, then a local network scan, then the rate-limited cloud lookup,
+  and remembers where the bridge last answered. Pairing then asks the bridge
+  once a second for a minute, so the "link button not pressed" refusal the
+  bridge returns until somebody presses it (error 101) reads as a countdown on
+  screen rather than as an error, which matters when the bridge is in a cupboard
+  and the phone is in your hand.
+- Lists the bridge's entertainment areas and streams to the one you pick, with
+  a pre-flight for the case that decides most failed sessions: a bridge serves
+  one entertainment stream at a time, so an area Hue Sync is already driving is
+  named as busy before anything is opened rather than after the handshake dies.
+- Holds an encrypted DTLS stream open at 50 frames a second and reports the
+  rate it actually achieved, measured over the last second rather than repeated
+  back from the setting. A bulb renders roughly 25 updates a second over Zigbee
+  whatever the stream does, so the two numbers are different layers and both
+  are worth seeing.
+- Turns the beat into light. A hue is chosen every few bars and lands on the
+  downbeat, sliding rather than jumping to it; brightness is knocked to the
+  ceiling on every beat and fades. Eight palettes to draw from, a brightness
+  ceiling, a pulse length, how far the light drops between beats, and a latency
+  offset to line the light up against the music - all of them owned by the page,
+  changeable while the music plays, and saved for next time.
 - Serves a web UI with a BPM readout, a per-beat flash, the position in the
   bar, a 64 column spectrum, and connection and source health. The page
   reconnects on its own through a Flux restart or a Wi-Fi drop, and a phone
   gets the beat display without paying for the spectrum traffic.
-- Streams state, beats and spectrum over a WebSocket. The wire contract is
-  [docs/protocol.md](docs/protocol.md).
+- Streams state, beats, spectrum and bridge status over a WebSocket. The wire
+  contract is [docs/protocol.md](docs/protocol.md).
 
-Not here yet: the lights themselves. Everything above exists so that the phase
-which finally talks to a Hue bridge can be about the lights rather than about
-whether the beat is right.
+Not here yet: every light in the area shows the same colour. Per-light spatial
+colour and the colour sections that go with it, strobe, and gamma correction
+are Phase 4, which is where the light engine stops being one colour and starts
+being a scene. Flux is also still a console app you start from a terminal: the
+desktop shell and the QR code that gets a phone onto the page without typing an
+address are Phase 5.
 
 ## Requirements
 
@@ -49,6 +75,11 @@ whether the beat is right.
 - Something to find a beat in, and either one is enough: an Ableton Link peer
   on the same network, such as rekordbox with LINK enabled, or an audio input
   carrying the music, such as a DJ controller's master return
+- A Philips Hue bridge on the same network with at least one entertainment area
+  set up on it, and nothing else streaming to that area. Entertainment areas are
+  created in the Hue app, not in Flux, and a bridge serves one stream at a time.
+  Without a bridge, `Hue:Enabled` below turns the lights off and leaves the beat
+  side working on its own
 
 ## Build and run
 
@@ -68,6 +99,11 @@ to type on a phone. Play a track and the page picks the beat up by itself:
 enable LINK in rekordbox for the Link source, or pick an audio device on the
 page and switch the source to Audio. Which source is selected at startup is
 `Beat:DefaultSource` below.
+
+The lights are set up from the same page, once: find the bridge, press its link
+button while the countdown runs, pick an entertainment area and start the
+stream. The pairing survives a restart, so every session after the first one
+starts at picking the area.
 
 For frontend work with hot reload, keep the backend running and start
 `npm run dev` in `src/Flux.Web.Frontend`; Vite proxies the WebSocket to the
@@ -95,6 +131,16 @@ backend.
 | `Hue:LatencyOffsetMs` | `0` | Milliseconds to shift light against the beat as a session starts, from -500 to 500; positive sends it early. Only the starting value: the page owns it from there, because the instrument that measures it is somebody watching the room |
 | `Console:BeatLog` | `false` | Print one console line per beat, for debugging the beat grid without a browser |
 | `Console:AudioMeter` | `false` | Print the capture level four times a second, for identifying an audio device without a browser |
+
+The light engine's own settings - palette, how often the colour changes,
+brightness, pulse length and pulse depth - are deliberately not here. They are
+taste rather than installation, they are adjusted while the music is playing,
+and they belong to whoever is standing at the page; they persist across
+restarts in `%APPDATA%\Flux\hue-settings.json`, alongside the chosen
+entertainment area. The bridge key is not in there: it lives encrypted beside
+it, readable only by the Windows account that paired. `Hue:LatencyOffsetMs` is
+the one setting that goes both ways, and that is the point of it - the lag is a
+property of a rig worth pinning, while the page still owns it during a set.
 
 An `appsettings.local.json` beside it overrides any of these and is not
 committed, which is what the recording keys above are usually set from: a
@@ -129,7 +175,7 @@ npm test
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, and a spectrum frame |
 | `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
-| `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, and the encrypted store the bridge keys live in |
+| `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, the light engine that turns beats into colour, and the encrypted store the bridge keys live in |
 | `src/Flux.Web.Server` | WebSocket hub, beat, spectrum, device and bridge broadcasters, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable |

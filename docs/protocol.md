@@ -129,7 +129,7 @@ Sent once, immediately after the socket opens, before anything else.
 ```json
 { "type": "hello", "data": {
   "protocol": 1,
-  "app": "0.2.0",
+  "app": "0.3.0",
   "quantum": 4,
   "stateHz": 20,
   "spectrumHz": 30,

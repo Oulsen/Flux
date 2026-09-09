@@ -234,7 +234,7 @@
       "flux.midi": {
         "type": "Project",
         "dependencies": {
-          "Flux.Beat": "[0.1.0, )"
+          "Flux.Beat": "[0.3.0, )"
         }
       }
     }

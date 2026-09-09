@@ -239,8 +239,8 @@
       "flux.audio": {
         "type": "Project",
         "dependencies": {
-          "Flux.Audio.Contract": "[0.1.0, )",
-          "Flux.Beat": "[0.1.0, )",
+          "Flux.Audio.Contract": "[0.3.0, )",
+          "Flux.Beat": "[0.3.0, )",
           "NAudio.Wasapi": "[2.2.1, )"
         }
       },
