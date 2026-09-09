@@ -50,10 +50,12 @@ measured by somebody standing in the room watching both.
   ceiling, a pulse length, how far the light drops between beats, and a latency
   offset to line the light up against the music - all of them owned by the page,
   changeable while the music plays, and saved for next time.
-- Serves a web UI with a BPM readout, a per-beat flash, the position in the
-  bar, a 64 column spectrum, and connection and source health. The page
-  reconnects on its own through a Flux restart or a Wi-Fi drop, and a phone
-  gets the beat display without paying for the spectrum traffic.
+- Serves a web UI built around the visualizer, which fills the window: the BPM,
+  the position in the bar, the anchor button, the achieved frame rate and the
+  connection and source health sit over it, and everything adjustable is behind
+  a drawer. The page reconnects on its own through a Flux restart or a Wi-Fi
+  drop, and a phone that would rather not draw a 64 column spectrum thirty
+  times a second can switch to numbers only, which it then remembers.
 - Streams state, beats, spectrum and bridge status over a WebSocket. The wire
   contract is [docs/protocol.md](docs/protocol.md).
 
@@ -118,8 +120,8 @@ backend.
 | `Web:Port` | `5050` | HTTP and WebSocket port for the UI |
 | `Beat:DefaultSource` | `link` | Which sync source is selected at startup: `link`, `audio` or `manual`; a name this build does not have falls back to the first source registered |
 | `Link:InterfaceAddress` | `null` | IP address of the network adapter to listen for Link on; `null` picks one automatically |
-| `Audio:DeviceId` | `null` | Exact endpoint id of the audio device to capture; `null` goes by name instead |
-| `Audio:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the audio device to capture, inputs before outputs; empty captures nothing until one is picked |
+| `Audio:DeviceId` | `null` | Exact endpoint id of the audio device to capture; `null` goes by name instead. Only where a device has never been picked on the page: a device chosen there is remembered and outranks this from then on |
+| `Audio:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the audio device to capture, inputs before outputs; empty captures nothing until one is picked. Still the fallback when the remembered or configured id names a device that is not plugged in |
 | `Audio:Sensitivity` | `50` | How eagerly audio beat detection triggers, 1 to 100; the only tuning knob it has |
 | `Audio:RecordFramesPath` | `null` | File to write analyzed audio frames to, for turning a real track into a test fixture; off unless set |
 | `Audio:RecordAudioPath` | `null` | File to write the captured audio to as a mono WAVE recording, for questions about the analyzer itself rather than the detector; about 11 MB a minute, off unless set |
@@ -141,6 +143,15 @@ entertainment area. The bridge key is not in there: it lives encrypted beside
 it, readable only by the Windows account that paired. `Hue:LatencyOffsetMs` is
 the one setting that goes both ways, and that is the point of it - the lag is a
 property of a rig worth pinning, while the page still owns it during a set.
+
+The audio device works the same way, in `%APPDATA%\Flux\audio-settings.json`.
+Picking one on the page is remembered, so a rig whose capture device is not the
+one `Audio:PreferDeviceNamed` describes is set up once rather than at the start
+of every session. A remembered device that is not plugged in falls back to the
+name preference rather than capturing nothing, because the file can easily
+outlive the interface - which is exactly the difference between it and a device
+chosen from the page while Flux is running, where capturing something other
+than what was just asked for would be overruling somebody.
 
 An `appsettings.local.json` beside it overrides any of these and is not
 committed, which is what the recording keys above are usually set from: a

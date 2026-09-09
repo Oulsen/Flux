@@ -40,6 +40,17 @@ public static class ServiceCollectionExtensions {
 
     services.AddSingleton<IAudioDeviceCatalog, AudioDeviceCatalog>();
 
+    // The same per-user folder the Hue settings and the bridge key live in, resolved
+    // the same way, because "where Flux remembers things" should be one place on disk
+    // rather than one place per project.
+    string directory = System.IO.Path.Combine(
+      Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+      "Flux");
+
+    services.AddSingleton<IAudioSettingsStore>(provider => new JsonAudioSettingsStore(
+      directory,
+      provider.GetRequiredService<ILogger<JsonAudioSettingsStore>>()));
+
     // The recorder is registered here rather than beside the frame recorder in
     // AddAudioAnalysis, because it records what capture produces and not what the
     // analyzer makes of it. A host with a level meter and no FFT thread can still
@@ -56,7 +67,8 @@ public static class ServiceCollectionExtensions {
       provider.GetRequiredService<IMonotonicClock>(),
       provider.GetRequiredService<IOptions<AudioOptions>>(),
       provider.GetRequiredService<IMonoTap>(),
-      provider.GetRequiredService<ILogger<AudioCaptureService>>()));
+      provider.GetRequiredService<ILogger<AudioCaptureService>>(),
+      provider.GetRequiredService<IAudioSettingsStore>()));
     services.AddSingleton<IAudioDevices>(provider => provider.GetRequiredService<AudioCaptureService>());
     services.AddHostedService(provider => provider.GetRequiredService<AudioCaptureService>());
 

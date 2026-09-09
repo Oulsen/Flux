@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   areaSummary,
   brightnessLabel,
+  bridgeNeedsSetup,
   bridgeStatusLabel,
   canDiscover,
   COLOR_CHANGE_BARS,
@@ -109,6 +110,26 @@ test('the room controls survive a refresh passing through connecting', () => {
   assert.equal(showsRooms(connection({ state: 'unpaired', areas: withRooms })), false);
   assert.equal(showsRooms(connection({ state: 'disabled', areas: withRooms })), false);
   assert.equal(showsRooms(null), false);
+});
+
+test('a build with the lights switched off needs nothing set up', () => {
+  // This is what decides whether the settings drawer opens itself over the stage, so
+  // the two ways of having no rooms have to be told apart: one is somebody who cannot
+  // use Flux until they act, the other is the beat lab running exactly as configured.
+  assert.equal(bridgeNeedsSetup(connection({ state: 'disabled' })), false);
+  assert.equal(bridgeNeedsSetup(null), false);
+
+  assert.equal(bridgeNeedsSetup(connection({ state: 'unpaired' })), true);
+  assert.equal(bridgeNeedsSetup(connection({ state: 'failed' })), true);
+  assert.equal(
+    bridgeNeedsSetup(connection({ state: 'ready', areas: [area()], selectedAreaId: null })),
+    true,
+  );
+
+  assert.equal(
+    bridgeNeedsSetup(connection({ state: 'ready', areas: [area()], selectedAreaId: area().id })),
+    false,
+  );
 });
 
 test('an area says how big it is, and singular counts read as English', () => {

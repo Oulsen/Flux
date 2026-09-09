@@ -21,11 +21,13 @@
 <p class="badge" class:anchored={aligned}>{label}</p>
 
 <style>
+  /* Over the stage rather than inside a panel, so a step brighter than the same text
+     would be there: `--ink-faint` vanished against a lit spectrum. */
   .badge {
     margin: 0;
     font-size: 0.75rem;
     letter-spacing: 0.08em;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
     text-align: center;
   }
 

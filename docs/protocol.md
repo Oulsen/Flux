@@ -686,10 +686,15 @@ reconnecting client and a server disagreeing about what is on, and the
 disagreement is invisible until someone wonders why the visualiser is dark.
 
 Both default to false until a client asks. That is the point of the message
-rather than a detail of it: the phone in the booth wants a BPM readout and a
-flash, and shipping it a spectrum frame thirty times a second would spend its
-battery and its Wi-Fi on a canvas nobody is looking at. Everything expensive on
-this socket is opt-in.
+rather than a detail of it: everything expensive on this socket is opt-in, so a
+client that draws nothing pays for nothing, and the server never has to guess
+which kind it is talking to.
+
+What any given client then asks for is its own business. Flux's own page asks
+for the spectrum from the first frame, because the visualizer is the page rather
+than a panel in it, and offers a numbers-only switch for the phone in the booth
+that would rather not spend its battery and its Wi-Fi drawing a canvas thirty
+times a second.
 
 A `devices` snapshot is sent immediately on any subscribe that asks for
 `deviceLevels`, whether or not it was already on, so a picker fills in at once
@@ -725,6 +730,14 @@ Points audio analysis at one of the devices from `devices`. Answered with
 `rejected` when no device by that id exists, which includes the ordinary race of
 a device unplugged while its button was on screen, and the case of a build with
 no audio support at all.
+
+**A device accepted here is remembered across restarts**, so this message is a
+lasting choice rather than a setting for the session. Flux comes back to it next
+launch in preference to `Audio:DeviceId`, and falls back to
+`Audio:PreferDeviceNamed` if it is not plugged in - which is deliberately *not*
+what happens to a selection made while Flux is running, since capturing
+something other than what was just asked for would be overruling the person who
+asked.
 
 ### `tap`
 

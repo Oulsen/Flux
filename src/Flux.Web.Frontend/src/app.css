@@ -48,10 +48,11 @@ body {
   user-select: none;
 }
 
+/* The stage, the readings over it and the drawer are all fixed to the viewport, so
+   this element lays nothing out: the window is the layout. It stays as the mount
+   point and as the one place a stray flow child would be caught. */
 #app {
   min-height: 100%;
-  display: flex;
-  flex-direction: column;
 }
 
 /* Numbers that change several times a second must not reflow the layout around

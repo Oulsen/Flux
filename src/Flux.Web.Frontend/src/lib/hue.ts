@@ -159,6 +159,23 @@ export function showsRooms(hue: HueData | null): boolean {
 }
 
 /**
+ * Whether the bridge needs somebody to do something before the lights can work.
+ *
+ * Narrower than "the room controls are not showing", and the difference decides
+ * whether the settings drawer opens itself over the stage. A build with the lights
+ * switched off, or one with no Hue support at all, shows no rooms and needs nothing
+ * done about it - that is the beat lab running as intended, and a drawer that opened
+ * itself every launch to say so would be a fault rather than a prompt.
+ */
+export function bridgeNeedsSetup(hue: HueData | null): boolean {
+  if (hue === null || hue.state === 'disabled') {
+    return false;
+  }
+
+  return showsPairing(hue.state) || hue.selectedAreaId === null;
+}
+
+/**
  * An area's size, and whether its one streaming session is already taken.
  *
  * The channel count is here because a user with two areas has usually named them

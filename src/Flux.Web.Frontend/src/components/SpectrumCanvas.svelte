@@ -203,21 +203,20 @@
 </div>
 
 <style>
-  /* Grows with the window, within bounds: below about nine rems the bands stop
-     being distinguishable, and above sixteen the picture gains height without
-     gaining information, since a spectrum is read across and not up. */
+  /* Fills whatever box it is given and decides nothing about its own size, which is
+     the caller's business now that the caller is the whole window. It previously
+     carried a clamped height and a panel's border, both of which belonged to the
+     panel it used to sit in rather than to a spectrum. */
   .visualizer {
     position: relative;
-    height: clamp(9rem, 22vh, 16rem);
+    width: 100%;
+    height: 100%;
   }
 
   canvas {
     display: block;
     width: 100%;
     height: 100%;
-    background: var(--surface);
-    border: 1px solid var(--edge);
-    border-radius: var(--radius);
   }
 
   .waiting {

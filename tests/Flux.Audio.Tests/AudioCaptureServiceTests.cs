@@ -154,14 +154,113 @@ public sealed class AudioCaptureServiceTests {
   /// real: a catalog of devices that do not exist, a clock the test advances, and
   /// a tap that keeps nothing.
   /// </summary>
+  [Fact]
+  public void TheDeviceChosenLastTimeIsCapturedWithoutAnyoneChoosingItAgain() {
+    // The whole point of remembering one. Line In does not match the name preference
+    // and would never be resolved on its own, so opening it proves the stored choice
+    // is what decided rather than the configuration.
+    FakeSettings settings = new FakeSettings(new AudioSettings(Line.Id));
+    Rig rig = new Rig(settings: settings);
+    rig.Catalog.Present = [Flx, Line];
+
+    rig.Service.PollOnce();
+
+    Assert.Equal([Line.Id], rig.Catalog.Opened);
+  }
+
+  /// <summary>
+  /// The distinction this feature turns on, and the bug it would have been if it were
+  /// missed. A live selection deliberately never falls back - it came from a list
+  /// somebody was looking at. A remembered one came from a file that may well predate
+  /// the interface being unplugged, so falling back is the only honest answer: the
+  /// alternative is a rig that captures nothing after a restart, with no explanation
+  /// beyond a device id nobody has chosen this year.
+  /// </summary>
+  [Fact]
+  public void ARememberedDeviceThatIsGoneFallsBackToThePreferenceRatherThanCapturingNothing() {
+    FakeSettings settings = new FakeSettings(new AudioSettings("unplugged-since-last-week"));
+    Rig rig = new Rig(settings: settings);
+    rig.Catalog.Present = [Flx];
+
+    rig.Service.PollOnce();
+
+    Assert.Equal([Flx.Id], rig.Catalog.Opened);
+  }
+
+  [Fact]
+  public void ARememberedDeviceOutranksTheConfiguredOne() {
+    // The same footing the persisted latency offset has with Hue:LatencyOffsetMs: the
+    // key is where a machine starts, and the page owns it afterwards. Without this a
+    // rig with Audio:DeviceId set could never have its device changed from the page in
+    // a way that survived a restart, which is the complaint that prompted all of it.
+    FakeSettings settings = new FakeSettings(new AudioSettings(Line.Id));
+    Rig rig = new Rig(new AudioOptions { DeviceId = Flx.Id }, settings);
+    rig.Catalog.Present = [Flx, Line];
+
+    rig.Service.PollOnce();
+
+    Assert.Equal([Line.Id], rig.Catalog.Opened);
+  }
+
+  [Fact]
+  public void ChoosingADeviceWritesItDownAtOnce() {
+    // At once, rather than at shutdown. Flux is closed by killing a console window as
+    // often as not, and a preference saved on the way out is one that is never saved.
+    FakeSettings settings = new FakeSettings(AudioSettings.Empty);
+    Rig rig = new Rig(settings: settings);
+    rig.Catalog.Present = [Flx, Line];
+
+    rig.Service.PollOnce();
+    Assert.True(rig.Service.TrySelect(Line.Id));
+
+    Assert.Equal(Line.Id, settings.Saved?.DeviceId);
+  }
+
+  [Fact]
+  public void ASelectionThisSessionStillRefusesToFallBackWhenItsDeviceVanishes() {
+    // The rule the remembered device is deliberately not subject to, pinned here so
+    // that giving one of them a fallback cannot quietly give it to both.
+    Rig rig = new Rig();
+    rig.Catalog.Present = [Flx, Line];
+
+    rig.Service.PollOnce();
+    Assert.True(rig.Service.TrySelect(Line.Id));
+
+    rig.Catalog.Opened.Clear();
+    rig.Catalog.Present = [Flx];
+    rig.Service.PollOnce();
+
+    Assert.Empty(rig.Catalog.Opened);
+  }
+
+  /// <summary>A store that keeps its one record in memory and says what it was handed.</summary>
+  private sealed class FakeSettings: IAudioSettingsStore {
+    private readonly AudioSettings initial;
+
+    public FakeSettings(AudioSettings initial) {
+      this.initial = initial;
+    }
+
+    public AudioSettings? Saved { get; private set; }
+
+    public AudioSettings Load() {
+      return this.initial;
+    }
+
+    public void Save(AudioSettings settings) {
+      this.Saved = settings;
+    }
+  }
+
   private sealed class Rig {
-    public Rig() {
+    public Rig(AudioOptions? options = null, IAudioSettingsStore? settings = null) {
       this.Service = new AudioCaptureService(
         this.Catalog,
         this.Clock,
-        Options.Create(new AudioOptions()),
+        Options.Create(options ?? new AudioOptions()),
         new NoTap(),
-        NullLogger<AudioCaptureService>.Instance);
+        NullLogger<AudioCaptureService>.Instance,
+        settings);
     }
 
     public FakeCatalog Catalog { get; } = new FakeCatalog();
