@@ -9,6 +9,7 @@ import {
   type GridData,
   type HelloData,
   type HueData,
+  type HueEngineData,
   type LightData,
   type RawMessage,
   type SourceReportData,
@@ -17,7 +18,12 @@ import {
   type StateData,
 } from './protocol.ts';
 import type { ConnectionState } from './socket.ts';
-import { clearsPendingSelection, resolvePending, retiresHeldBeat } from './storeLogic.ts';
+import {
+  clearsPendingSelection,
+  resolvePending,
+  resolvePendingFields,
+  retiresHeldBeat,
+} from './storeLogic.ts';
 
 /**
  * Everything the page knows, which is exactly what the server has told it.
@@ -97,6 +103,17 @@ export class FluxStore {
    * whose lights are already running.
    */
   hue = $state<HueData | null>(null);
+
+  /**
+   * The light settings this page has asked for and not yet seen come back.
+   *
+   * Per field rather than a whole record, which is what makes the message safe to send
+   * as one. Every control sends all five settings, because that is what the message is,
+   * but it composes them from the server's picture with this on top: built from the
+   * server's picture alone, a brightness drag carries the palette this page last heard
+   * about and quietly undoes one chosen on another phone half a second ago.
+   */
+  pendingEngine = $state<Partial<HueEngineData>>({});
 
   /** Non-null exactly while Flux is streaming to a bridge. */
   light = $state<LightData | null>(null);
@@ -186,7 +203,10 @@ export class FluxStore {
         // Replaced wholesale rather than merged. The frame is a complete snapshot
         // and the server compares it field by field before sending, so anything
         // that arrives is genuinely different from what is held.
-        this.hue = message.data as HueData;
+        const hue = message.data as HueData;
+
+        this.hue = hue;
+        this.pendingEngine = resolvePendingFields(this.pendingEngine, hue.engine);
         break;
       }
 
@@ -217,6 +237,7 @@ export class FluxStore {
         if (clearsPendingSelection(error.code)) {
           this.pendingSource = null;
           this.pendingDevice = null;
+          this.pendingEngine = {};
         }
 
         console.warn('Flux rejected a message:', error);
@@ -239,6 +260,7 @@ export class FluxStore {
     // pending would leave it pending until the page is reloaded.
     this.pendingSource = null;
     this.pendingDevice = null;
+    this.pendingEngine = {};
 
     // A subscription is a preference held by the connection that is now gone, so
     // the list it filled is gone with it. Keeping the rows would show meters

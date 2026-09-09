@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { clearsPendingSelection, resolvePending, retiresHeldBeat } from './storeLogic.ts';
+import {
+  clearsPendingSelection,
+  resolvePending,
+  resolvePendingFields,
+  retiresHeldBeat,
+} from './storeLogic.ts';
 
 test('nothing is retired when no beat frame is held', () => {
   assert.equal(retiresHeldBeat(null, { beatIndex: 99 }, false), false);
@@ -45,6 +50,23 @@ test('a selection stays pending while the server still says otherwise', () => {
 
 test('nothing pending stays nothing, whatever the server reports', () => {
   assert.equal(resolvePending(null, 'link'), null);
+});
+
+test('a confirmed field stops being pending while the others carry on waiting', () => {
+  assert.deepEqual(
+    resolvePendingFields({ brightness: 60, pulseMs: 120 }, { brightness: 60, pulseMs: 240, palette: 'warm' }),
+    { pulseMs: 120 },
+  );
+});
+
+test('a field nobody asked about is never pending, whatever the server says about it', () => {
+  // The case the whole per-field form exists for: another client moved the palette
+  // while this one had brightness outstanding, and this one must take their palette.
+  assert.deepEqual(resolvePendingFields({ brightness: 60 }, { brightness: 60, palette: 'ocean' }), {});
+});
+
+test('an unconfirmed field survives a frame that confirms nothing', () => {
+  assert.deepEqual(resolvePendingFields({ palette: 'neon' }, { palette: 'warm' }), { palette: 'neon' });
 });
 
 test('only a rejection clears a pending selection', () => {

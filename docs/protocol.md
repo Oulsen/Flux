@@ -844,6 +844,12 @@ is not rejected: the bridge's one session may well be free again by the time
 anybody presses start, and refusing the choice now would be answering a question
 about the future.
 
+**Choosing a different area while the stream is open closes it**, and `state.light`
+becomes null shortly after the `hue` frame carrying the new selection. Leaving it open
+would keep the lights running in the room nobody has selected any more, under a page
+showing the new one and a stop button. Streaming to the new area is a fresh
+`startStream`, because the bridge grants its one session against a particular area.
+
 ### `startStream`
 
 ```json
@@ -902,6 +908,13 @@ that.
 
 Like stopping, it is never rejected: forgetting a bridge that was never paired
 leaves the world exactly as the caller wanted it.
+
+**It ends a pairing countdown and closes an open stream**, so a client should expect
+`state` to leave `pairing` without the window running out, and `state.light` to become
+null. Both are the same point: a countdown left running would register the link press
+somebody was already walking towards and write the credentials straight back, and a
+session left open would hold the bridge's one entertainment slot with nothing on screen
+accounting for it.
 
 **`latencyOffsetMs` and `engine` survive it**, and they are the only things that
 do. One says how long light takes to reach the room and the other says how the
@@ -977,10 +990,12 @@ four times a bar.
 
 **Colour changes land on the downbeat**, not merely every fourth beat. Flux counts
 bars from the beat grid's own bar position, so the changes stay on the bar across a
-re-anchor rather than drifting off it for the rest of the night. Where no downbeat
-is known - `alignment.method` of `none` - it falls back to every `4 x n`-th beat
-from wherever the numbering starts, because changing on a guessed phase is worth
-more than not changing at all.
+re-anchor rather than drifting off it for the rest of the night. How long a bar is
+comes from the same `quantum` the `hello` frame carries - four by default, and the
+engine has no separate opinion about it. Where no downbeat is known -
+`alignment.method` of `none` - it falls back to every `quantum x n`-th beat from
+wherever the numbering starts, because changing on a guessed phase is worth more
+than not changing at all.
 
 **Both zeroes read backwards and both are deliberate.** `colorChangeBars` of 0
 does not stop the colours changing, it removes the interval, so they change as

@@ -409,18 +409,11 @@ public sealed class SocketHub {
         break;
 
       case "stopStream":
-        // Never refused, like forgetting a bridge: a stop that arrives when nothing is
-        // running has got what it asked for, and an error there is a red message for
-        // somebody whose lights are already off.
-        this.stream?.Stop();
+        this.StopStream(client);
         break;
 
       case "forgetBridge":
-        // Never refused, in any build. Forgetting a bridge that was never paired -
-        // or that this build could not have paired - leaves the world exactly as the
-        // caller wanted it, and an error there would put a red message on the screen
-        // of somebody who got what they asked for.
-        this.hue?.Forget();
+        this.ForgetBridge(client);
         break;
 
       case "setLatencyOffset":
@@ -569,6 +562,57 @@ public sealed class SocketHub {
   }
 
   /// <summary>
+  /// Closes the light stream.
+  ///
+  /// Never refused, in any build: a stop that arrives when nothing is running has got
+  /// what it asked for, and an error there is a red message for somebody whose lights
+  /// are already off.
+  ///
+  /// Off the receive loop like every other bridge command, and for the reason this
+  /// class exists to enforce. Closing the session joins the pump thread, which is
+  /// bounded but not instant - a stop whose pump is wedged would hold this connection's
+  /// inbound processing still for two seconds, and every tap, tempo and ping queued
+  /// behind it would arrive that much late.
+  /// </summary>
+  private void StopStream(Client client) {
+    if(this.stream is null) {
+      return;
+    }
+
+    this.RunBridgeCommand(
+      client,
+      async _ => {
+        await this.stream.StopAsync().ConfigureAwait(false);
+        return true;
+      });
+  }
+
+  /// <summary>
+  /// Discards the stored credentials and the chosen area.
+  ///
+  /// Never refused, in any build. Forgetting a bridge that was never paired - or that
+  /// this build could not have paired - leaves the world exactly as the caller wanted
+  /// it, and an error there would put a red message on the screen of somebody who got
+  /// what they asked for.
+  ///
+  /// Off the receive loop because forgetting now waits its turn behind whatever else is
+  /// talking to the bridge, which is what stops a pairing countdown writing the key
+  /// back the moment after it was discarded.
+  /// </summary>
+  private void ForgetBridge(Client client) {
+    if(this.hue is null) {
+      return;
+    }
+
+    this.RunBridgeCommand(
+      client,
+      async token => {
+        await this.hue.ForgetAsync(token).ConfigureAwait(false);
+        return true;
+      });
+  }
+
+  /// <summary>
   /// Starts the pairing loop for a discovered bridge.
   ///
   /// The refusal arrives promptly even though the command runs for a minute on
@@ -693,7 +737,9 @@ public sealed class SocketHub {
             client.Enqueue(Frames.Error("rejected", refusal));
           }
         } catch(OperationCanceledException) {
-          // The host is stopping. The page is going away with it.
+          // The host is stopping, or a pairing countdown was cut short by a forget. In
+          // both cases the command that ended has already been answered by the state
+          // whoever cancelled it went on to set.
         } catch(HueBridgeException ex) {
           // Already reported to every page through the connection's Failed state and
           // its message; logged here so the console has the detail the wire omits.

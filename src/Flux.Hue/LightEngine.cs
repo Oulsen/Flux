@@ -1,6 +1,7 @@
 using Flux.Beat;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Flux.Hue;
 
@@ -32,10 +33,12 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// How far a new hue must sit from the one it replaces, on a wheel of 1.
   ///
   /// The scene's value, and its purpose is to stop a "change" that nobody can see.
-  /// It is deliberately not always satisfiable: <c>Ocean</c> spans fifty degrees in
-  /// total, so no two of its hues are this far apart and every attempt fails. That is
-  /// the intended behaviour of a tight palette rather than a bug in the threshold -
-  /// see <see cref="PickHue"/> for what happens when the attempts run out.
+  /// It is deliberately not always satisfiable: 0.12 of the wheel is 43 degrees, and
+  /// <c>Ocean</c> spans fifty in total, so only its two extremes - 170 and 220 - are
+  /// that far apart. From the other six of its hues no candidate can qualify and every
+  /// attempt fails. That is the intended behaviour of a tight palette rather than a bug
+  /// in the threshold - see <see cref="PickHue"/> for what happens when the attempts
+  /// run out.
   /// </summary>
   private const double MinHueSeparation = 0.12;
 
@@ -82,6 +85,21 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   private readonly object gate = new();
   private readonly Queue<BeatEvent> pending = new(MaxPendingBeats);
 
+  /// <summary>
+  /// Beats to the bar, taken from the grid's own setting rather than assumed.
+  ///
+  /// The scene's interval is counted in bars and four is still the default, so nothing
+  /// about the tuned behaviour moves. What this closes is a divisor that was written as
+  /// a constant while <see cref="BeatOptions.Quantum"/> was bindable: at a quantum of
+  /// eight the downbeats arrive eight indices apart, dividing by four steps the bar
+  /// count by two, and "every four bars" silently becomes every eight - or never,
+  /// depending on where the grid's anchor happened to fall.
+  ///
+  /// Read once. The quantum is bound at startup and validated there, and this is
+  /// consulted on the frame path.
+  /// </summary>
+  private readonly int beatsPerBar;
+
   private double targetHue;
   private double displayHue;
   private double? pulseStartedMicros;
@@ -91,8 +109,9 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     BeatScheduler scheduler,
     HueBridgeService bridge,
     IMonotonicClock clock,
+    IOptions<BeatOptions> beat,
     ILogger<LightEngine> logger)
-    : this(scheduler, bridge, clock, logger, new Random()) {
+    : this(scheduler, bridge, clock, beat, logger, new Random()) {
   }
 
   /// <summary>
@@ -106,13 +125,17 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     BeatScheduler scheduler,
     HueBridgeService bridge,
     IMonotonicClock clock,
+    IOptions<BeatOptions> beat,
     ILogger<LightEngine> logger,
     Random random) {
+    ArgumentNullException.ThrowIfNull(beat);
+
     this.scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
     this.bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
     this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
     this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     this.random = random ?? throw new ArgumentNullException(nameof(random));
+    this.beatsPerBar = Math.Max(1, beat.Value.Quantum);
 
     this.targetHue = this.random.Next(360) / 360.0;
     this.displayHue = this.targetHue;
@@ -207,7 +230,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       // envelope and a staircase.
       this.pulseStartedMicros = beat.ScheduledMicros;
 
-      if(ShouldChangeColor(beat, settings.ColorChangeBars)) {
+      if(this.ShouldChangeColor(beat, settings.ColorChangeBars)) {
         this.targetHue = this.PickHue(settings.Palette);
       }
     }
@@ -222,7 +245,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// the grid's absolute index, so a dropped or re-anchored beat cannot leave the
   /// changes landing off the bar for the rest of the night.
   /// </summary>
-  private static bool ShouldChangeColor(BeatEvent beat, int bars) {
+  private bool ShouldChangeColor(BeatEvent beat, int bars) {
     if(bars <= 0) {
       return true;
     }
@@ -232,7 +255,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       // the scene's raw form: every n-th beat from wherever the grid happens to start.
       // Changing on a guessed phase is worth more than not changing at all, and the
       // moment an alignment arrives the branch above takes over.
-      return FloorMod(beat.Index, LightSettings.BeatsPerBar * bars) == 0;
+      return FloorMod(beat.Index, (long)this.beatsPerBar * bars) == 0;
     }
 
     if(beat.PositionInBar != 1) {
@@ -240,12 +263,12 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     }
 
     // Counted in bars rather than in beats, because a bar's first beat is not
-    // necessarily at an index divisible by four: the grid's alignment can put the
-    // downbeat anywhere in the numbering, and a modulo over beat indices would then
-    // never come out at zero and the colour would never change again. Dividing is
-    // safe from here whatever the phase - consecutive downbeats are four apart, so
-    // they always land in consecutive bars.
-    long bar = FloorDiv(beat.Index, LightSettings.BeatsPerBar);
+    // necessarily at an index divisible by the quantum: the grid's alignment can put
+    // the downbeat anywhere in the numbering, and a modulo over beat indices would then
+    // never come out at zero and the colour would never change again. Dividing is safe
+    // from here whatever the phase - consecutive downbeats are a bar apart, so they
+    // always land in consecutive bars.
+    long bar = FloorDiv(beat.Index, this.beatsPerBar);
 
     return FloorMod(bar, bars) == 0;
   }
@@ -254,11 +277,12 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// Chooses the next hue, far enough from the last one to be seen as a change.
   ///
   /// The best of the attempts rather than the last of them, which the scene did not do
-  /// and which matters for exactly the palettes where the threshold cannot be met:
-  /// <c>Ocean</c> and <c>Warm</c> are tight by design, every candidate fails, and
-  /// taking whichever one happened to be tried fiftieth can hand back a hue
-  /// indistinguishable from the current one. Keeping the farthest guarantees the
-  /// largest change the palette is capable of.
+  /// and which matters wherever the threshold cannot be met. <c>Ocean</c> is the palette
+  /// that shows it: from six of its eight hues no candidate is 0.12 away, so all fifty
+  /// attempts fail, and taking whichever one happened to be tried fiftieth can hand back
+  /// a hue indistinguishable from the current one. Keeping the farthest guarantees the
+  /// largest change the palette is capable of. The wider palettes reach the threshold
+  /// on an early attempt and never get here.
   ///
   /// Distance is measured around the wheel and not along the number line, which is the
   /// other departure. The scene subtracted the two values, so it read a hue at 0.98 as

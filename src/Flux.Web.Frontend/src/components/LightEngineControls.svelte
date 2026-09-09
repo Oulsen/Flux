@@ -15,37 +15,47 @@
   import RangeSetting from './RangeSetting.svelte';
 
   interface Props {
-    /** What the server says is in force, which is what these controls render from. */
+    /**
+     * How the lights are set, as this page believes it: what the server confirmed, with
+     * this page's own changes over it until they come back. Already merged by the
+     * caller, so these controls render it straight.
+     */
     engine: HueEngineData;
-    setEngine: (engine: HueEngineData) => void;
+    /** Names the one field that changed. The caller turns it into the whole record. */
+    setEngine: (change: Partial<HueEngineData>) => void;
   }
 
   const { engine, setEngine }: Props = $props();
 
   /*
-   * Every change sends the whole record, because the message is one complete statement
-   * of how the lights should look rather than a patch. A control that sent only its own
-   * field would be relying on the server to supply the other four, and two phones doing
-   * that at once produce a look neither of them chose.
+   * Each control names only the field it owns, and the caller composes the message.
+   *
+   * What goes on the wire is still one complete statement of how the lights should look
+   * rather than a patch - the server takes nothing less. But composing it here, from the
+   * record this component was handed, is what made two phones undo each other: every
+   * control would carry the other four fields as this page last heard them, so a palette
+   * chosen elsewhere half a second ago is overwritten by the next slider move. The store
+   * holds what this page has asked for and has not seen come back, and that is where the
+   * five fields are put together.
    */
   function choosePalette(palette: HuePalette): void {
-    setEngine({ ...engine, palette });
+    setEngine({ palette });
   }
 
   function chooseInterval(bars: number): void {
-    setEngine({ ...engine, colorChangeBars: bars });
+    setEngine({ colorChangeBars: bars });
   }
 
   function setPulse(pulseMs: number): void {
-    setEngine({ ...engine, pulseMs });
+    setEngine({ pulseMs });
   }
 
   function setBrightness(brightness: number): void {
-    setEngine({ ...engine, brightness });
+    setEngine({ brightness });
   }
 
   function setDepth(pulseDepth: number): void {
-    setEngine({ ...engine, pulseDepth });
+    setEngine({ pulseDepth });
   }
 
   /*

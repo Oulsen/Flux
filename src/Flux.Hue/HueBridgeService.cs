@@ -23,6 +23,31 @@ public sealed class HueBridgeService: BackgroundService {
   private readonly ILogger<HueBridgeService> _logger;
   private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
 
+  /// <summary>
+  /// Held across "write the choice down and announce it", which is one change and has
+  /// to look like one.
+  ///
+  /// Not <see cref="_gate"/>, which is held across awaits and so cannot be taken by the
+  /// synchronous setters, and which some of those setters deliberately do not wait for.
+  /// What this closes is narrower and real: every mutation here is a load-modify-save
+  /// against the settings file followed by a read-modify-write of
+  /// <see cref="_connection"/>, and <c>setLatencyOffset</c> and <c>setLightSettings</c>
+  /// arrive inline on each client's own receive loop. A laptop dragging brightness at
+  /// ten a second beside a phone tapping a room is two threads through here, and
+  /// interleaving them drops one of the two writes or leaves the file and the screen
+  /// disagreeing about which change won.
+  /// </summary>
+  private readonly object _state = new();
+
+  /// <summary>
+  /// Guards <see cref="_pairing"/> alone, so that cancelling a countdown and the
+  /// countdown finishing cannot race over a disposed source.
+  /// </summary>
+  private readonly object _pairingGate = new();
+
+  /// <summary>The countdown in flight, or null when nobody is pairing.</summary>
+  private CancellationTokenSource? _pairing;
+
   private HueConnection _connection;
 
   public HueBridgeService(
@@ -128,8 +153,25 @@ public sealed class HueBridgeService: BackgroundService {
         return false;
       }
 
-      await PollForTheLinkButtonAsync(bridge, cancellationToken).ConfigureAwait(false);
-      return true;
+      // Cancellable independently of the caller's token, because forgetting the bridge
+      // has to be able to end a countdown that is otherwise a minute of polling with
+      // the gate held - see ForgetAsync for what that minute costs.
+      CancellationTokenSource pairing = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+      lock(_pairingGate) {
+        _pairing = pairing;
+      }
+
+      try {
+        await PollForTheLinkButtonAsync(bridge, pairing.Token).ConfigureAwait(false);
+        return true;
+      } finally {
+        // Cleared before it is disposed, and both under the lock a cancel is taken
+        // under, so a cancel arriving now finds nothing rather than a dead source.
+        lock(_pairingGate) {
+          _pairing = null;
+          pairing.Dispose();
+        }
+      }
     } catch(HueBridgeException e) {
       Fail(e);
       return true;
@@ -151,8 +193,11 @@ public sealed class HueBridgeService: BackgroundService {
         return false;
       }
 
-      _settings.Save(_settings.Load() with { EntertainmentAreaId = areaId });
-      Update(connection => connection with { SelectedAreaId = areaId });
+      lock(_state) {
+        _settings.Save(_settings.Load() with { EntertainmentAreaId = areaId });
+        Update(connection => connection with { SelectedAreaId = areaId });
+      }
+
       return true;
     } finally {
       _gate.Release();
@@ -175,8 +220,11 @@ public sealed class HueBridgeService: BackgroundService {
       return false;
     }
 
-    _settings.Save(_settings.Load() with { LatencyOffsetMs = offsetMs });
-    Update(connection => connection with { LatencyOffsetMs = offsetMs });
+    lock(_state) {
+      _settings.Save(_settings.Load() with { LatencyOffsetMs = offsetMs });
+      Update(connection => connection with { LatencyOffsetMs = offsetMs });
+    }
+
     return true;
   }
 
@@ -198,8 +246,11 @@ public sealed class HueBridgeService: BackgroundService {
       return false;
     }
 
-    _settings.Save(_settings.Load() with { Light = settings });
-    Update(connection => connection with { Light = settings });
+    lock(_state) {
+      _settings.Save(_settings.Load() with { Light = settings });
+      Update(connection => connection with { Light = settings });
+    }
+
     return true;
   }
 
@@ -285,27 +336,47 @@ public sealed class HueBridgeService: BackgroundService {
   /// The bridge keeps its whitelist entry until somebody deletes it in the Hue app,
   /// so this is Flux forgetting the bridge and not the other way round. Pairing again
   /// creates a second entry rather than reusing the first.
+  ///
+  /// A countdown in flight is ended first, and then this waits its turn behind every
+  /// other bridge command, both of which it used to do neither of. The failure that
+  /// closes is a real sequence rather than a theoretical one: a connection that failed
+  /// keeps its bridge on screen, so the forget button is offered while somebody is
+  /// re-pairing from a phone. Cancelling nothing left the poll running with the gate
+  /// held, and the link press it was waiting for then wrote the key straight back and
+  /// drove the state to Ready - a forget silently undone, by a button somebody pressed
+  /// on purpose.
   /// </summary>
-  public void Forget() {
-    _credentials.Clear();
+  public async Task ForgetAsync(CancellationToken cancellationToken) {
+    lock(_pairingGate) {
+      _pairing?.Cancel();
+    }
 
-    // The latency offset and the light settings survive, and they are the only things
-    // here that should. One describes how long light takes to reach the room and the
-    // other describes how the room is meant to look, and neither is a fact about the
-    // bridge - so re-pairing after a network change must not silently discard a number
-    // somebody tuned by eye or a palette they picked for the night.
-    HueSettings previous = _settings.Load();
-    _settings.Save(HueSettings.Empty with { LatencyOffsetMs = previous.LatencyOffsetMs, Light = previous.Light });
-    _logger.LogInformation("The paired bridge has been forgotten.");
+    await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+    try {
+      _credentials.Clear();
 
-    Update(connection => connection with {
-      State = _options.Value.Enabled ? HueConnectionState.Unpaired : HueConnectionState.Disabled,
-      Bridge = null,
-      Areas = [],
-      SelectedAreaId = null,
-      PairingSecondsRemaining = null,
-      Message = null,
-    });
+      lock(_state) {
+        // The latency offset and the light settings survive, and they are the only
+        // things here that should. One describes how long light takes to reach the room
+        // and the other describes how the room is meant to look, and neither is a fact
+        // about the bridge - so re-pairing after a network change must not silently
+        // discard a number somebody tuned by eye or a palette they picked for the night.
+        HueSettings previous = _settings.Load();
+        _settings.Save(HueSettings.Empty with { LatencyOffsetMs = previous.LatencyOffsetMs, Light = previous.Light });
+        _logger.LogInformation("The paired bridge has been forgotten.");
+
+        Update(connection => connection with {
+          State = _options.Value.Enabled ? HueConnectionState.Unpaired : HueConnectionState.Disabled,
+          Bridge = null,
+          Areas = [],
+          SelectedAreaId = null,
+          PairingSecondsRemaining = null,
+          Message = null,
+        });
+      }
+    } finally {
+      _gate.Release();
+    }
   }
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
@@ -411,9 +482,11 @@ public sealed class HueBridgeService: BackgroundService {
       _logger.LogInformation("Bridge {BridgeId} at {Address} has {Count} entertainment area(s).", bridge.Id, bridge.Address, areas.Count);
 
       // Written on success only, so the hint is always an address that worked.
-      HueSettings stored = _settings.Load();
-      if(stored.LastBridgeAddress != bridge.Address) {
-        _settings.Save(stored with { LastBridgeAddress = bridge.Address });
+      lock(_state) {
+        HueSettings stored = _settings.Load();
+        if(stored.LastBridgeAddress != bridge.Address) {
+          _settings.Save(stored with { LastBridgeAddress = bridge.Address });
+        }
       }
 
       Update(connection => connection with {
@@ -467,18 +540,31 @@ public sealed class HueBridgeService: BackgroundService {
   }
 
   private void Update(Func<HueConnection, HueConnection> change) {
-    HueConnection updated = change(Connection);
-    if(updated == Connection) {
-      // A poll that changed nothing must not wake every connected page. The record
-      // compares field by field, so this catches the scalar no-ops - the same area
-      // chosen twice, a countdown redrawn on the same second. It deliberately does
-      // not catch a re-discovered list with identical contents: those are compared by
-      // reference, and re-announcing them costs one frame on a screen somebody is
-      // already watching.
-      return;
-    }
+    // Read, compared, written and announced under one lock, and re-entrant on purpose:
+    // the setters take it around a settings write as well, so their file and their
+    // broadcast are the same change. Without it the read-modify-write below is two
+    // threads' worth of "take the picture, edit one field, put it back", and the second
+    // one puts back a picture taken before the first one existed.
+    lock(_state) {
+      HueConnection updated = change(_connection);
+      if(updated == _connection) {
+        // A poll that changed nothing must not wake every connected page. The record
+        // compares field by field, so this catches the scalar no-ops - the same area
+        // chosen twice, a countdown redrawn on the same second. It deliberately does
+        // not catch a re-discovered list with identical contents: those are compared by
+        // reference, and re-announcing them costs one frame on a screen somebody is
+        // already watching.
+        return;
+      }
 
-    Volatile.Write(ref _connection, updated);
-    Changed?.Invoke(updated);
+      Volatile.Write(ref _connection, updated);
+
+      // Announced inside the lock rather than after it, so pages receive the changes in
+      // the order they happened. Two threads leaving the lock and then racing to raise
+      // the event can deliver the older picture last, and every screen keeps it. The
+      // handlers this reaches encode a frame and drop it into a bounded queue - none of
+      // them waits on anything, which is what makes holding the lock across them safe.
+      Changed?.Invoke(updated);
+    }
   }
 }

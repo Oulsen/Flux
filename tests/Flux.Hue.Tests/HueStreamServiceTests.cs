@@ -18,6 +18,7 @@ public class HueStreamServiceTests {
   private static readonly HueBridge Bridge = new HueBridge("ecb5fafffe0d1234", "192.168.1.51");
   private static readonly HueCredentials Credentials = new HueCredentials("ecb5fafffe0d1234", "app-key", "client-key");
   private static readonly HueArea Booth = new HueArea(Guid.Parse("22222222-2222-2222-2222-222222222222"), "Booth", 3, Streaming: false);
+  private static readonly HueArea Lounge = new HueArea(Guid.Parse("33333333-3333-3333-3333-333333333333"), "Lounge", 5, Streaming: false);
 
   [Fact]
   public async Task SendsFramesRatherThanChasingADeadlineForever() {
@@ -210,6 +211,103 @@ public class HueStreamServiceTests {
     Assert.False(harness.Service.Status().Running);
   }
 
+  /// <summary>
+  /// The reason a session has an identity at all.
+  ///
+  /// A pump wedged in a send outlives the stop that gave up joining it, and everything
+  /// it clears on its way out - the running flag, the frame rate - belongs by then to
+  /// whatever somebody started in the meantime. The page reads that as a stream that
+  /// died, offers the start button again, and the press behind it aims a second DTLS
+  /// handshake at a bridge that grants exactly one session.
+  /// </summary>
+  [Fact]
+  public async Task APumpAbandonedByAStopCannotReportTheStreamAfterItAsStopped() {
+    Harness harness = await Harness.ReadyAsync();
+    harness.Stream.HoldSends();
+
+    Assert.True(await harness.Service.StartAsync(TestContext.Current.CancellationToken));
+    await WaitUntilAsync(() => harness.Stream.Sends > 0);
+
+    // The join times out: nothing is going to finish the send that pump is inside.
+    harness.Service.Stop();
+    Assert.False(harness.Service.Status().Running);
+
+    Assert.True(await harness.Service.StartAsync(TestContext.Current.CancellationToken));
+    Assert.True(harness.Service.Status().Running);
+
+    // The abandoned pump only now notices it was cancelled and runs its own teardown.
+    harness.Stream.ReleaseSends();
+    await WaitUntilAsync(() => harness.Stream.Disposed);
+    await Task.Delay(100, TestContext.Current.CancellationToken);
+
+    Assert.True(harness.Service.Status().Running, "the abandoned pump reported the live stream as stopped");
+    Assert.False(harness.Factory.Reopened.Disposed, "the abandoned pump closed the session that replaced it");
+
+    harness.Service.Stop();
+  }
+
+  /// <summary>
+  /// Choosing another room while a session is open used to leave the pump streaming to
+  /// the previous one: the page showed the new room selected and a stop button, and the
+  /// lights in the old room kept running with nothing on screen accounting for them.
+  /// </summary>
+  [Fact]
+  public async Task ChoosingAnotherRoomClosesTheSessionOpenOnTheOldOne() {
+    Harness harness = await Harness.ReadyAsync();
+    harness.Client.Areas = [Booth, Lounge];
+    await harness.Bridge.TryRefreshAreasAsync(TestContext.Current.CancellationToken);
+
+    Assert.True(await harness.Service.StartAsync(TestContext.Current.CancellationToken));
+    await WaitUntilAsync(() => harness.Stream.Sends > 0);
+
+    Assert.True(await harness.Bridge.SelectAreaAsync(Lounge.Id, TestContext.Current.CancellationToken));
+
+    await WaitUntilAsync(() => !harness.Service.Status().Running);
+    Assert.True(harness.Stream.Disposed);
+  }
+
+  /// <summary>
+  /// Forgetting the bridge is the worse half of the same defect. The credentials go and
+  /// the screen returns to unpaired, while the session stays open holding the bridge's
+  /// one entertainment slot - so the next pairing cannot stream and nothing says why.
+  /// </summary>
+  [Fact]
+  public async Task ForgettingTheBridgeReleasesTheSessionItWasHolding() {
+    Harness harness = await Harness.ReadyAsync();
+
+    Assert.True(await harness.Service.StartAsync(TestContext.Current.CancellationToken));
+    await WaitUntilAsync(() => harness.Stream.Sends > 0);
+
+    await harness.Bridge.ForgetAsync(TestContext.Current.CancellationToken);
+
+    await WaitUntilAsync(() => !harness.Service.Status().Running);
+    Assert.True(harness.Stream.Disposed);
+  }
+
+  /// <summary>
+  /// Two phones on one page is the normal case, and the second press lands during the
+  /// first handshake. Answering it false reaches that phone as the refusal text - choose
+  /// a reachable room, stop whatever else is streaming - a moment before the lights come
+  /// on, which is a red message about something that is working.
+  /// </summary>
+  [Fact]
+  public async Task ASecondStartDuringTheHandshakeIsNotARefusal() {
+    Harness harness = await Harness.ReadyAsync();
+    harness.Factory.Hang = true;
+
+    Task<bool> first = harness.Service.StartAsync(TestContext.Current.CancellationToken);
+    await WaitUntilAsync(() => harness.Factory.Opens > 0);
+
+    Assert.True(await harness.Service.StartAsync(TestContext.Current.CancellationToken));
+
+    // And it is the same attempt rather than a competing one, which is what the bridge's
+    // single session makes worth asserting.
+    Assert.Equal(1, harness.Factory.Opens);
+
+    harness.Service.Stop();
+    Assert.False(await first);
+  }
+
   [Fact]
   public async Task StoppingSomethingThatIsNotRunningIsNotAFailure() {
     Harness harness = await Harness.ReadyAsync();
@@ -317,6 +415,16 @@ public class HueStreamServiceTests {
   private sealed class FakeStreamFactory: IHueStreamFactory {
     public FakeStream Opened { get; } = new FakeStream();
 
+    /// <summary>
+    /// What a second open gets, so a test can tell the two sessions apart.
+    ///
+    /// A distinct object rather than the same one, because the case worth testing is
+    /// precisely the one where a pump from the first session is still alive while the
+    /// second is running: sharing a stream would let either of them account for what
+    /// the other did.
+    /// </summary>
+    public FakeStream Reopened { get; } = new FakeStream();
+
     public int Opens { get; private set; }
 
     public Exception? Throws { get; set; }
@@ -336,12 +444,15 @@ public class HueStreamServiceTests {
         await Task.Delay(Timeout.Infinite, CancellationToken.None).ConfigureAwait(false);
       }
 
-      return this.Opened;
+      return this.Opens == 1 ? this.Opened : this.Reopened;
     }
   }
 
   /// <summary>A session that counts what the loop asked it to do.</summary>
   private sealed class FakeStream: IHueStream {
+    /// <summary>Open unless a test closes it, which wedges the pump inside a send.</summary>
+    private readonly ManualResetEventSlim sending = new ManualResetEventSlim(initialState: true);
+
     private int sends;
 
     public int ChannelCount => 3;
@@ -359,12 +470,22 @@ public class HueStreamServiceTests {
 
     public void SetAll(HueColor color) => this.Last = color;
 
+    /// <summary>
+    /// Wedges the pump in its next send and leaves it there, which is a transport that
+    /// has stopped answering - the state a stop cannot join its way out of.
+    /// </summary>
+    public void HoldSends() => this.sending.Reset();
+
+    public void ReleaseSends() => this.sending.Set();
+
     public void Send() {
       Interlocked.Increment(ref this.sends);
 
       if(this.ThrowOnSend) {
         throw new ObjectDisposedException(nameof(FakeStream));
       }
+
+      this.sending.Wait();
     }
 
     public void Dispose() {

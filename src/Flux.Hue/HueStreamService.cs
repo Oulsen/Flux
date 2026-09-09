@@ -55,6 +55,15 @@ public sealed class HueStreamService: IDisposable {
   /// </summary>
   private static readonly TimeSpan OpenTimeout = TimeSpan.FromSeconds(10);
 
+  /// <summary>
+  /// How long a stop waits for the pump to notice before giving up on it.
+  ///
+  /// Bounded because the pump can be inside a send the transport will never finish, and
+  /// a stop that waited for one would be as stuck as the thing it was ending. What
+  /// happens after the wait is the interesting part - see <see cref="Session"/>.
+  /// </summary>
+  private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(2);
+
   private readonly IHueStreamFactory factory;
   private readonly HueBridgeService bridge;
   private readonly ICredentialStore credentials;
@@ -73,8 +82,10 @@ public sealed class HueStreamService: IDisposable {
   private readonly object gate = new();
   private readonly object colorGate = new();
 
-  private CancellationTokenSource? stopping;
-  private Thread? thread;
+  /// <summary>
+  /// The attempt that owns the service's state, or null when nothing does.
+  /// </summary>
+  private Session? current;
 
   /// <summary>
   /// What an open stream sends until something has an opinion about colour.
@@ -88,9 +99,7 @@ public sealed class HueStreamService: IDisposable {
   private static readonly HueColor Holding = new HueColor(0.35, 0.35, 0.35);
 
   private HueColor color = Holding;
-  private long frames;
-  private double fps;
-  private volatile bool running;
+  private bool running;
   private bool starting;
 
   public HueStreamService(
@@ -108,6 +117,12 @@ public sealed class HueStreamService: IDisposable {
     this.options = options;
     this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     this.lights = lights;
+
+    // Subscribed from the constructor, which this project otherwise avoids, because
+    // this service deliberately has no start hook: nothing may open a session merely
+    // because Flux launched. The usual hazard - an event reaching a half-built object -
+    // does not apply, since the handler reads only the fields assigned above it.
+    this.bridge.Changed += this.OnBridgeChanged;
   }
 
   /// <summary>Raised when the stream starts or stops, including when it stops by itself.</summary>
@@ -138,7 +153,14 @@ public sealed class HueStreamService: IDisposable {
 
   /// <summary>The current reading, complete on every read.</summary>
   public HueStreamStatus Status() {
-    return new HueStreamStatus(this.running, this.running ? Volatile.Read(ref this.fps) : 0);
+    lock(this.gate) {
+      // The rate is read off the session rather than off the service, so a pump that
+      // outlived the stop that abandoned it cannot contribute to the number a page is
+      // shown: it is measuring into a session nothing reads any more.
+      return this.running && this.current is { } session
+        ? new HueStreamStatus(Running: true, session.Fps)
+        : new HueStreamStatus(Running: false, Fps: 0);
+    }
   }
 
   /// <summary>
@@ -158,11 +180,16 @@ public sealed class HueStreamService: IDisposable {
     HueBridge located;
     HueCredentials keys;
     Guid areaId;
+    Session session;
     CancellationToken token;
 
     lock(this.gate) {
       if(this.running || this.starting || !this.options.Value.Enabled) {
-        return this.running;
+        // A handshake in flight answers yes, even though nothing is streaming yet. The
+        // second client pressing start is watching the first attempt succeed, and false
+        // here reaches them as the refusal text - choose a reachable room, stop whatever
+        // else is streaming - a moment before the lights come on.
+        return this.running || this.starting;
       }
 
       HueConnection connection = this.bridge.Connection;
@@ -176,9 +203,9 @@ public sealed class HueStreamService: IDisposable {
       keys = keysNow;
       areaId = chosen;
 
-      this.stopping?.Dispose();
-      this.stopping = new CancellationTokenSource();
-      token = this.stopping.Token;
+      session = new Session(areaId);
+      this.current = session;
+      token = session.Cancellation.Token;
 
       // Not `running`. That flag is what the page reads as "Flux is streaming", and a
       // handshake in progress is not streaming - saying otherwise is how a stream that
@@ -196,13 +223,13 @@ public sealed class HueStreamService: IDisposable {
       IHueStream stream = await this.OpenAsync(located, keys, areaId, linked.Token).ConfigureAwait(false);
 
       lock(this.gate) {
-        if(token.IsCancellationRequested) {
+        if(token.IsCancellationRequested || !ReferenceEquals(this.current, session)) {
           stream.Dispose();
           return false;
         }
 
         this.running = true;
-        this.thread = new Thread(() => this.Run(stream, token)) {
+        session.Thread = new Thread(() => this.Run(stream, session)) {
           Name = "Flux Hue stream",
           IsBackground = true,
 
@@ -212,7 +239,7 @@ public sealed class HueStreamService: IDisposable {
           Priority = ThreadPriority.AboveNormal,
         };
 
-        this.thread.Start();
+        session.Thread.Start();
       }
 
       // Whatever was said about the last attempt no longer applies.
@@ -225,9 +252,24 @@ public sealed class HueStreamService: IDisposable {
       this.logger.LogWarning(e, "The light stream could not be opened.");
       return false;
     } finally {
+      Session? abandoned = null;
+
       lock(this.gate) {
         this.starting = false;
+
+        // A session whose handshake never produced a pump owns nothing, and leaving it
+        // in place would have the next stop waiting on a thread that was never created
+        // and the next start refused by a token already cancelled.
+        if(ReferenceEquals(this.current, session) && session.Thread is null) {
+          this.current = null;
+          abandoned = session;
+        }
       }
+
+      // Outside the lock, and only for a session no pump ever took: the thread owns the
+      // token while it lives, and disposing one underneath a wedged pump turns a stream
+      // that will not stop into a process that will not survive.
+      abandoned?.Dispose();
     }
   }
 
@@ -305,38 +347,96 @@ public sealed class HueStreamService: IDisposable {
   /// exactly what it asked for.
   /// </summary>
   public void Stop() {
-    Thread? leaving;
+    Session? leaving;
 
     lock(this.gate) {
-      this.stopping?.Cancel();
-      leaving = this.thread;
-      this.thread = null;
+      leaving = this.current;
+      leaving?.Cancellation.Cancel();
     }
 
-    leaving?.Join(TimeSpan.FromSeconds(2));
+    leaving?.Thread?.Join(StopTimeout);
 
-    // Cleared here and not only in the loop's own finally, which is the fix for a real
-    // lock-up: a thread stuck somewhere uncancellable never reaches that finally, the
-    // join times out, and the flag stays true forever - leaving a page showing a
-    // stream that is not running and a stop button that cannot end it.
-    this.running = false;
-    Volatile.Write(ref this.fps, 0);
-    this.Changed?.Invoke();
+    bool changed = false;
+
+    lock(this.gate) {
+      // Cleared here and not only in the pump's own finally, which is the fix for a real
+      // lock-up: a thread stuck somewhere uncancellable never reaches that finally, the
+      // join times out, and the flag stays true forever - leaving a page showing a
+      // stream that is not running and a stop button that cannot end it.
+      //
+      // A session still opening is left alone beyond the cancellation above, because
+      // it has no pump to abandon and its own start is about to tidy it away.
+      if(ReferenceEquals(this.current, leaving) && leaving is { Thread: not null }) {
+        this.current = null;
+        changed = this.running;
+        this.running = false;
+      }
+    }
+
+    if(changed) {
+      this.Changed?.Invoke();
+    }
+  }
+
+  /// <summary>
+  /// Closes the session without making the caller wait for the pump to notice.
+  ///
+  /// <see cref="Stop"/> can spend <see cref="StopTimeout"/> inside its join, and the two
+  /// callers that reach it from somewhere shared must not: a web receive loop blocked
+  /// for two seconds delays every tap and tempo queued behind the stop, and the bridge's
+  /// change notification is raised while it holds the lock every page reads through.
+  /// </summary>
+  public Task StopAsync() {
+    return Task.Run(this.Stop);
   }
 
   public void Dispose() {
+    this.bridge.Changed -= this.OnBridgeChanged;
     this.Stop();
-    this.stopping?.Dispose();
   }
 
-  private void Run(IHueStream stream, CancellationToken token) {
+  /// <summary>
+  /// Ends a session whose target has moved out from under it.
+  ///
+  /// Choosing another room, or forgetting the bridge, leaves the pump sending to the
+  /// room it opened against: the page shows the new room selected and a stop button,
+  /// while the lights in the old one keep running. A forgotten bridge is the worse half
+  /// - its one entertainment slot stays held by a session nothing on screen admits to,
+  /// so the next pairing cannot stream and nothing says why.
+  /// </summary>
+  private void OnBridgeChanged(HueConnection connection) {
+    Guid target;
+
+    lock(this.gate) {
+      if(!this.running || this.current is not { Thread: not null } session) {
+        return;
+      }
+
+      target = session.AreaId;
+    }
+
+    if(connection.Bridge is not null && connection.SelectedAreaId == target) {
+      return;
+    }
+
+    this.logger.LogInformation("The light stream's target changed, so its session is being closed.");
+
+    // Off this thread, because this runs inside the bridge's own notification: a stop
+    // that joined for two seconds here would hold every page's picture of the bridge
+    // still for as long as it took.
+    _ = this.StopAsync();
+  }
+
+  private void Run(IHueStream stream, Session session) {
+    CancellationToken token = session.Cancellation.Token;
+
     try {
       this.logger.LogInformation(
         "Streaming to {Channels} channel(s) at {Hz} Hz.",
         stream.ChannelCount,
         this.options.Value.StreamHz);
 
-      this.Pump(stream, token);
+      this.Pump(stream, session, token);
     } catch(OperationCanceledException) {
       // An ordinary stop, or the host going down.
     } catch(Exception e) {
@@ -356,20 +456,37 @@ public sealed class HueStreamService: IDisposable {
         this.logger.LogWarning(e, "The light stream did not close cleanly.");
       }
 
-      this.running = false;
-      Volatile.Write(ref this.fps, 0);
+      bool mine;
+
+      lock(this.gate) {
+        // Only the session that still owns the service may clear its state. A pump that
+        // a stop gave up waiting for arrives here long after somebody started another
+        // one, and clearing then reports a live stream as stopped: the page offers the
+        // start button again, and the press behind it opens a second DTLS session
+        // against a bridge that grants exactly one.
+        mine = ReferenceEquals(this.current, session);
+
+        if(mine) {
+          this.current = null;
+          this.running = false;
+        }
+      }
+
+      session.Dispose();
 
       this.logger.LogInformation("The light stream has stopped.");
-      this.Changed?.Invoke();
+
+      if(mine) {
+        this.Changed?.Invoke();
+      }
     }
   }
 
-  private void Pump(IHueStream stream, CancellationToken token) {
+  private void Pump(IHueStream stream, Session session, CancellationToken token) {
     long period = Stopwatch.Frequency / Math.Max(1, this.options.Value.StreamHz);
     long next = Stopwatch.GetTimestamp() + period;
     long measuredAt = Stopwatch.GetTimestamp();
-
-    this.frames = 0;
+    long frames = 0;
 
     while(!token.IsCancellationRequested) {
       long now = Stopwatch.GetTimestamp();
@@ -389,7 +506,7 @@ public sealed class HueStreamService: IDisposable {
       stream.SetAll((this.lights?.Render() ?? this.Color).Clamped());
       stream.Send();
 
-      this.frames++;
+      frames++;
 
       // Advanced by exactly one period rather than re-based on now. Re-basing is the
       // trap: every frame would then start its wait from wherever the last one
@@ -404,10 +521,46 @@ public sealed class HueStreamService: IDisposable {
 
       long since = now - measuredAt;
       if(since >= Stopwatch.Frequency) {
-        Volatile.Write(ref this.fps, this.frames * (double)Stopwatch.Frequency / since);
-        this.frames = 0;
+        session.Fps = frames * (double)Stopwatch.Frequency / since;
+        frames = 0;
         measuredAt = now;
       }
+    }
+  }
+
+  /// <summary>
+  /// One attempt at streaming, and the identity that decides whether it still owns the
+  /// service.
+  ///
+  /// It exists because <see cref="Stop"/> gives up on a pump it cannot join. Without an
+  /// identity that abandoned pump eventually reaches its own finally and clears the
+  /// running flag and the frame rate - which by then belong to a session somebody
+  /// started afterwards. Everything a session can write is either kept here or written
+  /// only after a check that it is still the current one.
+  /// </summary>
+  private sealed class Session: IDisposable {
+    private double fps;
+
+    public Session(Guid areaId) {
+      this.AreaId = areaId;
+    }
+
+    /// <summary>The area this session opened against, so a change of target is noticeable.</summary>
+    public Guid AreaId { get; }
+
+    public CancellationTokenSource Cancellation { get; } = new CancellationTokenSource();
+
+    /// <summary>The pump, once a handshake produced one. Null while the session is still opening.</summary>
+    public Thread? Thread { get; set; }
+
+    /// <summary>Frames a second this session measured, written by its pump and read by anyone.</summary>
+    public double Fps {
+      get => Volatile.Read(ref this.fps);
+      set => Volatile.Write(ref this.fps, value);
+    }
+
+    public void Dispose() {
+      this.Cancellation.Dispose();
     }
   }
 }

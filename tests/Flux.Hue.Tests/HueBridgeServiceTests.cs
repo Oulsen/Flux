@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
 using Xunit;
 
 namespace Flux.Hue.Tests;
@@ -238,7 +239,7 @@ public class HueBridgeServiceTests {
     harness.Client.Areas = [Living];
     await harness.RunStartupAsync();
 
-    harness.Service.Forget();
+    await harness.Service.ForgetAsync(TestContext.Current.CancellationToken);
 
     Assert.Null(harness.Credentials.Stored);
     Assert.Null(harness.Settings.Stored.EntertainmentAreaId);
@@ -395,12 +396,88 @@ public class HueBridgeServiceTests {
     await harness.RunStartupAsync();
     harness.Service.TrySetLatencyOffset(75);
 
-    harness.Service.Forget();
+    await harness.Service.ForgetAsync(TestContext.Current.CancellationToken);
 
     Assert.Null(harness.Credentials.Stored);
     Assert.Null(harness.Settings.Stored.EntertainmentAreaId);
     Assert.Equal(75, harness.Settings.Stored.LatencyOffsetMs);
     Assert.Equal(75, harness.Service.Connection.LatencyOffsetMs);
+  }
+
+  /// <summary>
+  /// The sequence that used to undo a forget: a bridge on screen from a failed
+  /// connection, somebody re-pairing from a phone, and the forget button pressed on the
+  /// laptop while the countdown is still polling. Taking no gate and cancelling nothing,
+  /// the forget cleared the key and the poll wrote it straight back a moment later.
+  /// </summary>
+  [Fact]
+  public async Task ForgettingEndsAPairingCountdownRatherThanLettingItWriteTheKeyBack() {
+    Harness harness = new Harness();
+    harness.Client.Bridges = [Bridge];
+    harness.Client.Areas = [Living];
+    harness.Client.PairAnswers.Enqueue(Credentials);
+    await harness.Service.DiscoverAsync(TestContext.Current.CancellationToken);
+
+    // The link press is held until the forget has been asked for, which is the ordering
+    // that matters: any other one is a race this test would pass without the fix.
+    harness.Client.HoldTheLinkButton();
+    Task<bool> pairing = harness.Service.PairAsync(Bridge.Id, TestContext.Current.CancellationToken);
+    await WaitUntilAsync(() => harness.Client.PairAttempts > 0);
+
+    Task forgetting = harness.Service.ForgetAsync(TestContext.Current.CancellationToken);
+    harness.Client.ReleaseTheLinkButton();
+
+    await forgetting;
+
+    Assert.Null(harness.Credentials.Stored);
+    Assert.Equal(HueConnectionState.Unpaired, harness.Service.Connection.State);
+    Assert.Null(harness.Service.Connection.Bridge);
+    Assert.Null(harness.Service.Connection.PairingSecondsRemaining);
+
+    // Observed rather than abandoned: the pairing loop is cancelled mid-flight, and a
+    // cancellation is the expected way for it to end here.
+    await IgnoringCancellationAsync(pairing);
+  }
+
+  /// <summary>
+  /// The other half of the same fix. Waiting for the gate alone would mean a forget
+  /// pressed during a countdown sat there for the rest of the pairing window - a minute
+  /// of a button that looks broken, on the screen of somebody who is standing in front
+  /// of a bridge they have decided not to use.
+  /// </summary>
+  [Fact]
+  public async Task ForgettingDoesNotWaitOutACountdownNobodyIsGoingToFinish() {
+    Harness harness = new Harness(options => options.PairingWindow = TimeSpan.FromMinutes(1));
+    harness.Client.Bridges = [Bridge];
+    await harness.Service.DiscoverAsync(TestContext.Current.CancellationToken);
+
+    Task<bool> pairing = harness.Service.PairAsync(Bridge.Id, TestContext.Current.CancellationToken);
+    await WaitUntilAsync(() => harness.Service.Connection.State == HueConnectionState.Pairing);
+
+    Stopwatch waited = Stopwatch.StartNew();
+    await harness.Service.ForgetAsync(TestContext.Current.CancellationToken);
+
+    // Generous, because what is being caught is a wait of a whole minute rather than a
+    // slow machine.
+    Assert.True(waited.Elapsed < TimeSpan.FromSeconds(10), $"the forget waited {waited.Elapsed.TotalSeconds:F1}s for the countdown to run out");
+    Assert.Equal(HueConnectionState.Unpaired, harness.Service.Connection.State);
+
+    await IgnoringCancellationAsync(pairing);
+  }
+
+  private static async Task IgnoringCancellationAsync(Task task) {
+    try {
+      await task;
+    } catch(OperationCanceledException) {
+    }
+  }
+
+  private static async Task WaitUntilAsync(Func<bool> condition) {
+    for(int attempt = 0; attempt < 250 && !condition(); attempt++) {
+      await Task.Delay(20, TestContext.Current.CancellationToken);
+    }
+
+    Assert.True(condition(), "the bridge never reached the state this test was waiting for");
   }
 
   private sealed class Harness {

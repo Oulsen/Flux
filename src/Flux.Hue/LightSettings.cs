@@ -22,8 +22,10 @@ namespace Flux.Hue;
 ///
 /// Counted in bars and not in beats, because a colour that changes on a downbeat is
 /// heard as part of the music and one that changes three beats into a bar is heard as
-/// a fault. Four beats to the bar is assumed throughout: it is what the beat grid
-/// counts in and what <see cref="Flux.Beat.BeatEvent.PositionInBar"/> reports against.
+/// a fault. How long a bar is comes from <see cref="Flux.Beat.BeatOptions.Quantum"/>,
+/// which is what the beat grid counts in and what
+/// <see cref="Flux.Beat.BeatEvent.PositionInBar"/> reports against - four by default,
+/// and nothing here restates that number.
 /// </param>
 /// <param name="PulseMs">
 /// How long a beat's brightness pulse takes to fade out, or zero for no pulse at all.
@@ -61,9 +63,6 @@ public sealed record LightSettings(
   int PulseMs,
   int Brightness = 100,
   int PulseDepth = 85) {
-  /// <summary>Beats to the bar, which is what the beat grid counts in.</summary>
-  public const int BeatsPerBar = 4;
-
   /// <summary>
   /// The longest interval between colour changes that is still a colour change.
   ///

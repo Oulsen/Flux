@@ -156,8 +156,23 @@
     socket?.send({ type: 'setLatencyOffset', data: { offsetMs } });
   }
 
-  function setLightSettings(engine: HueEngineData): void {
-    socket?.send({ type: 'setLightSettings', data: engine });
+  /**
+   * Sends one complete statement of how the lights should look, from a change to one
+   * part of it.
+   *
+   * The whole record goes on the wire because that is what the message is, but it is
+   * composed from the server's picture with this page's own outstanding changes over
+   * it. Composed from the server's picture alone, a control carries the other four
+   * fields as this page last heard them, so two phones inside one round trip undo each
+   * other field by field.
+   */
+  function setLightSettings(change: Partial<HueEngineData>): void {
+    if (store.hue === null) {
+      return;
+    }
+
+    store.pendingEngine = { ...store.pendingEngine, ...change };
+    socket?.send({ type: 'setLightSettings', data: { ...store.hue.engine, ...store.pendingEngine } });
   }
 
   function startStream(): void {
@@ -239,6 +254,7 @@
         <h2>lights</h2>
         <LightsPanel
           hue={store.hue}
+          engine={{ ...store.hue.engine, ...store.pendingEngine }}
           light={store.light}
           bpm={store.grid?.bpm ?? null}
           setEngine={setLightSettings}

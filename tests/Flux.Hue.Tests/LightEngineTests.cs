@@ -232,6 +232,47 @@ public class LightEngineTests {
   }
 
   /// <summary>
+  /// How long a bar is comes from the grid's own quantum rather than from a four
+  /// written into the engine.
+  ///
+  /// At eight beats to the bar a downbeat lands every eight indices, so dividing by four
+  /// steps the bar count twice per bar: "every two bars" becomes every four, or stops
+  /// happening at all, depending on where the grid's anchor fell. Four is still the
+  /// default and nothing about the tuned behaviour moves - this is the setting being
+  /// honoured rather than a value being re-derived.
+  /// </summary>
+  [Theory]
+  [InlineData(0L, true)]
+  [InlineData(8L, false)]
+  [InlineData(16L, true)]
+  [InlineData(24L, false)]
+  public void HowLongABarIsComesFromTheQuantumAndNotFromAFourInTheEngine(long index, bool changes) {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0), quantum: 8);
+
+    double before = HueOf(harness.Engine.Render());
+    double after = harness.SettledHue(index);
+
+    Assert.Equal(changes, Separation(after, before) > HueTolerance);
+  }
+
+  /// <summary>The fallback counts in the same unit, for the same reason.</summary>
+  [Fact]
+  public void TheFallbackWithoutADownbeatCountsTheQuantumToo() {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 1, PulseMs: 0), quantum: 8);
+
+    List<double> hues = [];
+    for(long index = 0; index < 17; index++) {
+      hues.Add(harness.SettledHue(index, barAligned: false));
+    }
+
+    for(long index = 1; index < 17; index++) {
+      bool changed = Separation(hues[(int)index], hues[(int)index - 1]) > HueTolerance;
+
+      Assert.Equal(index % 8 == 0, changed);
+    }
+  }
+
+  /// <summary>
   /// With no downbeat known there is no bar to land on, so the fallback is the scene's
   /// raw form - every n-th beat from wherever the numbering starts. Changing on a
   /// guessed phase is worth more than never changing, and an alignment arriving later
@@ -278,12 +319,13 @@ public class LightEngineTests {
   }
 
   /// <summary>
-  /// The tight palettes are the interesting case and the reason the engine keeps the
+  /// A tight palette is the interesting case and the reason the engine keeps the
   /// farthest candidate rather than the last one. <c>Ocean</c> spans fifty degrees in
-  /// total, so no two of its hues are the required 0.12 apart and every one of the
-  /// fifty attempts fails - taking whichever was tried last can then hand back the
-  /// colour already on screen, and a change nobody can see is the one thing the
-  /// separation rule exists to prevent.
+  /// total, where the required 0.12 is forty-three, so only its two extremes clear the
+  /// threshold and from the other six hues every one of the fifty attempts fails -
+  /// taking whichever was tried last can then hand back the colour already on screen,
+  /// and a change nobody can see is the one thing the separation rule exists to
+  /// prevent.
   /// </summary>
   [Fact]
   public void ATightPaletteStillChangesColourEvenThoughItCannotSatisfyTheSeparation() {
@@ -505,7 +547,7 @@ public class LightEngineTests {
   }
 
   private sealed class Harness {
-    internal Harness(LightSettings? light = null, int offsetMs = 0, int seed = 20260909) {
+    internal Harness(LightSettings? light = null, int offsetMs = 0, int seed = 20260909, int quantum = 4) {
       Settings.Stored = HueSettings.Empty with { Light = light, LatencyOffsetMs = offsetMs };
 
       Bridge = new HueBridgeService(
@@ -518,11 +560,19 @@ public class LightEngineTests {
       // A real scheduler, never started. The engine needs one to subscribe to and the
       // tests hand it beats directly, so nothing here runs a thread or invents a tempo.
       BeatScheduler scheduler = new BeatScheduler(
-        new BeatGrid(Clock, quantum: 4, TimeSpan.FromSeconds(2)),
+        new BeatGrid(Clock, quantum, TimeSpan.FromSeconds(2)),
         Clock,
         NullLogger<BeatScheduler>.Instance);
 
-      Engine = new LightEngine(scheduler, Bridge, Clock, NullLogger<LightEngine>.Instance, new Random(seed));
+      Quantum = quantum;
+
+      Engine = new LightEngine(
+        scheduler,
+        Bridge,
+        Clock,
+        Options.Create(new BeatOptions { Quantum = quantum }),
+        NullLogger<LightEngine>.Instance,
+        new Random(seed));
     }
 
     internal FakeClock Clock { get; } = new FakeClock();
@@ -532,6 +582,9 @@ public class LightEngineTests {
     internal HueBridgeService Bridge { get; }
 
     internal LightEngine Engine { get; }
+
+    /// <summary>Beats to the bar, which the grid and the engine are both built on.</summary>
+    internal int Quantum { get; }
 
     /// <summary>Delivers a beat aimed at this instant.</summary>
     internal void BeatNow(long index, int positionInBar = 1, bool barAligned = true) {
@@ -546,7 +599,7 @@ public class LightEngineTests {
     /// no answer rather than one about how far it had got.
     /// </summary>
     internal double SettledHue(long index, bool barAligned = true) {
-      BeatNow(index, positionInBar: barAligned ? (int)FloorMod(index, 4) + 1 : 1, barAligned);
+      BeatNow(index, positionInBar: barAligned ? (int)FloorMod(index, Quantum) + 1 : 1, barAligned);
       Engine.Render();
 
       Clock.Advance(TimeSpan.FromSeconds(2));

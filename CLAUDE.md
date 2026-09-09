@@ -10,11 +10,13 @@ there is not checkable by anyone.
 That audit trail is scoped to audio beat detection and does not cover the light
 engine, which is deliberate rather than an omission: the light engine's tuned
 numbers were not derived, they were carried across. Eight palettes as hue
-degrees, four beats to the bar, the 0.12 hue separation, 50 attempts at meeting
-it, the 5.0-per-second transition rate and the 240 ms default pulse all come
-from the scene this project reimplements, and each is documented where it is
-declared - `src/Flux.Hue/LightPalette.cs`, `LightSettings.cs` and
-`LightEngine.cs`. The standing rule for that material is that structure gets
+degrees, the 0.12 hue separation, 50 attempts at meeting it, the
+5.0-per-second transition rate and the 240 ms default pulse all come from the
+scene this project reimplements, and each is documented where it is declared -
+`src/Flux.Hue/LightPalette.cs`, `LightSettings.cs` and `LightEngine.cs`. How
+long a bar is is not among them: it is `Beat:Quantum`, which predates the light
+engine and is Flux's own, and the engine reads it rather than restating four.
+The standing rule for the carried-across material is that structure gets
 rewritten while values somebody arrived at by listening get copied unchanged,
 so do not re-derive one from colour theory or from a fresh reading of the
 hardware: a plausible replacement would look entirely reasonable and would

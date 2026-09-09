@@ -7,17 +7,23 @@
   interface Props {
     /** The bridge picture. Only rendered when there is a room to stream to. */
     hue: HueData;
+    /**
+     * How the lights are set, as this page believes it: the server's answer with this
+     * page's own unconfirmed changes over it. Separate from `hue.engine` so the
+     * controls do not fight a value that is still in the post.
+     */
+    engine: HueEngineData;
     /** Non-null exactly while Flux is streaming. The only field that says so. */
     light: LightData | null;
     /** The tempo, so the latency offset can be said in beats. */
     bpm: number | null;
-    setEngine: (engine: HueEngineData) => void;
+    setEngine: (change: Partial<HueEngineData>) => void;
     setOffset: (offsetMs: number) => void;
     startStream: () => void;
     stopStream: () => void;
   }
 
-  const { hue, light, bpm, setEngine, setOffset, startStream, stopStream }: Props = $props();
+  const { hue, engine, light, bpm, setEngine, setOffset, startStream, stopStream }: Props = $props();
 
   const streaming = $derived(light !== null);
 </script>
@@ -58,7 +64,7 @@
     {/if}
   </div>
 
-  <LightEngineControls engine={hue.engine} {setEngine} />
+  <LightEngineControls {engine} {setEngine} />
 
   <LatencySlider offsetMs={hue.latencyOffsetMs} {bpm} {setOffset} />
 </div>

@@ -7,7 +7,7 @@
     min: number;
     max: number;
     step: number;
-    /** The value the server says is in force. */
+    /** The value in force, including a change this client has made and sent. */
     value: number;
     /** The value in words. Every setting here means something a bare number does not say. */
     format: (value: number) => string;
@@ -58,9 +58,14 @@
    *
    * A slider bound straight to the server's value fights the finger dragging it: the
    * value only catches up on the throttle, so every frame arriving mid-drag would snap
-   * the thumb back. The drag owns the position instead, and hands it back the moment
-   * the server agrees - which is what keeps a value set from a second phone able to
-   * move this slider at all.
+   * the thumb back. The drag owns the position instead, and hands it back as soon as
+   * `value` agrees with it - which is what keeps a value set from a second phone able
+   * to move this slider at all.
+   *
+   * That handover relies on the caller passing back what this control committed rather
+   * than only what the server has confirmed. A `value` that can disagree indefinitely
+   * is a thumb that never reconciles, parked on a number nothing else in the system
+   * holds.
    */
   let dragged = $state<number | null>(null);
 

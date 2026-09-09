@@ -6,6 +6,8 @@
 /// button yet, and then stop refusing.
 /// </summary>
 internal sealed class FakeHueBridgeClient: IHueBridgeClient {
+  private TaskCompletionSource? _pressed;
+
   /// <summary>What discovery answers with.</summary>
   public List<HueBridge> Bridges { get; set; } = [];
 
@@ -35,9 +37,27 @@ internal sealed class FakeHueBridgeClient: IHueBridgeClient {
       : Task.FromResult<IReadOnlyList<HueBridge>>([.. Bridges]);
   }
 
-  public Task<HueCredentials?> TryPairAsync(HueBridge bridge, CancellationToken cancellationToken) {
+  /// <summary>
+  /// Holds the next attempt open until <see cref="ReleaseTheLinkButton"/>, so a test can
+  /// decide the exact moment somebody presses it. The counter is raised before the wait,
+  /// so a test can tell that an attempt is in flight.
+  /// </summary>
+  public void HoldTheLinkButton() {
+    _pressed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+  }
+
+  public void ReleaseTheLinkButton() {
+    _pressed?.TrySetResult();
+  }
+
+  public async Task<HueCredentials?> TryPairAsync(HueBridge bridge, CancellationToken cancellationToken) {
     PairAttempts++;
-    return Task.FromResult(PairAnswers.Count > 0 ? PairAnswers.Dequeue() : null);
+
+    if(_pressed is { } pressed) {
+      await pressed.Task.ConfigureAwait(false);
+    }
+
+    return PairAnswers.Count > 0 ? PairAnswers.Dequeue() : null;
   }
 
   /// <summary>What answers at an address, for the fallback discovery cannot cover.</summary>
