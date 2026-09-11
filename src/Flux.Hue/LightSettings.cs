@@ -3,10 +3,10 @@ namespace Flux.Hue;
 /// <summary>
 /// How the light engine turns beats into colour, as the user has it set.
 ///
-/// Three numbers rather than one, because they answer three different questions a
-/// person asks while standing in the room: which colours, how often they change, and
-/// how hard each beat hits. All three are owned by the page and survive a restart, and
-/// none of them has a configuration key - unlike
+/// Several numbers rather than one, because they answer different questions a person
+/// asks while standing in the room: which colours, how many at once, how often they
+/// change, and how hard each beat hits. All of them are owned by the page and survive a
+/// restart, and none has a configuration key - unlike
 /// <see cref="HueOptions.LatencyOffsetMs"/>, which does, because light latency is a
 /// property of an installation that somebody may want pinned for a rig. A palette is a
 /// taste that changes between sets.
@@ -57,12 +57,54 @@ namespace Flux.Hue;
 /// usable: at a low depth a quick flash sits on top of a bright room instead of leaving
 /// a dark one, which is what a fixed floor could not express.
 /// </param>
+/// <param name="ColorCount">
+/// How many colours the room is in at once, from one to
+/// <see cref="MaxColorCount"/>.
+///
+/// One is the room in a single colour, which is what the engine did before this setting
+/// existed and is still the default. Above one the lights are split into that many
+/// groups by where they listen on the frequency axis - with two, the bass end of the
+/// room takes one hue and the top end another; with three, inner, middle and outer.
+///
+/// Grouped by frequency rather than by channel order, so that the colour split says the
+/// same thing as the brightness split already does and the room reads as one idea. The
+/// alternative - alternating hues around the room - is bolder and was considered and
+/// rejected on 2026-09-11: it discards the spatial mapping entirely, so a light's colour
+/// would stop having anything to do with where it is or what it is listening to.
+///
+/// The hues are drawn from the same palette and held apart from each other by the same
+/// separation a single colour is held from the one it replaces, so two colours at once
+/// can never be two shades of the one colour. A palette too tight to supply that many
+/// distinct hues gets the farthest apart it can manage rather than a failure, on the
+/// same argument <c>PickHue</c> already makes for one.
+/// </param>
+/// <param name="ColorLayout">
+/// How the room is divided between those colours, and a no-op at one.
+///
+/// Radial by default and by argument; the alternatives are there because a look is
+/// settled by standing in front of it rather than by reasoning about it. See
+/// <see cref="LightColorLayout"/> for what each does.
+/// </param>
 public sealed record LightSettings(
   LightPalette Palette,
   int ColorChangeBars,
   int PulseMs,
   int Brightness = 100,
-  int PulseDepth = 85) {
+  int PulseDepth = 85,
+  int ColorCount = 1,
+  LightColorLayout ColorLayout = LightColorLayout.Radial) {
+  /// <summary>
+  /// The most colours the room can be in at once.
+  ///
+  /// Three, and the bound is about the room rather than about the arithmetic. Every hue
+  /// added takes lights away from the others, and past three a nine-light area is
+  /// splitting into groups of two or three where a group stops reading as a part of the
+  /// room and starts reading as individual bulbs disagreeing. It is also the point where
+  /// the palette separation stops being satisfiable for anything but the widest
+  /// palettes.
+  /// </summary>
+  public const int MaxColorCount = 3;
+
   /// <summary>
   /// The longest interval between colour changes that is still a colour change.
   ///
@@ -116,6 +158,9 @@ public sealed record LightSettings(
       && Brightness >= 0
       && Brightness <= MaxPercent
       && PulseDepth >= 0
-      && PulseDepth <= MaxPercent;
+      && PulseDepth <= MaxPercent
+      && ColorCount >= 1
+      && ColorCount <= MaxColorCount
+      && Enum.IsDefined(ColorLayout);
   }
 }

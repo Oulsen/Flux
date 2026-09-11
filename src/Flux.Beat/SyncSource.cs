@@ -136,5 +136,10 @@ public interface ITimelineSink {
   /// transmits a downbeat.
   /// </summary>
   /// <param name="method">What supplied the downbeat, for the UI to show.</param>
-  void AlignBar(BarAlignmentMethod method);
+  /// <param name="snapToBar">
+  /// Whether this is a guess that defers to a bar already known, rather than a statement
+  /// that this beat is position one. True for the drop detector and for nothing else -
+  /// the argument is on <see cref="BeatGrid.TryAlignBar"/>.
+  /// </param>
+  void AlignBar(BarAlignmentMethod method, bool snapToBar = false);
 }

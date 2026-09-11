@@ -24,6 +24,17 @@ quietly regress something already tuned by ear. Where the code departs from the
 scene it says so and says why, and those departures are the parts open to
 argument.
 
+**Not every number in the light engine is carried across, and the difference
+matters more than the numbers do.** The scene drove colour sections by index and
+never compared one frequency band against another, so everything in
+`src/Flux.Hue/BandDynamics.cs` is Flux's own and has no ancestor to be faithful
+to - the per-band and per-room reference windows, the transient ratio - as are
+`ShimmerShare` and `MinimumLitFraction` in `LightEngine.cs`. These are the
+opposite case to the palette: they were reasoned about rather than listened to,
+they are the first things to move when the room looks wrong, and each says so
+where it is declared. Treating them as carried-across material would protect
+numbers nobody has ever heard.
+
 ## Building and testing
 
 - The build is two steps in a fixed order: `npm run build` in

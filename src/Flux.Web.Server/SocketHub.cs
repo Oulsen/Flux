@@ -717,7 +717,7 @@ public sealed class SocketHub {
     if(!Frames.TryReadLightSettings(data, out HueEngineData engine)) {
       client.Enqueue(Frames.Error(
         "invalid_data",
-        "Setting the light engine needs a string 'data.palette' and integers 'data.colorChangeBars', 'data.pulseMs', 'data.brightness' and 'data.pulseDepth'."));
+        "Setting the light engine needs strings 'data.palette' and 'data.colorLayout' and integers 'data.colorChangeBars', 'data.pulseMs', 'data.brightness', 'data.pulseDepth' and 'data.colorCount'."));
       return;
     }
 
@@ -726,12 +726,17 @@ public sealed class SocketHub {
       return;
     }
 
-    LightSettings settings = new LightSettings(palette, engine.ColorChangeBars, engine.PulseMs, engine.Brightness, engine.PulseDepth);
+    if(!HueFrames.TryParseColorLayout(engine.ColorLayout, out LightColorLayout layout)) {
+      client.Enqueue(Frames.Error("rejected", $"No colour layout named '{Frames.Quote(engine.ColorLayout)}'."));
+      return;
+    }
+
+    LightSettings settings = new LightSettings(palette, engine.ColorChangeBars, engine.PulseMs, engine.Brightness, engine.PulseDepth, engine.ColorCount, layout);
 
     if(this.hue is null || !this.hue.TrySetLightSettings(settings)) {
       client.Enqueue(Frames.Error(
         "rejected",
-        $"Colour changes must be between 0 and {LightSettings.MaxColorChangeBars} bars, a pulse between 0 and {LightSettings.MaxPulseMs} ms, and brightness and depth between 0 and {LightSettings.MaxPercent} per cent."));
+        $"Colour changes must be between 0 and {LightSettings.MaxColorChangeBars} bars, a pulse between 0 and {LightSettings.MaxPulseMs} ms, brightness and depth between 0 and {LightSettings.MaxPercent} per cent, and between 1 and {LightSettings.MaxColorCount} colours."));
     }
   }
 

@@ -589,6 +589,104 @@ export function smoothPoints(
 export const COLOR_RELEASE_REMAINDER = 0.05;
 
 /**
+ * Which light owns a point on the frequency axis, as an index into the wire's order.
+ *
+ * Nearest by `at`, rather than by dividing the spectrum into equal sections the way the
+ * scene's colour sections do. The two agree today, because the server spreads its
+ * placements evenly by rank - and relying on that would be reading the mapping out of
+ * the array order, which is the thing `at` exists to make unnecessary. The day the
+ * server ranks differently, this follows it and equal sections would not.
+ *
+ * Nearest and not interpolated between neighbours: a blend is a colour no bulb in the
+ * room is showing, and the stage is a preview of the room rather than an impression of
+ * it. The bands it draws are the lights, which is the picture that was asked for.
+ *
+ * Ties keep the earlier light, which happens for real: two lights placed the same
+ * distance from the centre share an `at`, and they are showing the same colour anyway.
+ */
+export function lightAt(ats: readonly number[], position: number): number {
+  let best = 0;
+  let closest = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < ats.length; index++) {
+    const distance = Math.abs((ats[index] ?? 0) - position);
+
+    if (distance < closest) {
+      closest = distance;
+      best = index;
+    }
+  }
+
+  return best;
+}
+
+/**
+ * Every light's colour as the stage should draw it now, given the last ones drawn.
+ *
+ * Per light, on exactly the argument `approachColor` makes for one: the whole point of
+ * the per-light feed is that the lights differ, and smoothing them together would put
+ * the room's average fade on all of them.
+ *
+ * A room that changed shape is taken whole rather than faded into. The lengths differ
+ * only when a stream has opened against a different area, where fading light three of
+ * seven into light three of nine is a blend between two lights that have nothing to do
+ * with each other.
+ */
+export function approachLights(
+  shown: readonly SceneColor[],
+  target: readonly SceneColor[],
+  elapsedMs: number,
+  intervalMs: number,
+): SceneColor[] {
+  if (shown.length !== target.length) {
+    return [...target];
+  }
+
+  return target.map((color, index) =>
+    approachColor(shown[index] ?? color, color, elapsedMs, intervalMs),
+  );
+}
+
+/**
+ * How much of the engine's brightness range the stage actually draws.
+ *
+ * The room is tuned to go nearly black between beats - 85 per cent depth by default -
+ * and that is right for bulbs across a room and wrong for a monitor filling the field of
+ * view a metre away, where the same swing at fifty frames a second is a strobe with a
+ * spectrum drawn on it. The stage's job is to say what the lights are doing, and it can
+ * say it in the top half of its range.
+ *
+ * Applied here rather than by dimming the engine, which would be the same mistake in the
+ * other direction: the room's depth is a tuned value and the screen is not the room.
+ */
+export const STAGE_PULSE_DEPTH = 0.55;
+
+/**
+ * A light's colour as the stage draws it: the same hue, on a range that does not strobe.
+ *
+ * The hue is preserved exactly because every channel is scaled by one factor, which is
+ * what makes this a brightness change and not a colour one - the stage is a preview of
+ * the room and a preview in the wrong colour is worse than no preview.
+ *
+ * Black stays black, and that is the one discontinuity in here. It is not reachable from
+ * a pulse, because the engine's floor keeps a light above zero whenever a stream is open;
+ * what does reach it is a brightness of zero, which is somebody asking for a blackout. A
+ * blackout drawn as a dim glow would be the stage contradicting the room.
+ */
+export function dampPulse(color: SceneColor, depth = STAGE_PULSE_DEPTH): SceneColor {
+  const level = Math.max(color.r, color.g, color.b);
+
+  if (level <= 0) {
+    return color;
+  }
+
+  const damped = 1 - depth + depth * level;
+  const scale = damped / level;
+
+  return { r: color.r * scale, g: color.g * scale, b: color.b * scale };
+}
+
+/**
  * The engine's colour as the stage should draw it now, given the last one drawn.
  *
  * This exists because of the rate the colour arrives at. It rides the 20 Hz state

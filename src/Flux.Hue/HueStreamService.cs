@@ -13,14 +13,31 @@ namespace Flux.Hue;
 /// that inferred "not streaming" from it would be wrong for one second every time.
 /// </param>
 /// <param name="Color">
-/// The colour the most recent frame carried, or null when no frame has gone out.
+/// The colour the room is on, or null when no frame has gone out.
 ///
 /// This is what the bridge was <em>sent</em>, read back after the fact, and never a
 /// second opinion about what it should have been: <see cref="ILightSource.Render"/> is
 /// documented as having exactly one caller, so a page wanting to know what the room
 /// looks like has to be told rather than allowed to ask.
+///
+/// The shared colour before any one light's own band is taken into account, which is a
+/// value the engine computes rather than an average of <paramref name="Channels"/>: the
+/// mean of nine bulbs is a colour nothing in the room is showing.
 /// </param>
-public readonly record struct HueStreamStatus(bool Running, double Fps, HueColor? Color = null);
+/// <param name="Channels">
+/// What each light was sent, and where it listens on the frequency axis. Empty until a
+/// frame has gone out.
+/// </param>
+public readonly record struct HueStreamStatus(
+  bool Running,
+  double Fps,
+  HueColor? Color = null,
+  IReadOnlyList<LightChannel>? Channels = null);
+
+/// <summary>One light, as a page is shown it.</summary>
+/// <param name="At">Where it listens on the frequency axis, 0 for the kick and 1 for the top.</param>
+/// <param name="Color">What it was sent on the most recent frame.</param>
+public readonly record struct LightChannel(double At, HueColor Color);
 
 /// <summary>
 /// Sends a frame to the bridge fifty times a second, and says how often it managed.
@@ -167,7 +184,7 @@ public sealed class HueStreamService: IDisposable {
       // page is shown: it is measuring and painting into a session nothing reads any
       // more.
       return this.running && this.current is { } session
-        ? new HueStreamStatus(Running: true, session.Fps, session.Rendered)
+        ? new HueStreamStatus(Running: true, session.Fps, session.Rendered, session.Lights())
         : new HueStreamStatus(Running: false, Fps: 0, Color: null);
     }
   }
@@ -492,6 +509,14 @@ public sealed class HueStreamService: IDisposable {
   }
 
   private void Pump(IHueStream stream, Session session, CancellationToken token) {
+    // The room's geometry, resolved once. It cannot change under an open session: the
+    // channels belong to the entertainment configuration this session opened against,
+    // and choosing a different area closes the session rather than re-shaping it.
+    LightPlacement[] lights = InChannelOrder(stream.Channels);
+    HueColor[] colors = new HueColor[lights.Length];
+
+    session.Place(lights);
+
     long period = Stopwatch.Frequency / Math.Max(1, this.options.Value.StreamHz);
     long next = Stopwatch.GetTimestamp() + period;
     long measuredAt = Stopwatch.GetTimestamp();
@@ -512,16 +537,26 @@ public sealed class HueStreamService: IDisposable {
       // Clamped on the way out rather than trusted, which is what the engine's
       // envelope makes worth doing: an overshoot reaching the bridge as a wrapped or
       // negative channel is one wrong light for one frame, and never reproducible.
-      HueColor sent = (this.lights?.Render() ?? this.Color).Clamped();
+      HueColor sent = (this.lights?.Render(lights, colors) ?? this.Color).Clamped();
 
-      stream.SetAll(sent);
+      if(this.lights is null) {
+        // No engine, so every channel holds the same colour - the beat lab's
+        // arrangement, where a session exists to prove the bridge is reachable.
+        colors.AsSpan().Fill(sent);
+      }
+
+      for(int index = 0; index < colors.Length; index++) {
+        colors[index] = colors[index].Clamped();
+      }
+
+      stream.Set(colors);
       stream.Send();
 
       // Published after the send and not before it, so what a page draws is a colour
       // the bridge was given rather than one Flux was about to give it. The difference
       // shows up on the frame a send throws on, which is the frame where a preview
       // claiming the room changed colour would be exactly wrong.
-      session.Rendered = sent;
+      session.Publish(sent, colors);
 
       frames++;
 
@@ -546,6 +581,33 @@ public sealed class HueStreamService: IDisposable {
   }
 
   /// <summary>
+  /// The channels' frequencies, in the order the stream writes colours.
+  ///
+  /// <see cref="LightPlacements.Spread"/> answers in frequency order, because that is
+  /// the order the mapping is about; the stream writes by channel index. Paired here,
+  /// once per session, rather than either side bending to the other: the placement
+  /// arithmetic should be readable as arithmetic, and the stream should not have to
+  /// know what a frequency is.
+  /// </summary>
+  private static LightPlacement[] InChannelOrder(IReadOnlyList<HueChannel> channels) {
+    IReadOnlyList<LightPlacement> spread = LightPlacements.Spread(channels);
+    LightPlacement[] ordered = new LightPlacement[channels.Count];
+
+    for(int index = 0; index < channels.Count; index++) {
+      int id = channels[index].Id;
+
+      // Looked up rather than assumed to be at the same index, which is the whole
+      // reason this method exists. A linear scan over a room's worth of lights, once
+      // when a session opens, is not worth a dictionary.
+      ordered[index] = spread.FirstOrDefault(
+        placement => placement.ChannelId == id,
+        new LightPlacement(id, 0));
+    }
+
+    return ordered;
+  }
+
+  /// <summary>
   /// One attempt at streaming, and the identity that decides whether it still owns the
   /// service.
   ///
@@ -559,6 +621,15 @@ public sealed class HueStreamService: IDisposable {
     private readonly object paint = new();
     private double fps;
     private HueColor? rendered;
+
+    /// <summary>Where each channel listens, fixed for the life of the session.</summary>
+    private double[]? ats;
+
+    /// <summary>What each channel was last sent, rewritten in place by the pump.</summary>
+    private HueColor[]? colors;
+
+    /// <summary>Whether a frame has been published, so an unlit buffer is not read as black.</summary>
+    private bool painted;
 
     public Session(Guid areaId) {
       this.AreaId = areaId;
@@ -592,7 +663,62 @@ public sealed class HueStreamService: IDisposable {
     /// </summary>
     public HueColor? Rendered {
       get { lock(this.paint) { return this.rendered; } }
-      set { lock(this.paint) { this.rendered = value; } }
+    }
+
+    /// <summary>
+    /// Records the room this session is lighting, before the first frame.
+    /// </summary>
+    public void Place(ReadOnlySpan<LightPlacement> lights) {
+      lock(this.paint) {
+        this.ats = new double[lights.Length];
+        this.colors = new HueColor[lights.Length];
+
+        for(int index = 0; index < lights.Length; index++) {
+          this.ats[index] = lights[index].At;
+        }
+      }
+    }
+
+    /// <summary>
+    /// Records what the bridge was just sent.
+    ///
+    /// Copied into a buffer this session owns rather than published as the pump's own
+    /// array, and both halves of that matter. Handing the array over would let the next
+    /// frame rewrite a page's picture from under it; allocating a fresh one each time
+    /// would put fifty allocations a second on the one thread whose contract says not
+    /// to. The reader pays instead, twenty times a second, which is the cheaper side.
+    /// </summary>
+    public void Publish(HueColor shared, ReadOnlySpan<HueColor> colors) {
+      lock(this.paint) {
+        this.rendered = shared;
+
+        if(this.colors is { } buffer && colors.Length >= buffer.Length) {
+          colors[..buffer.Length].CopyTo(buffer);
+          this.painted = true;
+        }
+      }
+    }
+
+    /// <summary>
+    /// What each light was sent, or empty before the first frame.
+    ///
+    /// A copy, made under the lock, because the pump keeps writing into the buffer
+    /// behind it. Empty rather than null before a frame has gone out, so a caller has
+    /// one shape to handle rather than two.
+    /// </summary>
+    public IReadOnlyList<LightChannel> Lights() {
+      lock(this.paint) {
+        if(!this.painted || this.colors is not { } buffer || this.ats is not { } at) {
+          return [];
+        }
+
+        LightChannel[] lights = new LightChannel[buffer.Length];
+        for(int index = 0; index < buffer.Length; index++) {
+          lights[index] = new LightChannel(at[index], buffer[index]);
+        }
+
+        return lights;
+      }
     }
 
     public void Dispose() {

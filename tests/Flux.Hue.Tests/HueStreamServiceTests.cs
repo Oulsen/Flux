@@ -374,6 +374,34 @@ public class HueStreamServiceTests {
   }
 
   /// <summary>
+  /// The room's geometry reaches the reading, which is what a page draws the spectrum
+  /// from. The stream's three lights sit at the centre, half way out and at the edge, so
+  /// an even spread by rank puts them at 0, a half and 1 - and getting that from the
+  /// pump rather than from the placement arithmetic is the point: the two are paired by
+  /// channel id, and a pairing that silently failed would light every bulb off the kick.
+  /// </summary>
+  [Fact]
+  public async Task EveryLightIsReportedWithWhereItListens() {
+    Harness harness = await Harness.ReadyAsync();
+
+    await harness.Service.StartAsync(TestContext.Current.CancellationToken);
+    await WaitUntilAsync(() => harness.Stream.Sends > 0);
+
+    HueStreamStatus status = harness.Service.Status();
+    harness.Service.Stop();
+
+    IReadOnlyList<LightChannel> lights = Assert.IsAssignableFrom<IReadOnlyList<LightChannel>>(status.Channels);
+
+    Assert.Equal(3, lights.Count);
+    Assert.Equal([0, 0.5, 1], lights.Select(light => light.At));
+
+    // No engine behind this stream, so every channel holds the same colour - and it is
+    // the one the bridge was sent rather than the holding colour read back off the
+    // service.
+    Assert.All(lights, light => Assert.Equal(harness.Stream.Last, light.Color));
+  }
+
+  /// <summary>
   /// Published after the send rather than before it, which is the whole difference
   /// between reporting what happened and reporting what was about to. A pump wedged
   /// inside its first send has told the bridge nothing at all, and a page drawing a
@@ -506,8 +534,20 @@ public class HueStreamServiceTests {
 
     public int ChannelCount => 3;
 
+    /// <summary>
+    /// Three lights strung out from the centre, so the placement spread has a room to
+    /// rank rather than a degenerate one. These tests are about the loop's lifetime and
+    /// not about the mapping, but the pump reads the geometry either way.
+    /// </summary>
+    public IReadOnlyList<HueChannel> Channels { get; } = [
+      new HueChannel(0, LightPosition.Centre),
+      new HueChannel(1, new LightPosition(0.5, 0, 0)),
+      new HueChannel(2, new LightPosition(1, 0, 0)),
+    ];
+
     public int Sends => Volatile.Read(ref this.sends);
 
+    /// <summary>What the first channel was last sent, which with no engine behind the stream is what every channel was sent.</summary>
     public HueColor Last { get; private set; }
 
     public bool Disposed { get; private set; }
@@ -518,6 +558,8 @@ public class HueStreamServiceTests {
     public bool ThrowOnSend { get; set; }
 
     public void SetAll(HueColor color) => this.Last = color;
+
+    public void Set(ReadOnlySpan<HueColor> colors) => this.Last = colors[0];
 
     /// <summary>
     /// Wedges the pump in its next send and leaves it there, which is a transport that

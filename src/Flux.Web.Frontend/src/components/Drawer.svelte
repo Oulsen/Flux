@@ -8,6 +8,15 @@
    * that is halfway through and for the pickers means a flash of "waiting" on a list
    * that was already correct. `inert` is what keeps a closed drawer out of the tab
    * order and away from a screen reader, since off-screen alone does neither.
+   *
+   * Not modal, corrected on 2026-09-11 after using it. There was a full-screen backdrop
+   * here that dismissed the drawer when tapped, and being full-screen it also covered
+   * the stage - so pressing anchor with the settings open closed the drawer and threw
+   * the press away, which is the one control that gets pressed while something else is
+   * being adjusted. The comment justifying the backdrop argued it kept dismissal
+   * reachable on a phone, and that argument does not survive the drawer being full-width
+   * on a phone: there is no backdrop to reach there. What dismisses this is the close
+   * button, Escape, and the toggle that opened it, all of which work on both.
    */
 
   import type { Snippet } from 'svelte';
@@ -29,12 +38,6 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-{#if open}
-  <!-- A button rather than a bare element with a click handler, so that dismissing the
-       drawer is reachable without a pointer and announces itself as an action. -->
-  <button type="button" class="backdrop" aria-label="Close settings" onclick={close}></button>
-{/if}
-
 <aside class="drawer" class:open aria-label="Settings" inert={!open}>
   <div class="scroller">
     {@render children()}
@@ -42,20 +45,6 @@
 </aside>
 
 <style>
-  .backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 2;
-    padding: 0;
-    border: none;
-    cursor: pointer;
-
-    /* Barely there. The stage is the reason the drawer is an overlay rather than a
-       column, so dimming it to unreadability would give back exactly what the layout
-       was for: a colour being tuned has to stay visible while it is tuned. */
-    background: rgb(0 0 0 / 35%);
-  }
-
   .drawer {
     position: fixed;
     top: 0;

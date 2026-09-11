@@ -43,6 +43,7 @@
       "flux.hue": {
         "type": "Project",
         "dependencies": {
+          "Flux.Audio.Contract": "[0.3.0, )",
           "Flux.Beat": "[0.3.0, )",
           "HueApi": "[3.3.0, )",
           "HueApi.ColorConverters": "[3.3.0, )",

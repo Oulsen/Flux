@@ -121,16 +121,44 @@ public sealed record StateData(
 /// are different layers and both are correct.
 /// </param>
 /// <param name="Color">
-/// The colour the most recent frame carried, or absent until one has gone out.
+/// The colour the room is on, or absent until a frame has gone out.
 ///
 /// It is here so that a page can draw what the room is doing rather than compute its
 /// own guess at it. A second beat-to-colour engine in the browser would be quicker to
 /// build and would drift from this one the first time either was retuned, leaving a
 /// screen and a room that disagree with nobody able to say which is right.
+///
+/// <b>Protocol 2 changed what this means</b>, which is why the version moved: it was
+/// the colour every light was sent, and it is now the colour the engine chose before
+/// any one light's own band was taken into account. A protocol 1 client reading it
+/// would draw a room slightly brighter than the real one, which is exactly the sort of
+/// quiet misreading the version exists to prevent.
+/// </param>
+/// <param name="Channels">
+/// What each light was sent, and where it listens. Empty until a frame has gone out.
 /// </param>
 public sealed record LightData(
   double Fps,
-  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LightColorData? Color = null);
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LightColorData? Color = null,
+  IReadOnlyList<LightChannelData>? Channels = null);
+
+/// <summary>
+/// One light, as the page is told about it.
+/// </summary>
+/// <param name="At">
+/// Where this light listens on the frequency axis, 0 for the kick and 1 for the top.
+///
+/// The server's answer rather than something a page derives from array order, and that
+/// is the same rule that put the colour engine on the server: the mapping from a room's
+/// geometry to a frequency is tuned in one place or it disagrees with itself. It is
+/// fixed for the life of a stream, since the geometry belongs to the area the session
+/// opened against, but it is sent every frame rather than once - a page that connected
+/// mid-show would otherwise be waiting for a message it already missed.
+/// </param>
+/// <param name="R">Red, 0 to 1.</param>
+/// <param name="G">Green, 0 to 1.</param>
+/// <param name="B">Blue, 0 to 1.</param>
+public sealed record LightChannelData(double At, double R, double G, double B);
 
 /// <summary>
 /// One colour, as the page is told about it.
@@ -214,7 +242,9 @@ public sealed record HueData(
 /// <param name="PulseMs">How long a beat's brightness pulse takes to fade, 0 to 2000, where 0 means a steady colour and no pulse.</param>
 /// <param name="Brightness">How bright a beat drives the lights, 0 to 100 per cent. The ceiling for everything sent, so 0 is a blackout.</param>
 /// <param name="PulseDepth">How far the light drops between beats, 0 to 100 per cent of <paramref name="Brightness"/>. 0 never dips, 100 fades to nothing.</param>
-public sealed record HueEngineData(string Palette, int ColorChangeBars, int PulseMs, int Brightness, int PulseDepth);
+/// <param name="ColorCount">How many colours the room is in at once, 1 to 3. Above one the lights are split into that many groups along the frequency axis.</param>
+/// <param name="ColorLayout">How the room is divided between those colours: "radial", "alternating" or "random". A no-op at one colour.</param>
+public sealed record HueEngineData(string Palette, int ColorChangeBars, int PulseMs, int Brightness, int PulseDepth, int ColorCount, string ColorLayout);
 
 /// <summary>
 /// One analyzer frame, for the visualiser.

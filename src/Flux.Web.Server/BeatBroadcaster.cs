@@ -235,7 +235,8 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
 
     return new LightData(
       status.Fps,
-      status.Color is { } color ? new LightColorData(color.R, color.G, color.B) : null);
+      status.Color is { } color ? new LightColorData(color.R, color.G, color.B) : null,
+      [.. (status.Channels ?? []).Select(light => new LightChannelData(light.At, light.Color.R, light.Color.G, light.Color.B))]);
   }
 
   /// <summary>

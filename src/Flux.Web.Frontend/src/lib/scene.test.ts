@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   approachColor,
+  approachLights,
   BAR_GAP_PX,
   barGeometry,
   barRect,
@@ -10,6 +11,7 @@ import {
   brightnessOf,
   COLOR_RELEASE_REMAINDER,
   columnWidth,
+  dampPulse,
   hueCss,
   hueShift,
   HUE_SPEED_DEFAULT,
@@ -17,6 +19,7 @@ import {
   LAYOUTS,
   LAYOUT_DEFAULT,
   layoutLabel,
+  lightAt,
   MIN_BAR_WIDTH_PX,
   NEUTRAL_COLOR,
   PIXEL_CAP_HEIGHT_PX,
@@ -445,4 +448,65 @@ test('the rainbow covers two turns of the wheel across the picture', () => {
   // The phase moves every stop together, which is the whole animation.
   const moved = rainbowStops(0.25);
   assertClose(moved[0]?.hue ?? -1, 0.25, 'phase applied');
+});
+
+test('a column is painted by the light that owns its part of the spectrum', () => {
+  // Three lights spread evenly, which is what the server's ranking produces.
+  const ats = [0, 0.5, 1];
+
+  assert.equal(lightAt(ats, 0), 0);
+  assert.equal(lightAt(ats, 0.2), 0);
+  assert.equal(lightAt(ats, 0.45), 1);
+  assert.equal(lightAt(ats, 0.8), 2);
+  assert.equal(lightAt(ats, 1), 2);
+});
+
+test('lights at the same place keep the earlier one, and an empty room paints nothing', () => {
+  // Two lights the same distance from the centre share an `at`, which the server
+  // does on purpose. They are showing the same colour, so which one wins is only a
+  // question of being decided rather than of being right.
+  assert.equal(lightAt([0, 0.75, 0.75], 0.8), 1);
+
+  // No lights is a real state - a stream that has not sent its first frame - and the
+  // caller falls back to the room's one colour rather than indexing into nothing.
+  assert.equal(lightAt([], 0.5), 0);
+});
+
+test('a light follows the server rather than the array order it arrived in', () => {
+  // Deliberately not evenly spread: if this ever reads the index instead of `at`,
+  // the middle column answers 1 rather than 0.
+  assert.equal(lightAt([0, 0.9, 1], 0.4), 0);
+});
+
+test('every light is smoothed on its own, and a new room is taken whole', () => {
+  const dark = { r: 0, g: 0, b: 0 };
+  const bright = { r: 1, g: 1, b: 1 };
+
+  // Up is instant and down is smoothed, per light, which is approachColor's rule
+  // applied separately rather than to the room's average.
+  const rising = approachLights([dark, bright], [bright, dark], 50, 50);
+  assert.deepEqual(rising[0], bright);
+  assert.ok((rising[1]?.r ?? 0) > 0, 'the falling light faded rather than snapping to black');
+  assert.ok((rising[1]?.r ?? 1) < 1, 'the falling light actually fell');
+
+  // A room of a different size is a different room: fading light two of two into
+  // light two of three would blend two lights with nothing to do with each other.
+  assert.deepEqual(approachLights([bright, bright], [dark], 50, 50), [dark]);
+  assert.deepEqual(approachLights([], [], 50, 50), []);
+});
+
+test('the stage draws the room on a range that does not strobe, in the room\'s own colours', () => {
+  // The hue has to survive exactly. The stage is a preview of the room, and a preview in
+  // the wrong colour is worse than no preview at all.
+  const damped = dampPulse({ r: 0.4, g: 0.2, b: 0 }, 0.5);
+  assert.ok(Math.abs(damped.g / damped.r - 0.5) < 1e-9, 'the channels kept their ratio');
+
+  // Full stays full and the bottom of the engine's range is lifted well clear of black,
+  // which is the whole point: the room's 85 per cent depth is a strobe on a monitor.
+  assert.deepEqual(dampPulse({ r: 1, g: 0, b: 0 }, 0.5), { r: 1, g: 0, b: 0 });
+  assert.ok(dampPulse({ r: 0.15, g: 0, b: 0 }, 0.5).r > 0.5, 'the resting level is visible');
+
+  // Black is the one thing that stays black: it is not reachable from a pulse, and what
+  // does reach it is a brightness of zero, which is somebody asking for a blackout.
+  assert.deepEqual(dampPulse({ r: 0, g: 0, b: 0 }), { r: 0, g: 0, b: 0 });
 });

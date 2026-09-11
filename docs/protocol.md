@@ -103,6 +103,22 @@ A client that followed that draws a finer or coarser spectrum and notices nothin
 One that hardcoded 64 was outside the contract before this change, which is a different
 thing from being broken by it.
 
+**Version 2 is the first break, and it is one changed meaning rather than a
+rewrite.** The light engine now sends a colour per light instead of one for the
+room, so `state.light` gained a `channels` array - an addition, which on its own
+would not have moved anything. What moved it is `state.light.color`, which meant
+"the colour every light was sent" and now means "the colour the engine chose
+before each light's own band was applied". Those differ by however much the
+spectrum is favouring one part of the room, and a version 1 page reading the new
+field would go on looking correct while drawing a room slightly brighter than the
+real one. That is precisely the quiet misreading the version exists to convert
+into a refusal, so it was converted into one.
+
+Everything else in version 2 is unchanged, and a client updating to it has one
+thing to do beyond the number: decide whether to draw `channels` or keep drawing
+`color`. Both remain honest answers to different questions - one is what each
+bulb received, the other is what the engine decided the beat was worth.
+
 Phase 2's lesson about `devices` is worth repeating rather than filing, because
 this document is once again describing messages before anything produces them.
 Where that left a field's honesty uncertain the field is nullable rather than
@@ -188,7 +204,15 @@ changed. It is a snapshot and is never a delta.
     "barAligned": false
   },
   "alignment": { "aligned": false, "method": null },
-  "light": { "fps": 49.7 },
+  "light": {
+    "fps": 49.7,
+    "color": { "r": 0.8, "g": 0.2, "b": 0.55 },
+    "channels": [
+      { "at": 0, "r": 0.8, "g": 0.2, "b": 0.55 },
+      { "at": 0.5, "r": 0.46, "g": 0.12, "b": 0.32 },
+      { "at": 1, "r": 0.12, "g": 0.03, "b": 0.08 }
+    ]
+  },
   "diagnostics": { "reanchorMaxBeats": 0.0, "packets": 4821 }
 }}
 ```
@@ -279,9 +303,99 @@ Flux is streaming at all.
 | Field | Type | Meaning |
 |---|---|---|
 | `fps` | number | Frames a second the stream is achieving, measured over the last second. Not the configured rate |
-| `color` | object or **absent** | The colour the most recent frame carried: `{ "r": 0.8, "g": 0.2, "b": 0.55 }`, linear 0 to 1 per channel. Absent until a frame has gone out |
+| `color` | object or **absent** | The colour the room is on: `{ "r": 0.8, "g": 0.2, "b": 0.55 }`, linear 0 to 1 per channel. Absent until a frame has gone out |
+| `channels` | array | One entry per light, in the order the bridge streams them. Empty until a frame has gone out |
 
-**`color` is what the bridge was sent, read back**, and it is here so that a page can
+Each entry of `channels` is `{ "at": 0.25, "r": 0.8, "g": 0.2, "b": 0.55 }`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `at` | number | Where this light listens on the frequency axis: 0 follows the kick, 1 follows the top |
+| `r`, `g`, `b` | number | What this light was sent, linear 0 to 1, on the same scale and with the same absence of gamma as `color` |
+
+**Where a light is decides how hard the beat hits it, and above one colour which
+colour it is in.** A light near the centre of the room follows the low end and one
+out at the edge follows the high end, so a kick punches in the middle and a cymbal
+wash lifts the corners. Which band a light listens to is decided from the position
+the bridge reports for its channel, ranked by distance from the centre of the room
+and then spread across the spectrum - ranked rather than scaled, because a real room
+clusters: four of the seven lights in one area measured here sit within 0.07 of
+each other, and scaling raw distance would have given those four almost the same
+band while three lights covered everything else.
+
+**Each band is measured against its own recent loudest and never against the other
+two.** Music carries far more energy in the kick band than in the top on essentially
+every frame of every track, so comparing the raw levels answers "which lights lead"
+the same way every time and the room becomes a fixed bright-in-the-middle gradient
+that pulses in unison. Measured against itself, a hi-hat at the top of what hats do
+in this track counts as fully lit exactly as a kick at the top of what kicks do - so
+the outer lights lead through a break and the centre takes it back on the drop. **The
+ordering has to be able to invert or there is no information in it.**
+
+**A light whose band is busy stays lifted between beats**, up to half of what a beat
+would give it. The beat is divided between the lights, while what happens in the gaps
+is a fact about each band on its own: a hat pattern under a held chord lifts the outer
+lights whether or not anything is louder elsewhere. That is the difference between a
+room the music moves through and a set of simultaneous flashes at different heights.
+
+**The pulse answers the music and not only the grid**, and it does so in two ways at
+once because they are two different questions.
+
+*How hard did this beat hit* is the kick band's jump above its own recent average,
+sampled the instant the beat lands and held for the whole fade. **A beat with no kick
+under it does not pulse the room at all.** A grid keeps publishing beats through a
+breakdown - a clock has no opinion about whether anything is playing - so without
+this the lights fire a synchronous pulse right through a passage with no kick in it,
+and it is the unison rather than the brightness that gives it away. What carries a
+break instead is the per-band response above: with the pulse out of the way the lights
+follow their own bands, so hats lift the outer lights and a stab lifts the middle.
+There is no break mode; this is what the room already does once the pulse stops
+sitting on top of it. The measure is the transient and not the level, because a
+breakdown often still has bass in it and what it lacks is a kick landing.
+
+*Is anything playing at all* is how loud the room is now against the loudest it has
+been over about the last minute, applied continuously rather than captured, so a
+track that stops mid-pulse kills the tail instead of finishing at the volume of a
+track that is no longer playing. Against the room's own recent loudest rather than
+against full scale, because absolute level says more about where the gain is set than
+about the music. A minute is deliberately far longer than the second a band's own
+average looks back over, and longer than the two bars its level is measured against: a
+breakdown runs sixteen to thirty-two bars, and a reference that forgot inside one
+would decide halfway through the break that the break is now normal.
+
+**Neither scale reaches the resting level.** Both apply to the range above the floor
+and never to the floor itself, and the floor is never zero while a stream is open -
+a light that goes out is indistinguishable from one that has stopped receiving
+anything. A `brightness` of 0 is still black, because that is a blackout and somebody
+asking for no light should get none.
+
+**`at` is the server's answer and a page must not recompute it.** A browser could
+derive the same ordering from the array and it would be a second implementation of
+one tuned rule, which is the arrangement this document already rejects for colour.
+It is fixed for the life of a stream, since the geometry belongs to the area the
+session opened against, and it is still sent on every frame: a page that connected
+mid-show cannot be told to wait for a message it already missed.
+
+**A light whose band is silent falls back to the room's resting level and never to
+black.** The spectrum scales the pulse above the floor and never the floor itself,
+for the reason the floor exists at all - a light that goes out is indistinguishable
+from a light that has stopped receiving anything.
+
+**Where there is nothing to listen to, every light gets the room's own envelope.**
+A build with no audio, a closed capture device, silence, and a frame with no energy
+in any band all arrive at the same answer, which is the behaviour Flux had before
+per-light colour existed. Link supplying a tempo with no microphone anywhere near it
+is an ordinary configuration and not a degraded one.
+
+**`color` is not the average of `channels`**, and the distinction is the same one that
+keeps this whole object honest: an average of nine bulbs is a colour nothing in the room
+is showing, while this is a value the engine genuinely computes on its way to deciding
+what each light gets. With `colorCount` above one it is the first of the hues the engine
+chose - again a colour some of the room is genuinely on, rather than a blend of two that
+none of it is. A page wanting one number for the room should use it; a page drawing the
+room itself should use `channels`.
+
+**Both are what the bridge was sent, read back**, and they are here so that a page can
 draw the room rather than compute its own opinion of it. The alternative - a second
 beat-to-colour engine in the browser - needs no protocol at all and was rejected: two
 implementations of one tuned behaviour drift apart the first time either is retuned, and
@@ -1078,7 +1192,9 @@ is `invalid_data`.
   "colorChangeBars": 4,
   "pulseMs": 240,
   "brightness": 100,
-  "pulseDepth": 85
+  "pulseDepth": 85,
+  "colorCount": 1,
+  "colorLayout": "radial"
 }}
 ```
 
@@ -1089,6 +1205,8 @@ is `invalid_data`.
 | `pulseMs` | int | How long a beat's brightness pulse takes to fade, 0 to 2000. **0 means no pulse** |
 | `brightness` | int | How bright a beat drives the lights, 0 to 100 per cent. **0 is a blackout** |
 | `pulseDepth` | int | How far the light drops between beats, 0 to 100 per cent of `brightness`. **0 never dips, 100 fades to nothing** |
+| `colorCount` | int | How many colours the room is in at once, 1 to 3 |
+| `colorLayout` | string | How the room is divided between them: `radial`, `alternating` or `random`. A no-op at one colour |
 
 Sets how beats become colour. **Every field is required**: this is one complete
 statement of how the lights should look, not a patch, for the reason `subscribe`
@@ -1103,14 +1221,38 @@ separation is the point - one setting doing both jobs gives either lights that s
 still for eight seconds between colours or lights that strobe through the palette
 four times a bar.
 
-**Colour changes land on the downbeat**, not merely every fourth beat. Flux counts
-bars from the beat grid's own bar position, so the changes stay on the bar across a
-re-anchor rather than drifting off it for the rest of the night. How long a bar is
-comes from the same `quantum` the `hello` frame carries - four by default, and the
-engine has no separate opinion about it. Where no downbeat is known -
-`alignment.method` of `none` - it falls back to every `quantum x n`-th beat from
-wherever the numbering starts, because changing on a guessed phase is worth more
-than not changing at all.
+**Colour changes land on the downbeat**, not merely every fourth beat, and they are
+**counted from the anchor**: the bar a `tap`, a cue press or a drop marked is bar
+one, and it takes a colour. Anchoring means "this is bar one", and it has to mean
+that for everything the bar count drives or it only half means it - before this the
+count ran from wherever the source's numbering happened to start, so anchoring
+moved the beat indicator and left the colours changing on the old phase. Re-anchoring
+onto the same phase changes nothing, so a source that goes quiet for a moment does
+not restart the cycle. How long a bar is comes from the same `quantum` the `hello`
+frame carries - four by default, and the engine has no separate opinion about it.
+Where no downbeat is known - `alignment.method` of `none` - it falls back to every
+`quantum x n`-th beat from wherever the numbering starts, because changing on a
+guessed phase is worth more than not changing at all.
+
+**`colorCount` splits the room along the frequency axis**, which is the same axis
+that already decides how hard each light is hit: at two, the lights listening to the
+lower half of the spectrum take one hue and the upper half another; at three, inner,
+middle and outer. Grouped by frequency rather than by channel order, so a light's
+colour says the same thing about where it is as its brightness does. The hues are
+drawn from the same palette and held the same distance apart from each other that a
+new colour is held from the one it replaces, so two colours can never be two shades
+of one. A palette too tight to supply that many distinct hues gets the farthest
+apart it can manage rather than a failure.
+
+**`colorLayout` decides how those groups are handed out**, and only `radial` has an
+argument behind it - the other two exist to be tried against a real room, which is
+the only way a look gets settled. `radial` gives contiguous groups along the axis, so
+the lights nearest the centre share a hue. `alternating` hands the hues to every
+other light in order of distance, which is bolder and discards the spatial mapping
+entirely. `random` draws each light's group from its own place on the axis mixed with
+a number re-drawn at each colour change, so the shape holds between changes rather
+than flickering. All three are a no-op at one colour, and all three are functions of
+where a light sits and never of its channel id or its position in the array.
 
 **Both zeroes read backwards and both are deliberate.** `colorChangeBars` of 0
 does not stop the colours changing, it removes the interval, so they change as

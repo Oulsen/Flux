@@ -7,7 +7,7 @@
  */
 
 /** The protocol version this page was built against. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export type SourceState = 'waiting' | 'live' | 'quiet';
 
@@ -123,7 +123,27 @@ export interface HueEngineData {
    * leaving a dark one. 0 never dips; 100 fades to nothing.
    */
   pulseDepth: number;
+  /**
+   * How many colours the room is in at once, 1 to 3.
+   *
+   * Above one the lights are split into that many groups along the frequency axis, so
+   * the bass end of the room takes one hue and the top end another. Grouped by frequency
+   * and not by channel order, so that the colour split says the same thing as the
+   * brightness split already does.
+   */
+  colorCount: number;
+  /**
+   * How the room is divided between those colours, and a no-op at one.
+   *
+   * `radial` puts the lights nearest the centre on the first hue and the outer ones on
+   * the next, which is the same axis that already decides how hard each is hit.
+   * `alternating` hands the hues out to every other light, which is bolder and discards
+   * the spatial mapping. `random` re-draws the assignment on each colour change.
+   */
+  colorLayout: HueColorLayout;
 }
+
+export type HueColorLayout = 'radial' | 'alternating' | 'random';
 
 export interface HelloData {
   protocol: number;
@@ -182,13 +202,32 @@ export interface DiagnosticsData {
 export interface LightData {
   fps: number;
   /**
-   * The colour the last frame carried, or absent until one has gone out.
+   * The colour the room is on, or absent until a frame has gone out.
    *
    * What the bridge was sent, so the page can draw the room rather than model it.
    * Anything a bulb also does is decided on the server and read from here; a second
    * engine in the browser would drift from this one and neither could be called wrong.
+   *
+   * Not the average of `channels`: it is the colour the engine chose before any one
+   * light's own band was applied, which is a value it computes rather than a mean of
+   * bulbs that nothing in the room is showing.
    */
   color?: LightColorData;
+  /** What each light was sent, in the order the bridge streams them. Empty until a frame has gone out. */
+  channels?: LightChannelData[];
+}
+
+/**
+ * One light: what it was sent, and where it listens.
+ *
+ * `at` is the server's answer and is deliberately not derived here from array order.
+ * The same ordering could be recovered in the browser, and that would be a second
+ * implementation of one tuned rule - the arrangement this file already refuses for
+ * colour.
+ */
+export interface LightChannelData extends LightColorData {
+  /** 0 follows the kick, 1 follows the top. */
+  at: number;
 }
 
 /** One colour, linear 0 to 1 per channel, exactly as the engine produced it. */

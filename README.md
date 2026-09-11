@@ -44,12 +44,19 @@ measured by somebody standing in the room watching both.
   back from the setting. A bulb renders roughly 25 updates a second over Zigbee
   whatever the stream does, so the two numbers are different layers and both
   are worth seeing.
-- Turns the beat into light. A hue is chosen every few bars and lands on the
-  downbeat, sliding rather than jumping to it; brightness is knocked to the
-  ceiling on every beat and fades. Eight palettes to draw from, a brightness
-  ceiling, a pulse length, how far the light drops between beats, and a latency
-  offset to line the light up against the music - all of them owned by the page,
-  changeable while the music plays, and saved for next time.
+- Turns the music into light, per bulb. A hue is chosen every few bars and lands
+  on the downbeat, sliding rather than jumping to it; brightness is knocked up on
+  every beat and fades. Each light follows the part of the spectrum nearest its
+  own position in the room, so a kick punches in the middle and a hi-hat lifts the
+  corners, and each band is read against its own recent behaviour rather than
+  against the others - otherwise the kick wins every comparison on every frame and
+  the room is a fixed gradient. A beat with no kick under it does not pulse at all,
+  which is what leaves a breakdown to the bands that are still playing.
+- Eight palettes to draw from, one to three colours at once and how to spread them
+  across the room, a brightness ceiling, a pulse length, how far the light drops
+  between beats, and a latency offset to line the light up against the music - all
+  of them owned by the page, changeable while the music plays, and saved for next
+  time.
 - Serves a web UI built around the visualizer, which fills the window: the BPM,
   the position in the bar, the anchor button, the achieved frame rate and the
   connection and source health sit over it, and everything adjustable is behind
@@ -59,10 +66,8 @@ measured by somebody standing in the room watching both.
 - Streams state, beats, spectrum and bridge status over a WebSocket. The wire
   contract is [docs/protocol.md](docs/protocol.md).
 
-Not here yet: every light in the area shows the same colour. Per-light spatial
-colour and the colour sections that go with it, strobe, and gamma correction
-are Phase 4, which is where the light engine stops being one colour and starts
-being a scene. Flux is also still a console app you start from a terminal: the
+Not here yet: strobe, background fade and gamma correction, which are the rest of
+Phase 4. Flux is also still a console app you start from a terminal: the
 desktop shell and the QR code that gets a phone onto the page without typing an
 address are Phase 5.
 
@@ -134,8 +139,9 @@ backend.
 | `Console:BeatLog` | `false` | Print one console line per beat, for debugging the beat grid without a browser |
 | `Console:AudioMeter` | `false` | Print the capture level four times a second, for identifying an audio device without a browser |
 
-The light engine's own settings - palette, how often the colour changes,
-brightness, pulse length and pulse depth - are deliberately not here. They are
+The light engine's own settings - palette, how often the colour changes, how many
+colours at once and how they are spread, brightness, pulse length and pulse depth -
+are deliberately not here. They are
 taste rather than installation, they are adjusted while the music is playing,
 and they belong to whoever is standing at the page; they persist across
 restarts in `%APPDATA%\Flux\hue-settings.json`, alongside the chosen
@@ -192,9 +198,9 @@ npm test
 |---|---|
 | `src/Flux.Beat` | Sync source abstraction and manager, Ableton Link listener, packet decoding, manual tap source, beat grid, bar anchor, beat scheduler |
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
-| `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, a spectrum frame, and how many columns the visualizer wants it in |
+| `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, a spectrum frame, the band energies the light engine follows, and how many columns the visualizer wants it in |
 | `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
-| `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, the light engine that turns beats into colour, and the encrypted store the bridge keys live in |
+| `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, the light engine that turns beats into a colour per light, the room-to-frequency mapping behind it, and the encrypted store the bridge keys live in |
 | `src/Flux.Web.Server` | WebSocket hub, beat, spectrum, device, bridge and stage broadcasters, the stage's own settings and their store, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable |

@@ -1,3 +1,4 @@
+using Flux.Audio;
 using Flux.Beat;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -46,6 +47,46 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   private const int MaxHueAttempts = 50;
 
   /// <summary>
+  /// The most of a beat's pulse that a light's own band can reach between beats.
+  ///
+  /// Flux's own, with no counterpart in the scene, and the number is doing one job: it
+  /// keeps the shimmer under the punch. Each light follows its own band continuously so
+  /// that hats lift the outer lights in the gaps where nothing is hitting the kick -
+  /// without it the room is only ever a set of simultaneous flashes at different heights,
+  /// which is what looking at nine channels of the live feed showed on 2026-09-11.
+  ///
+  /// Seven tenths, raised from a half on 2026-09-11 after the room still read as every
+  /// light doing the same thing: at a half the beat pulse was so much the larger of the
+  /// two that the between-beat movement was there in the numbers and not on the wall.
+  /// It stays below one on purpose - the beat has to remain the loudest thing in the room
+  /// or the pulse stops being legible as a beat at all, and a response allowed to reach
+  /// full would do exactly that on dense material where something is always hitting
+  /// somewhere.
+  /// </summary>
+  private const double ShimmerShare = 0.7;
+
+  /// <summary>
+  /// The dimmest a light is allowed to sit while a stream is open, as a fraction of the
+  /// room's own ceiling.
+  ///
+  /// Asked for on 2026-09-11, after watching it: the lights should never go fully out,
+  /// only down to their lowest setting. That was already true at the default depth of 85,
+  /// where a spent pulse leaves a light at 15 per cent - but a depth of 100 is documented
+  /// as fading to nothing, and the spatial share can take a light on a dead band to the
+  /// floor whatever the depth. A light that is off is indistinguishable from a light that
+  /// has stopped receiving anything, and between beats is most of the time.
+  ///
+  /// A fraction of the ceiling rather than an absolute value, so that turning the room
+  /// down turns this down with it: a 5 per cent floor under a room set to 20 per cent
+  /// would otherwise be a quarter of the brightness somebody asked for.
+  ///
+  /// <b>A brightness of zero is still black.</b> That is a blackout, which is somebody
+  /// asking for no light rather than for a little, and the two should not be confused by
+  /// a floor that ignores the request.
+  /// </summary>
+  private const double MinimumLitFraction = 0.05;
+
+  /// <summary>
   /// How fast the displayed hue closes on its target, as a fraction of the remaining
   /// distance per second.
   ///
@@ -80,6 +121,17 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   private readonly BeatScheduler scheduler;
   private readonly HueBridgeService bridge;
   private readonly IMonotonicClock clock;
+
+  /// <summary>
+  /// What the room sounds like, or null in a build with no audio at all.
+  ///
+  /// Null is an ordinary state and not a degraded one: Link supplies a tempo with no
+  /// microphone anywhere near it, and that configuration lights every channel alike.
+  /// Read through <see cref="IAudioSpectrum.Levels"/> and never
+  /// <see cref="IAudioSpectrum.Spectrum"/>, which consumes the beat verdict the
+  /// visualizer needs - see the argument on that method.
+  /// </summary>
+  private readonly IAudioSpectrum? spectrum;
   private readonly ILogger<LightEngine> logger;
   private readonly Random random;
   private readonly object gate = new();
@@ -100,18 +152,96 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// </summary>
   private readonly int beatsPerBar;
 
-  private double targetHue;
-  private double displayHue;
+  /// <summary>
+  /// Each band as a fraction of its own recent loudest, which is the only form in which
+  /// the three can be compared - see <see cref="BandDynamics"/> for why the raw levels
+  /// cannot be.
+  /// </summary>
+  private readonly BandDynamics dynamics = new();
+
+  /// <summary>
+  /// The hues in play, of which the first <see cref="activeColorCount"/> are drawn.
+  ///
+  /// Fixed at the maximum rather than resized with the setting, so that changing the
+  /// number of colours mid-set cannot allocate on the frame path and cannot leave a
+  /// half-built array visible to a render. The entries past the count are stale on
+  /// purpose: they are what the room was last split into, and they are overwritten
+  /// before they are ever drawn again.
+  /// </summary>
+  private readonly double[] targetHues = new double[LightSettings.MaxColorCount];
+  private readonly double[] displayHues = new double[LightSettings.MaxColorCount];
+
+  /// <summary>How many of the hues above are currently being drawn.</summary>
+  private int activeColorCount = 1;
+
+  /// <summary>
+  /// The number the random layout mixes into each light's rank, re-drawn whenever the
+  /// colours change.
+  ///
+  /// Re-drawn on the change rather than per frame, which is the difference between a
+  /// room whose shape changes with the music and a room full of flickering. Held even
+  /// while the layout is not random, because the alternative is a draw on the frame path
+  /// the first time somebody selects it.
+  /// </summary>
+  private uint colorRoll;
+
+  /// <summary>
+  /// The downbeat the colour changes are counted from, or null before one is known.
+  ///
+  /// This is what makes the anchor button reset the colour cycle instead of only the
+  /// beat indicator. Counting bars from the grid's absolute index - which is what this
+  /// did until 2026-09-11 - puts the changes on a phase decided by wherever the source's
+  /// numbering happened to start, so pressing anchor on the downbeat moved the bar count
+  /// and left the colour changes landing one, two or three bars off it for the rest of
+  /// the night. Counting from the anchor itself means bar one is the bar the user marked.
+  /// </summary>
+  private long? colorAnchorBeat;
+
   private double? pulseStartedMicros;
+
+  /// <summary>
+  /// How hard the kick was hitting when the last beat landed, 0 to 1, and 1 when there is
+  /// nothing to listen to.
+  ///
+  /// <b>This is what stops the room announcing a beat nobody can hear.</b> A grid keeps
+  /// publishing beats through a breakdown - Link is a clock and the detector holds a
+  /// timeline - so before this the lights fired a synchronous pulse right through a
+  /// passage with no kick in it. Scaling that pulse by how loud the room was made it
+  /// quieter and left it synchronous, which is the part that reads as wrong: it is the
+  /// unison rather than the brightness that gives it away.
+  ///
+  /// Captured at the beat rather than followed continuously, which is the opposite choice
+  /// to <c>Loudness</c> beside it and the two answer different questions. How hard this
+  /// beat hit is a fact about one moment and it should hold for the whole fade, or a
+  /// pulse gets cut off by the gap after the kick that caused it. Whether anything is
+  /// playing at all is a fact about now, so a track that stops mid-pulse still kills the
+  /// tail.
+  ///
+  /// One with no audio, so a build driven by a clock alone pulses on every beat exactly
+  /// as it always has.
+  /// </summary>
+  private double pulseStrength = 1;
+
   private double? renderedAtMicros;
 
+  /// <summary>
+  /// The ordinary form.
+  ///
+  /// <paramref name="spectrum"/> is nullable and deliberately <b>not optional</b>. A
+  /// default here is what let the band count reach the analyzer as a ceiling in step 3:
+  /// the registration built its analyzer with an explicit argument list, the new
+  /// parameter had a default, and every symptom said the wiring was correct except the
+  /// picture. Without a default, a construction site that forgets the room's sound does
+  /// not compile.
+  /// </summary>
   public LightEngine(
     BeatScheduler scheduler,
     HueBridgeService bridge,
     IMonotonicClock clock,
     IOptions<BeatOptions> beat,
+    IAudioSpectrum? spectrum,
     ILogger<LightEngine> logger)
-    : this(scheduler, bridge, clock, beat, logger, new Random()) {
+    : this(scheduler, bridge, clock, beat, spectrum, logger, new Random()) {
   }
 
   /// <summary>
@@ -126,6 +256,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     HueBridgeService bridge,
     IMonotonicClock clock,
     IOptions<BeatOptions> beat,
+    IAudioSpectrum? spectrum,
     ILogger<LightEngine> logger,
     Random random) {
     ArgumentNullException.ThrowIfNull(beat);
@@ -133,12 +264,18 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     this.scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
     this.bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
     this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
+    this.spectrum = spectrum;
     this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     this.random = random ?? throw new ArgumentNullException(nameof(random));
     this.beatsPerBar = Math.Max(1, beat.Value.Quantum);
 
-    this.targetHue = this.random.Next(360) / 360.0;
-    this.displayHue = this.targetHue;
+    // One draw and not one per slot, which keeps a seeded engine's first colour the
+    // number it has always been. The other slots are not colours yet: they become them
+    // when somebody asks for a second or third, and until then drawing for them would
+    // only move every later draw along by two.
+    this.targetHues[0] = this.random.Next(360) / 360.0;
+    Array.Fill(this.targetHues, this.targetHues[0]);
+    Array.Copy(this.targetHues, this.displayHues, this.targetHues.Length);
   }
 
   /// <summary>
@@ -167,26 +304,189 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   }
 
   /// <summary>
-  /// The colour for this instant.
+  /// The colours for this instant.
   ///
   /// Called from the stream loop's thread and from nowhere else, which is why the
   /// render state below is unsynchronised: only the queue of arriving beats is shared,
   /// and only that is locked. A second concurrent renderer would corrupt the
   /// transition, and there is deliberately no lock making that safe - the fix for two
   /// renderers is one renderer.
+  ///
+  /// <b>Where a light is decides both how hard the beat hits it and, above one colour,
+  /// which colour it is in.</b> A light near the centre of the room follows the kick,
+  /// one out at the edge follows the top, and the band each listens to is decided by
+  /// <see cref="LightPlacements"/> from coordinates the bridge reports. With
+  /// <see cref="LightSettings.ColorCount"/> above one the same axis splits the room into
+  /// that many hues, so the colour split and the brightness split are the same statement
+  /// made twice rather than two unrelated ones.
   /// </summary>
-  public HueColor Render() {
+  public HueColor Render(ReadOnlySpan<LightPlacement> lights, Span<HueColor> colors) {
+    if(colors.Length < lights.Length) {
+      throw new ArgumentException($"{lights.Length} light(s) need {lights.Length} colours, and {colors.Length} were offered.", nameof(colors));
+    }
+
     HueConnection connection = this.bridge.Connection;
     LightSettings settings = connection.Light;
+    int wanted = Math.Clamp(settings.ColorCount, 1, LightSettings.MaxColorCount);
 
     // Positive is early, which is the documented direction: the light path runs behind
     // the music, so the engine is asked to live slightly in the future.
     double now = this.clock.NowMicros + (connection.LatencyOffsetMs * MicrosPerMilli);
 
-    this.Consume(now, settings);
-    this.Slide(now);
+    // The frame's own length, taken once. The hue transition and the band references are
+    // both integrating over it, and two readings of one interval is how a frame ends up
+    // half a frame long in one place and a whole one in another.
+    double? lastFrame = this.renderedAtMicros;
+    double elapsedSeconds = lastFrame is { } previous ? Math.Max(0, now - previous) / MicrosPerSecond : 0;
+    this.renderedAtMicros = now;
 
-    return FromHue(this.displayHue, this.Brightness(now, settings));
+    // Read once for the whole frame rather than per light, which is not only cheaper:
+    // sampling it nine times would let the analyzer publish a new frame midway through
+    // and leave one half of the room a frame ahead of the other. Read before the early
+    // return below as well, so that the references inside BandDynamics keep tracking
+    // whether or not there is a room to paint - a stream opening should find them where
+    // the music has been, not starting from nothing.
+    //
+    // Before the beats are applied rather than after, because a beat's pulse is now sized
+    // from what the kick is doing at the moment it lands.
+    SpectrumLevels? heard = this.spectrum?.Levels();
+    RoomSound? sound = heard is { } bands ? this.dynamics.Observe(bands, elapsedSeconds) : null;
+    SpectrumLevels? drive = sound?.Drive;
+    SpectrumLevels? transient = sound?.Transient;
+
+    this.Consume(now, settings, sound?.Transient.Kick);
+    this.Split(wanted, settings.Palette);
+    this.Slide(elapsedSeconds, lastFrame is null, wanted);
+
+    Envelope envelope = this.EnvelopeOf(now, settings, sound?.Loudness ?? 1);
+
+    // The first hue and not an average of them, because an average of two hues is a
+    // third colour that no light in the room is showing. What this field has meant since
+    // the per-light feed arrived is what the engine chose, and with the room split it is
+    // what the engine chose first.
+    HueColor shared = FromHue(this.displayHues[0], envelope.Level);
+
+    if(lights.IsEmpty) {
+      return shared;
+    }
+
+    for(int index = 0; index < lights.Length; index++) {
+      double at = lights[index].At;
+      double hue = this.displayHues[GroupOf(at, lights.Length, wanted, this.colorRoll, settings.ColorLayout)];
+
+      colors[index] = FromHue(hue, envelope.LevelAt(Share(drive, at), Shimmer(transient, at)));
+    }
+
+    return shared;
+  }
+
+  /// <summary>
+  /// The room's one colour, with no geometry involved.
+  ///
+  /// For the tests, and for reasoning about the engine in isolation: everything the
+  /// engine decides is visible in this one value, which is what makes an envelope and a
+  /// palette assertable without a room to put them in.
+  /// </summary>
+  internal HueColor Render() {
+    return this.Render([], []);
+  }
+
+  /// <summary>
+  /// How much of this frame's pulse a light at a given frequency takes, 0 to 1.
+  ///
+  /// Relative to whichever band is leading and not absolute, which is the decision that
+  /// keeps this out of the beat-energy envelope's territory. Absolute energy would make
+  /// the whole room dim during a quiet passage, and how hard the room hits overall is
+  /// the next step's question - deciding it here as well would leave two answers to one.
+  /// Relative says only which lights lead.
+  ///
+  /// <b>What leads is decided from the bands measured against themselves</b> and not
+  /// from their raw levels, which is the correction made on 2026-09-11: raw, the kick
+  /// band outweighs the others on essentially every frame of every track, so "which
+  /// lights lead" had exactly one answer and the room was a fixed gradient. See
+  /// <see cref="BandDynamics"/>, which is where the comparison is made possible.
+  ///
+  /// One, meaning the room's own envelope unchanged, whenever there is nothing to go
+  /// on: no audio project in the build, no device open, silence, or the improbable
+  /// frame where all three bands read zero. Every one of those means "no opinion", and
+  /// a room lighting evenly is what Flux did for the whole of Phase 3.
+  /// </summary>
+  private static double Share(SpectrumLevels? drive, double at) {
+    if(drive is not { } bands) {
+      return 1;
+    }
+
+    double peak = bands.Peak;
+
+    return peak > 0 ? Math.Clamp(bands.At(at) / peak, 0, 1) : 1;
+  }
+
+  /// <summary>
+  /// How far a light's own band lifts it between beats, 0 to
+  /// <see cref="ShimmerShare"/>.
+  ///
+  /// Fed by the transient measure and not the level one, which is the correction made
+  /// after the room still read as every light doing the same thing: a band's level
+  /// changes slowly, so lifting a light by it moved every light together and only the
+  /// heights differed. What each light needs in the gaps between beats is whether its own
+  /// band is doing something *now*, which is a fast question with a different answer per
+  /// band at any given instant. That is what a hat pattern under a held chord looks like
+  /// from the far side of a room, and it is the difference between a room that flashes
+  /// and a room the music moves through.
+  ///
+  /// Zero with nothing to go on, which leaves the pulse as the only thing driving the
+  /// lights - exactly the behaviour before this existed.
+  /// </summary>
+  private static double Shimmer(SpectrumLevels? transient, double at) {
+    return transient is { } bands ? Math.Clamp(bands.At(at), 0, 1) * ShimmerShare : 0;
+  }
+
+  /// <summary>
+  /// Which colour group a light belongs to, under the chosen layout.
+  ///
+  /// Everything here is a function of where the light sits on the frequency axis and of
+  /// nothing else - not of its channel id, not of its position in the array it arrived
+  /// in. That is what keeps the three layouts comparable: they divide the same room the
+  /// same way round, and they differ only in how the divisions are handed out.
+  /// </summary>
+  /// <param name="at">Where the light listens, 0 to 1.</param>
+  /// <param name="lights">How many lights the room has, which turns <paramref name="at"/> back into a rank.</param>
+  /// <param name="count">How many colours to divide between.</param>
+  /// <param name="roll">The number re-drawn at each colour change, for <see cref="LightColorLayout.Random"/>.</param>
+  /// <param name="layout">How to divide them.</param>
+  private static int GroupOf(double at, int lights, int count, uint roll, LightColorLayout layout) {
+    double position = Math.Clamp(at, 0, 1);
+
+    if(count <= 1) {
+      return 0;
+    }
+
+    // The rank the placement was built from, recovered rather than passed in: the engine
+    // is handed a frequency per light and the placements are spread evenly over the
+    // ranks, so this inverts that exactly. It is the honest way to ask "which light is
+    // this, counting outward" without the engine taking a second opinion on the ordering.
+    int rank = lights > 1 ? (int)Math.Round(position * (lights - 1)) : 0;
+
+    return layout switch {
+      // Equal spans of the axis rather than equal counts of lights, because the axis is
+      // what the placements already spread evenly by rank: splitting it in two puts the
+      // lower half of the spectrum in one colour and the upper half in the other whatever
+      // the room's shape, while splitting by count would move the boundary every time an
+      // area gained a bulb.
+      LightColorLayout.Radial => Math.Clamp((int)(position * count), 0, count - 1),
+
+      LightColorLayout.Alternating => rank % count,
+
+      // A cheap integer hash rather than a stored assignment. Knuth's multiplicative
+      // constant mixes the low bits of the rank up into the high ones, which matters at
+      // two colours: without it the low bit survives into the result and "random" is
+      // alternating with extra steps.
+      LightColorLayout.Random => (int)((((uint)rank * 2654435761u) ^ roll) % (uint)count),
+
+      // No default arm, deliberately: a layout added later must fail to compile here
+      // rather than silently ship as whichever one the fallback happened to be.
+      _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "No grouping for this layout."),
+    };
   }
 
   /// <summary>
@@ -212,7 +512,16 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   }
 
   /// <summary>Applies every beat whose moment has arrived.</summary>
-  private void Consume(double now, LightSettings settings) {
+  /// <param name="now">The instant being rendered, already shifted by the latency offset.</param>
+  /// <param name="settings">The look in force, which decides whether this beat changes the colour.</param>
+  /// <param name="kickHit">
+  /// How hard the kick is hitting right now, or null with nothing to listen to.
+  ///
+  /// The transient and not the level, which is the distinction the whole thing turns on:
+  /// a breakdown often still has bass in it and what it does not have is a kick landing.
+  /// A band sitting at a steady level, however loud, is not a hit.
+  /// </param>
+  private void Consume(double now, LightSettings settings, double? kickHit) {
     while(true) {
       BeatEvent beat;
 
@@ -229,9 +538,10 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       // fade of a couple of hundred milliseconds that is the difference between an
       // envelope and a staircase.
       this.pulseStartedMicros = beat.ScheduledMicros;
+      this.pulseStrength = kickHit is { } hit ? Math.Clamp(hit, 0, 1) : 1;
 
       if(this.ShouldChangeColor(beat, settings.ColorChangeBars)) {
-        this.targetHue = this.PickHue(settings.Palette);
+        this.PickHues(settings.Palette, Math.Clamp(settings.ColorCount, 1, LightSettings.MaxColorCount));
       }
     }
   }
@@ -242,8 +552,16 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// The scene's rule, in the scene's unit: colours change on the downbeat of every
   /// n-th bar, and zero bars means every beat instead. What is rewritten is how the
   /// position is worked out - the scene counted beats it had detected, while this reads
-  /// the grid's absolute index, so a dropped or re-anchored beat cannot leave the
-  /// changes landing off the bar for the rest of the night.
+  /// the grid's index, so a dropped beat cannot leave the changes landing off the bar
+  /// for the rest of the night.
+  ///
+  /// <b>Counted from the anchor rather than from the grid's zero</b>, corrected on
+  /// 2026-09-11 after the behaviour was seen: the two differ by wherever the source's
+  /// numbering happened to begin, which is arbitrary, so the first bar of the count was
+  /// some bar the user never marked and pressing anchor visibly moved the beat indicator
+  /// while leaving the colours changing on the old phase. Anchoring means "this is bar
+  /// one", and it has to mean that for everything the bar count drives or it only half
+  /// means it.
   /// </summary>
   private bool ShouldChangeColor(BeatEvent beat, int bars) {
     if(bars <= 0) {
@@ -254,12 +572,30 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       // No downbeat is known, so there is no bar to land on and the honest fallback is
       // the scene's raw form: every n-th beat from wherever the grid happens to start.
       // Changing on a guessed phase is worth more than not changing at all, and the
-      // moment an alignment arrives the branch above takes over.
+      // moment an alignment arrives the branch below takes over.
+      //
+      // The anchor is deliberately left alone here. An alignment that drops out and
+      // comes back on the same phase is the same anchor, and clearing it would restart
+      // the colour cycle every time a source went quiet for a moment.
       return FloorMod(beat.Index, (long)this.beatsPerBar * bars) == 0;
     }
 
     if(beat.PositionInBar != 1) {
       return false;
+    }
+
+    // A downbeat out of phase with the one being counted from is a new anchor, and the
+    // comparison is a congruence rather than an equality because every later downbeat is
+    // a whole number of bars from the first. That is also what makes this quiet when
+    // nothing has changed: a re-alignment landing on the same phase leaves the count
+    // where it was rather than restarting it.
+    if(this.colorAnchorBeat is not { } anchor || FloorMod(beat.Index - anchor, this.beatsPerBar) != 0) {
+      this.colorAnchorBeat = beat.Index;
+
+      // The anchored bar is bar one, so it takes a colour. Pressing the button is a
+      // deliberate act on a downbeat and answering it with a visible change is the
+      // confirmation that it landed.
+      return true;
     }
 
     // Counted in bars rather than in beats, because a bar's first beat is not
@@ -268,7 +604,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     // never come out at zero and the colour would never change again. Dividing is safe
     // from here whatever the phase - consecutive downbeats are a bar apart, so they
     // always land in consecutive bars.
-    long bar = FloorDiv(beat.Index, this.beatsPerBar);
+    long bar = FloorDiv(beat.Index - anchor, this.beatsPerBar);
 
     return FloorMod(bar, bars) == 0;
   }
@@ -289,10 +625,10 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// almost a full turn away from one at 0.02 rather than as its neighbour - and both
   /// of those are red.
   /// </summary>
-  private double PickHue(LightPalette palette) {
+  private double PickHue(LightPalette palette, ReadOnlySpan<double> away) {
     IReadOnlyList<int>? hues = LightPalettes.HuesOf(palette);
 
-    double best = this.targetHue;
+    double best = away.IsEmpty ? this.targetHues[0] : away[0];
     double bestDistance = -1;
 
     for(int attempt = 0; attempt < MaxHueAttempts; attempt++) {
@@ -300,7 +636,14 @@ internal sealed class LightEngine: ILightSource, IHostedService {
         ? this.random.Next(360) / 360.0
         : hues[this.random.Next(hues.Count)] / 360.0;
 
-      double distance = Separation(candidate, this.targetHue);
+      // The nearest of the hues to stay away from, because a candidate is only as good
+      // as its worst neighbour: one that sits comfortably opposite the first colour and
+      // right on top of the second is not a third colour at all.
+      double distance = double.PositiveInfinity;
+      foreach(double other in away) {
+        distance = Math.Min(distance, Separation(candidate, other));
+      }
+
       if(distance >= MinHueSeparation) {
         return candidate;
       }
@@ -314,35 +657,81 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     return best;
   }
 
-  /// <summary>Moves the displayed hue toward its target by this frame's share.</summary>
-  private void Slide(double now) {
-    if(this.renderedAtMicros is not { } previous) {
-      // Nothing to interpolate from on the first frame. Starting at the target rather
-      // than sliding to it from an arbitrary hue keeps the first colour the one that
-      // was chosen.
-      this.displayHue = this.targetHue;
-      this.renderedAtMicros = now;
+  /// <summary>
+  /// Chooses the whole set of hues the room is about to be in.
+  ///
+  /// The first is chosen against the one it replaces, which is the single-colour rule
+  /// unchanged. Each one after it is chosen against the ones already picked in this same
+  /// round and not against what those slots held before, because what makes two colours
+  /// read as two colours is that they differ from each other now - how either of them
+  /// relates to the colour it replaced is a question about the transition, and the first
+  /// hue already carries that.
+  /// </summary>
+  private void PickHues(LightPalette palette, int count) {
+    this.targetHues[0] = this.PickHue(palette, [this.targetHues[0]]);
+
+    for(int index = 1; index < count; index++) {
+      this.targetHues[index] = this.PickHue(palette, this.targetHues.AsSpan(0, index));
+    }
+
+    // Derived from the hue that was just chosen rather than drawn separately, which is
+    // not thrift: a seeded engine's colours are a fact its tests assert, and an extra
+    // draw here would move every later one along for a value nothing about the colours
+    // depends on. The hue is uniform over the wheel, so this is as well spread as a draw
+    // would have been, and it changes exactly when the colours do - which is when the
+    // random layout is supposed to reshuffle.
+    this.colorRoll = (uint)(this.targetHues[0] * uint.MaxValue);
+  }
+
+  /// <summary>
+  /// Brings the set of hues up to date with a changed colour count.
+  ///
+  /// Without this a room split from one colour into two shows one colour until the next
+  /// scheduled change, which at sixteen bars is half a minute of a setting looking
+  /// broken. The new groups start from the colour they are splitting out of and slide to
+  /// their own, so the split is something the room does rather than something that has
+  /// already happened by the time anyone looks up.
+  /// </summary>
+  private void Split(int count, LightPalette palette) {
+    if(count == this.activeColorCount) {
       return;
     }
 
-    double elapsedSeconds = Math.Max(0, now - previous) / MicrosPerSecond;
-    this.renderedAtMicros = now;
+    for(int index = this.activeColorCount; index < count; index++) {
+      this.targetHues[index] = this.PickHue(palette, this.targetHues.AsSpan(0, index));
+      this.displayHues[index] = this.displayHues[0];
+    }
+
+    this.activeColorCount = count;
+  }
+
+  /// <summary>Moves each displayed hue toward its target by this frame's share.</summary>
+  private void Slide(double elapsedSeconds, bool firstFrame, int count) {
+    if(firstFrame) {
+      // Nothing to interpolate from on the first frame. Starting at the target rather
+      // than sliding to it from an arbitrary hue keeps the first colour the one that
+      // was chosen.
+      Array.Copy(this.targetHues, this.displayHues, this.targetHues.Length);
+      return;
+    }
 
     // Clamped, which the scene had no need to be at a steady 60 frames a second. A
     // frame that arrives late enough to make the rate exceed 1 would otherwise
     // overshoot the target and slide back, so a hiccup would read as a colour wobble.
     double rate = Math.Clamp(TransitionRatePerSecond * elapsedSeconds, 0, 1);
 
-    // The short way round: a target 0.05 above a display of 0.98 is 0.07 away going
-    // up through red, not 0.93 going down through everything else.
-    double difference = this.targetHue - this.displayHue;
-    if(difference > 0.5) {
-      difference -= 1;
-    } else if(difference < -0.5) {
-      difference += 1;
-    }
+    for(int index = 0; index < count; index++) {
+      // The short way round: a target 0.05 above a display of 0.98 is 0.07 away going
+      // up through red, not 0.93 going down through everything else.
+      double difference = this.targetHues[index] - this.displayHues[index];
+      if(difference > 0.5) {
+        difference -= 1;
+      } else if(difference < -0.5) {
+        difference += 1;
+      }
 
-    this.displayHue = Wrap(this.displayHue + (difference * rate));
+      this.displayHues[index] = Wrap(this.displayHues[index] + (difference * rate));
+    }
   }
 
   /// <summary>
@@ -354,8 +743,30 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// also the number somebody actually means - how much should a beat stand out - and
   /// it is what makes a short pulse usable at all, because a shallow one puts a quick
   /// flash on top of a bright room instead of leaving a dark one.
+  ///
+  /// Returned in parts rather than as one number, and that is what makes the spatial
+  /// behaviour possible without a new setting: a light's own band scales the pulse above
+  /// the floor and never the floor itself, so a light listening to a silent band drops
+  /// back to the room's resting level rather than going out. A light that goes out looks
+  /// exactly like a light that has stopped receiving anything, which is the argument the
+  /// floor already existed for.
+  ///
+  /// <b><paramref name="loudness"/> is what makes the pulse answer the music and not
+  /// only the grid.</b> A beat during a breakdown is still a beat, and a grid driven by
+  /// a clock goes on publishing beats after the track has finished, so a pulse of a
+  /// fixed height answers a break and a drop and a silent room identically - which is
+  /// what was seen on 2026-09-11 and is what this scales. One means "no opinion" and
+  /// reproduces the old behaviour exactly, which is what a build with no audio gets.
+  ///
+  /// Applied continuously rather than captured at the beat, which is a departure from
+  /// the wording this step was booked under. Capturing it makes a loud beat stay loud
+  /// through its whole decay and is the more musical of the two - but it also means a
+  /// track that stops mid-pulse finishes the pulse at the volume of the track that is no
+  /// longer playing, and the complaint that prompted this was about exactly that moment.
+  /// Worth revisiting by ear: the two differ only in the couple of hundred milliseconds
+  /// after a beat.
   /// </summary>
-  private double Brightness(double now, LightSettings settings) {
+  private Envelope EnvelopeOf(double now, LightSettings settings, double loudness) {
     double ceiling = settings.Brightness / (double)LightSettings.MaxPercent;
 
     if(settings.PulseMs <= 0 || this.pulseStartedMicros is not { } started) {
@@ -366,14 +777,65 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       // black - a light sitting at its resting level looks exactly like a stream that
       // never opened, and "no music yet" is precisely when somebody is standing in the
       // room asking which of those they are looking at.
-      return ceiling;
+      //
+      // A floor equal to the ceiling also makes the spatial scaling vanish rather than
+      // needing a special case, which is right: with the pulse switched off there is no
+      // pulse to divide between the lights, and the person who turned it off asked for
+      // one steady colour rather than for a room that shimmers by position.
+      return new Envelope(ceiling, ceiling, 1, 1);
     }
 
-    double floor = ceiling * (1.0 - (settings.PulseDepth / (double)LightSettings.MaxPercent));
+    double floor = Math.Max(
+      ceiling * (1.0 - (settings.PulseDepth / (double)LightSettings.MaxPercent)),
+      ceiling * MinimumLitFraction);
     double age = Math.Max(0, now - started);
     double decay = Math.Exp(Math.Log(PulseSpentAt) * age / (settings.PulseMs * MicrosPerMilli));
 
-    return floor + ((ceiling - floor) * decay);
+    // The strength of the beat that started this pulse folds into the decay rather than
+    // sitting beside it, because the two are one quantity: how much pulse is in flight.
+    // It deliberately does not reach the shimmer, which is what carries a break - with no
+    // kick the lights are left following their own bands and nothing else, which is the
+    // whole point of sizing the pulse this way.
+    return new Envelope(floor, ceiling, decay * this.pulseStrength, Math.Clamp(loudness, 0, 1));
+  }
+
+  /// <summary>Where this frame sits between the resting level and full.</summary>
+  /// <param name="Floor">The resting level, which a light never drops below while a stream is open.</param>
+  /// <param name="Ceiling">The brightest this room is allowed to get.</param>
+  /// <param name="Decay">
+  /// How much pulse is in flight: the strength of the beat that started it, fading. It
+  /// reaches 1 only on a beat the kick hit at full, and is 0 through a passage with no
+  /// kick in it at all.
+  /// </param>
+  /// <param name="Loudness">
+  /// How much of the range above the floor the music is currently entitled to.
+  ///
+  /// Applied to everything above the floor and never to the floor itself, which is the
+  /// same rule the spatial share already follows and for the same reason: quiet has to
+  /// mean a smaller pulse rather than a lower resting level. A silent room that fades
+  /// out altogether is indistinguishable from a stream that has dropped, and telling
+  /// those two apart is the one thing the floor has always existed for.
+  /// </param>
+  private readonly record struct Envelope(double Floor, double Ceiling, double Decay, double Loudness) {
+    /// <summary>The level the room as a whole is at, which is what a page is shown.</summary>
+    internal double Level => this.Above(this.Decay);
+
+    /// <summary>
+    /// The level for one light, given its cut of the beat and its own band's shimmer.
+    ///
+    /// The larger of the two rather than their sum, because they are two claims about
+    /// the same light and not two lights: adding them would push a light whose band is
+    /// busy on the beat past the ceiling, and clamping that away would silently flatten
+    /// exactly the moments worth seeing. The beat wins wherever it is bigger, which is
+    /// every beat, and the shimmer fills in the gaps between them.
+    /// </summary>
+    internal double LevelAt(double share, double shimmer) {
+      return this.Above(Math.Max(this.Decay * share, shimmer));
+    }
+
+    private double Above(double drive) {
+      return this.Floor + ((this.Ceiling - this.Floor) * this.Loudness * Math.Clamp(drive, 0, 1));
+    }
   }
 
   /// <summary>

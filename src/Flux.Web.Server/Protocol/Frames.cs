@@ -19,8 +19,15 @@ public static class Frames {
   /// for a change an existing client could misread - a removed or renamed field,
   /// a changed unit, a changed meaning. Adding a message type or a field does
   /// not count.
+  ///
+  /// Moved to 2 when the light engine started sending a colour per light. Nothing was
+  /// removed and nothing was renamed, so this is the third case: <c>state.light.color</c>
+  /// was the colour every light had been sent and is now the colour before each light's
+  /// own band is applied. A version 1 page would keep drawing it and would keep looking
+  /// correct while being slightly brighter than the room, which is the failure this
+  /// number exists to turn into a refusal.
   /// </summary>
-  public const int Version = 1;
+  public const int Version = 2;
 
   /// <summary>
   /// Longest inbound message accepted, in bytes. Version 1's largest client
@@ -212,18 +219,20 @@ public static class Frames {
   /// with the name quoted - which this cannot produce and the caller can.
   /// </summary>
   public static bool TryReadLightSettings(JsonElement data, out HueEngineData engine) {
-    engine = new HueEngineData(string.Empty, 0, 0, 0, 0);
+    engine = new HueEngineData(string.Empty, 0, 0, 0, 0, 1, string.Empty);
 
     if(data.ValueKind != JsonValueKind.Object
       || !TryReadString(data, "palette", out string palette)
       || !TryReadInt(data, "colorChangeBars", out int bars)
       || !TryReadInt(data, "pulseMs", out int pulseMs)
       || !TryReadInt(data, "brightness", out int brightness)
-      || !TryReadInt(data, "pulseDepth", out int pulseDepth)) {
+      || !TryReadInt(data, "pulseDepth", out int pulseDepth)
+      || !TryReadInt(data, "colorCount", out int colorCount)
+      || !TryReadString(data, "colorLayout", out string colorLayout)) {
       return false;
     }
 
-    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth);
+    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth, colorCount, colorLayout);
     return true;
   }
 

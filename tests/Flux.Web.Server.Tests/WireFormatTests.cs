@@ -150,6 +150,34 @@ public sealed class WireFormatTests {
   }
 
   /// <summary>
+  /// Each light carries where it listens as well as what it was sent, because a page
+  /// that had to work out which light owns which part of the spectrum would be a second
+  /// implementation of a rule the server tunes.
+  /// </summary>
+  [Fact]
+  public void StateCarriesWhereEachLightListensBesideWhatItWasSent() {
+    StateData state = new StateData(
+      "audio",
+      "live",
+      [],
+      new GridData(128.0, 4.0, 4, 1, BarAligned: true),
+      new AlignmentData(Aligned: true, Method: "tap"),
+      new LightData(49.7, new LightColorData(0.8, 0.25, 0.55), [
+        new LightChannelData(0, 0.8, 0.25, 0.55),
+        new LightChannelData(1, 0.2, 0.06, 0.14),
+      ]),
+      new DiagnosticsData(0));
+
+    JsonElement channels = Payload(Frames.State(state), "state").GetProperty("light").GetProperty("channels");
+
+    Assert.Equal(2, channels.GetArrayLength());
+    Assert.Equal(0, channels[0].GetProperty("at").GetDouble());
+    Assert.Equal(0.8, channels[0].GetProperty("r").GetDouble());
+    Assert.Equal(1, channels[1].GetProperty("at").GetDouble());
+    Assert.Equal(0.14, channels[1].GetProperty("b").GetDouble());
+  }
+
+  /// <summary>
   /// Omitted rather than sent as null, and the distinction is the one this file already
   /// pins for <c>grid</c> from the other direction: a documented value survives as a
   /// null, while something that does not apply yet is left out. A page can then tell

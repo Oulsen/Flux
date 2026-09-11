@@ -1,4 +1,4 @@
-﻿import type { HueAreaData, HueData, HuePalette, HueState } from './protocol.ts';
+﻿import type { HueAreaData, HueColorLayout, HueData, HuePalette, HueState } from './protocol.ts';
 
 /**
  * The largest latency offset the server accepts, either way.
@@ -35,6 +35,24 @@ export const PALETTES: readonly HuePalette[] = [
  * sixteen, so this ladder is a convenience and not the limit.
  */
 export const COLOR_CHANGE_BARS: readonly number[] = [0, 1, 2, 4, 8, 16];
+
+/**
+ * How many colours the room can be in at once.
+ *
+ * Mirrored from `LightSettings.MaxColorCount`. Three, because every hue added takes
+ * lights away from the others and past three a group stops reading as a part of the room
+ * and starts reading as individual bulbs disagreeing.
+ */
+export const COLOR_COUNTS: readonly number[] = [1, 2, 3];
+
+/**
+ * How the room can be divided between those colours, in the order they are offered.
+ *
+ * `radial` leads because it is the default and the one with an argument behind it. The
+ * other two are here to be tried against the room, which is the only way a look gets
+ * settled. Mirrored from `LightColorLayout`.
+ */
+export const COLOR_LAYOUTS: readonly HueColorLayout[] = ['radial', 'alternating', 'random'];
 
 /**
  * The slowest pulse the server accepts.
@@ -316,6 +334,18 @@ export function colorChangeLabel(bars: number): string {
   const rounded = Math.round(bars);
 
   return rounded === 1 ? 'every bar' : `every ${rounded} bars`;
+}
+
+/**
+ * How many colours the room is in, in words.
+ *
+ * "one colour" rather than "1", because the row beside it reads "every 4 bars" and a
+ * bare numeral in a row of phrases reads as a quantity of something unnamed.
+ */
+export function colorCountLabel(count: number): string {
+  const rounded = Math.max(1, Math.round(count));
+
+  return rounded === 1 ? 'one colour' : `${rounded} colours`;
 }
 
 /**

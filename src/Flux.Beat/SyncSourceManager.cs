@@ -144,9 +144,14 @@ public sealed class SyncSourceManager {
   /// a cue press without ever publishing a timeline, and the web layer forwards a
   /// tap. Alignment belongs to the grid rather than to whoever is timing it.
   /// </summary>
+  /// <param name="method">What supplied the downbeat, for the UI to show.</param>
+  /// <param name="snapToBar">
+  /// Whether this is a guess that defers to a bar already known, which is the drop
+  /// detector and nothing else - see <see cref="BeatGrid.TryAlignBar"/>.
+  /// </param>
   /// <returns>False when no timeline is known yet, so there is no beat to anchor to.</returns>
-  public bool AlignBar(BarAlignmentMethod method) {
-    return this.grid.TryAlignBar(method);
+  public bool AlignBar(BarAlignmentMethod method, bool snapToBar = false) {
+    return this.grid.TryAlignBar(method, snapToBar);
   }
 
   /// <summary>
@@ -245,8 +250,8 @@ public sealed class SyncSourceManager {
       manager.Withdraw(name);
     }
 
-    public void AlignBar(BarAlignmentMethod method) {
-      manager.AlignBar(method);
+    public void AlignBar(BarAlignmentMethod method, bool snapToBar = false) {
+      manager.AlignBar(method, snapToBar);
     }
   }
 }

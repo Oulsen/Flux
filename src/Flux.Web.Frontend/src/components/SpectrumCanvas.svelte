@@ -25,15 +25,23 @@
    * makes: a still spectrum is not a calmer spectrum, it is no instrument at all.
    */
 
-  import type { LightColorData, SpectrumData, StageData } from '../lib/protocol.ts';
+  import type {
+    LightChannelData,
+    LightColorData,
+    SpectrumData,
+    StageData,
+  } from '../lib/protocol.ts';
   import {
     approachColor,
+    approachLights,
     barRect,
     barThickness,
+    dampPulse,
     hueCss,
     hueShift,
     HUE_SPEED_DEFAULT,
     isSmooth,
+    lightAt,
     NEUTRAL_COLOR,
     pixelCapRects,
     rainbowStops,
@@ -71,6 +79,14 @@
      * idle - so the absence is stated in words and not by turning the picture off.
      */
     color: LightColorData | null;
+    /**
+     * What each light was sent, or empty while Flux is not streaming.
+     *
+     * Empty falls back to painting the whole picture in `color`, which is what the
+     * stage did before the engine had a colour per light and is still right for a
+     * stream that has opened and not yet sent a frame.
+     */
+    lights: LightChannelData[];
     /** The rate that colour arrives at, which is what it is interpolated over. */
     stateHz: number;
     /**
@@ -85,7 +101,7 @@
     stage: StageData;
   }
 
-  const { frame, color, stateHz, stage }: Props = $props();
+  const { frame, color, lights, stateHz, stage }: Props = $props();
 
   /** Below this the flash is already invisible and not worth the draw call. */
   const FLASH_FLOOR = 0.01;
@@ -156,6 +172,12 @@
 
     /** The colour on screen, which is behind the wire by up to one feed interval. */
     let shown: SceneColor = NEUTRAL_COLOR;
+
+    /** Each light's colour on screen, smoothed the same way and separately. */
+    let shownLights: SceneColor[] = [];
+
+    /** Where each light listens, which the wire repeats every frame and only changes with the room. */
+    let placements: number[] = [];
 
     let cssWidth = element.clientWidth;
     let cssHeight = element.clientHeight;
@@ -345,17 +367,43 @@
       now: number,
     ): void => {
       /*
-       * One colour, until the engine sends one per section.
+       * One colour per light, or the room's one colour where there are no lights to
+       * draw - a stream that is not running, or one that has not sent its first frame.
        *
-       * The section mapping is already read through here rather than added later,
-       * which is what makes step 4 a longer array and not a new drawing path: with one
-       * colour every section resolves to it and the picture is solid. Resolved to
-       * strings once a frame rather than per bar, because that is a hundred and
-       * twenty-eight allocations a frame for one value.
+       * The section mapping the previous step left here turned out to be the wrong
+       * shape by one step: the engine sends each light a place on the frequency axis
+       * rather than a section index, so a column asks which light owns its frequency
+       * instead of which section it falls in. Resolved to strings once a frame rather
+       * than per bar, because that is a hundred and twenty-eight allocations a frame
+       * for a handful of values.
        */
-      const colors: SceneColor[] = [shown];
+      /*
+       * Damped on the way in, so that everything downstream - the section mapping, the
+       * per-column lookup, the smooth and pixel paths - draws the same range without
+       * each having to remember to. What it costs is one small array a frame, against a
+       * whole-screen strobe at fifty frames a second, which is what the room's own
+       * pulse depth looks like on a monitor a metre away.
+       */
+      const colors: SceneColor[] = (shownLights.length > 0 ? shownLights : [shown]).map((light) =>
+        dampPulse(light),
+      );
       const sections = colors.length;
       const sectionPaints = colors.map((_, index) => rgbCss(sectionColor(colors, index)));
+
+      /*
+       * Which light paints each column, resolved once a frame.
+       *
+       * Null when the room is one colour, which keeps the scene's own section mapping
+       * as the fallback rather than making every drawing path ask whether lights exist.
+       * The column's centre and not its left edge: a column covers a span of the
+       * spectrum, and asking about its edge biases every one of them downward by half a
+       * column.
+       */
+      const columnLights = shownLights.length > 0
+        ? Array.from({ length: columns }, (_, index) =>
+            lightAt(placements, (index + 0.5) / Math.max(1, columns)),
+          )
+        : null;
 
       const pixel = stage.shape === 'pixel';
       const thickness = barThickness(stage.shape, stage.layout);
@@ -385,7 +433,9 @@
           }
 
           paintWith(
-            paint ?? sectionPaints[upwardSectionOf(index, columns, sections)] ?? liveColor,
+            paint
+              ?? sectionPaints[columnLights?.[index] ?? upwardSectionOf(index, columns, sections)]
+              ?? liveColor,
           );
 
           const rect = pixel
@@ -409,8 +459,17 @@
         }
 
         for (const { side, paint } of sides) {
+          /*
+           * Mirrored, both halves show the same light for a column, where the scene's
+           * sections deliberately offset the left half by half of them. The scene was
+           * colouring a strip by position and Flux is previewing a frequency: the
+           * picture is mirrored about the centre, so the same column is the same part
+           * of the spectrum on both sides and therefore the same light.
+           */
           paintWith(
-            paint ?? sectionPaints[sectionOf(index, columns, sections, side)] ?? liveColor,
+            paint
+              ?? sectionPaints[columnLights?.[index] ?? sectionOf(index, columns, sections, side)]
+              ?? liveColor,
           );
 
           if (pixel) {
@@ -506,7 +565,17 @@
       }
 
       visual = advanceVisual(visual, elapsed);
-      shown = approachColor(shown, color ?? NEUTRAL_COLOR, elapsed, 1000 / Math.max(1, stateHz));
+
+      const interval = 1000 / Math.max(1, stateHz);
+      shown = approachColor(shown, color ?? NEUTRAL_COLOR, elapsed, interval);
+
+      /*
+       * Rebuilt from the frame every pass rather than kept in sync by hand. The array
+       * is a handful of entries at 60 Hz, and the alternative is a second piece of
+       * state that has to be invalidated whenever a stream opens against another room.
+       */
+      shownLights = approachLights(shownLights, lights, elapsed, interval);
+      placements = lights.map((light) => light.at);
 
       resize();
       draw(now);

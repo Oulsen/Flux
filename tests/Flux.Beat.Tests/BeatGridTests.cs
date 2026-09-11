@@ -304,14 +304,18 @@ public class BeatGridTests {
   }
 
   /// <summary>
-  /// The other half of the same rule. A tempo change renumbers the Link timeline
-  /// by thousands of beats, so the anchor's beat index now names a different
-  /// moment in the music: keeping it would put the downbeat somewhere arbitrary
-  /// while still claiming to be aligned, which is worse than admitting it needs
-  /// re-arming.
+  /// <b>An anchor is the user's statement and it survives a renumbering.</b>
+  ///
+  /// Until 2026-09-11 a rebase past half a beat threw the anchor away, on the reasoning
+  /// that its beat index now names a different moment in the music. The index does - and
+  /// the shift that made it wrong is measured on the same line, so the number can be
+  /// corrected rather than forgotten. What the discarded version looked like in the room
+  /// was reported the same day: a tap held until audio detection next rebased the
+  /// timeline, which it does on drops and on strong beats, and the page went back to
+  /// "counting beats, bar not anchored yet" with nothing the user did to explain it.
   /// </summary>
   [Fact]
-  public void ReArmsTheBarAnchorWhenTheNumberingIsRebased() {
+  public void KeepsTheBarAnchorWhenTheNumberingIsRebased() {
     FakeClock clock = new FakeClock();
     BeatGrid grid = NewGrid(clock);
 
@@ -322,12 +326,12 @@ public class BeatGridTests {
     grid.Apply(AtOneTwenty with { MicrosPerBeat = 342_857, BeatOrigin = 100 });
 
     Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
-    Assert.False(snapshot.IsBarAligned);
-    Assert.Equal(BarAlignmentMethod.None, snapshot.AlignmentMethod);
+    Assert.True(snapshot.IsBarAligned);
+    Assert.Equal(BarAlignmentMethod.Tap, snapshot.AlignmentMethod);
   }
 
   [Fact]
-  public void ReArmsTheBarAnchorOnASessionSwitch() {
+  public void KeepsTheBarAnchorOnASessionSwitch() {
     FakeClock clock = new FakeClock();
     BeatGrid grid = NewGrid(clock);
 
@@ -338,7 +342,96 @@ public class BeatGridTests {
     grid.Apply(AtOneTwenty with { BeatOrigin = 710 }, newSession: true);
 
     Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
-    Assert.False(snapshot.IsBarAligned);
+    Assert.True(snapshot.IsBarAligned);
+    Assert.Equal(BarAlignmentMethod.Tap, snapshot.AlignmentMethod);
+  }
+
+  /// <summary>
+  /// <b>A drop is a guess and does not overrule a bar that is already known.</b>
+  ///
+  /// Reported from the room on 2026-09-11: anchor by hand, and the next drop declares
+  /// whatever beat it landed on to be position one and rotates the bar out from under it.
+  /// Two things make that likely rather than rare - detection fires on an energy jump a
+  /// frame or two after the transient, and a drop is not reliably on a downbeat at all.
+  ///
+  /// Snapping to the nearest downbeat of the existing grid is phase-preserving by
+  /// construction, so what this asserts is that the bar position does not move. That is
+  /// the intended reading of "a guess should not overrule a measurement", and its cost is
+  /// stated where the flag is declared: an anchor that is genuinely wrong stays wrong
+  /// until somebody taps again.
+  /// </summary>
+  [Fact]
+  public void ADropDoesNotRotateABarThatIsAlreadyAnchored() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+
+    grid.Apply(AtOneTwenty);
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Tap));
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot tapped));
+
+    // A beat and a half later, which is where a late drop detection lands and is exactly
+    // what used to move the bar.
+    clock.Advance(TimeSpan.FromMilliseconds(750));
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Drop, snapToBar: true));
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot afterDrop));
+    Assert.True(afterDrop.IsBarAligned);
+    Assert.Equal(BarAlignmentMethod.Tap, afterDrop.AlignmentMethod);
+
+    // Three beats on from the tap, so the bar position has advanced by three and not been
+    // reset to one.
+    clock.Advance(TimeSpan.FromMilliseconds(750));
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot later));
+    Assert.Equal(PositionAfter(tapped.PositionInBar, beats: 3), later.PositionInBar);
+  }
+
+  /// <summary>
+  /// With no bar known, a drop still sets one outright, which is the job it was added
+  /// for: it is the only downbeat audio analysis can find without being told.
+  /// </summary>
+  [Fact]
+  public void ADropStillAnchorsTheBarWhenNothingElseHas() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+
+    grid.Apply(AtOneTwenty);
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Drop, snapToBar: true));
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.True(snapshot.IsBarAligned);
+    Assert.Equal(BarAlignmentMethod.Drop, snapshot.AlignmentMethod);
+    Assert.Equal(1, snapshot.PositionInBar);
+  }
+
+  /// <summary>The 1-based bar position a given number of beats after another.</summary>
+  private static int PositionAfter(int position, int beats) {
+    return ((position - 1 + beats) % 4) + 1;
+  }
+
+  /// <summary>
+  /// The anchor is carried by the shift rather than merely kept, so it goes on naming the
+  /// same moment in the music. A kept-but-uncorrected index would claim alignment while
+  /// putting the downbeat wherever the renumbering left it, which is the failure the old
+  /// clearing behaviour was right to avoid and wrong about how to avoid.
+  /// </summary>
+  [Fact]
+  public void TheKeptAnchorMovesWithTheNumberingRatherThanStayingPut() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+
+    grid.Apply(AtOneTwenty);
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Tap));
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot before));
+
+    // A whole number of beats of renumbering at the same tempo, which is the case where
+    // "the same moment" has an exact answer and the bar position must not move at all.
+    clock.Advance(TimeSpan.FromMilliseconds(250));
+    grid.Apply(AtOneTwenty with { BeatOrigin = AtOneTwenty.BeatOrigin + 8 }, newSession: true);
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot after));
+    Assert.True(after.IsBarAligned);
+    Assert.Equal(before.PositionInBar, after.PositionInBar);
   }
 
   /// <summary>

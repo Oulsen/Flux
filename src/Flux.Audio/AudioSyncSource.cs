@@ -182,6 +182,21 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
     }
   }
 
+  /// <inheritdoc/>
+  public SpectrumLevels? Levels() {
+    lock(this.statusGate) {
+      // The same frame and the same staleness rule as Spectrum, and pointedly not the
+      // same latch: nothing is consumed here, so the light engine reading this fifty
+      // times a second cannot take a beat marker away from the visualizer.
+      if(this.latest is not SpectrumSnapshot snapshot
+        || this.clock.NowMicros - this.lastFrameMicros > SpectrumStaleMillis * 1000.0) {
+        return null;
+      }
+
+      return new SpectrumLevels(snapshot.Kick, snapshot.Mids, snapshot.Highs);
+    }
+  }
+
   /// <summary>
   /// The tempo estimate, or zero before there is one. For the console readout and
   /// the tests; the grid learns it through the sink.
@@ -276,11 +291,13 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
     }
 
     if(decision.Drop) {
-      // The one downbeat audio analysis can find without being told. It is a guess
-      // and is labelled as one: BarAlignmentMethod.Drop travels with the anchor, so
-      // a wrong drop is visible on screen as a wrong drop rather than as a bar that
-      // mysteriously moved.
-      this.sink.AlignBar(BarAlignmentMethod.Drop);
+      // The one downbeat audio analysis can find without being told. It is a guess and is
+      // labelled as one twice over: BarAlignmentMethod.Drop travels with the anchor so a
+      // wrong drop is visible on screen as a wrong drop, and snapToBar keeps it from
+      // overruling a bar that is already known. It sets the bar outright only when
+      // nothing else has - see BeatGrid.TryAlignBar for why a guess that rotated the bar
+      // out from under a tap was the wrong arrangement.
+      this.sink.AlignBar(BarAlignmentMethod.Drop, snapToBar: true);
       this.log.LogInformation("Audio detection placed a drop, and the bar is anchored to it.");
     }
   }

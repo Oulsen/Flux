@@ -112,7 +112,7 @@ public sealed class HueMessagesTests {
     Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
     await rig.SkipGreetingAsync(socket);
 
-    socket.Client("""{"type":"setLightSettings","data":{"palette":"neon","colorChangeBars":8,"pulseMs":300,"brightness":60,"pulseDepth":40}}""");
+    socket.Client("""{"type":"setLightSettings","data":{"palette":"neon","colorChangeBars":8,"pulseMs":300,"brightness":60,"pulseDepth":40,"colorCount":2,"colorLayout":"alternating"}}""");
 
     using JsonDocument hue = JsonDocument.Parse(await socket.NextAsync());
     JsonElement engine = hue.RootElement.GetProperty("data").GetProperty("engine");
@@ -122,7 +122,9 @@ public sealed class HueMessagesTests {
     Assert.Equal(300, engine.GetProperty("pulseMs").GetInt32());
     Assert.Equal(60, engine.GetProperty("brightness").GetInt32());
     Assert.Equal(40, engine.GetProperty("pulseDepth").GetInt32());
-    Assert.Equal(new LightSettings(LightPalette.Neon, 8, 300, 60, 40), rig.Bridge.Connection.Light);
+    Assert.Equal(2, engine.GetProperty("colorCount").GetInt32());
+    Assert.Equal("alternating", engine.GetProperty("colorLayout").GetString());
+    Assert.Equal(new LightSettings(LightPalette.Neon, 8, 300, 60, 40, 2, LightColorLayout.Alternating), rig.Bridge.Connection.Light);
 
     socket.ClientClose();
     await serving;
@@ -140,7 +142,7 @@ public sealed class HueMessagesTests {
     Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
     await rig.SkipGreetingAsync(socket);
 
-    socket.Client("""{"type":"setLightSettings","data":{"palette":"beige","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85}}""");
+    socket.Client("""{"type":"setLightSettings","data":{"palette":"beige","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}}""");
 
     using JsonDocument error = JsonDocument.Parse(await socket.NextAsync());
     JsonElement data = error.RootElement.GetProperty("data");
@@ -154,15 +156,17 @@ public sealed class HueMessagesTests {
   }
 
   [Theory]
-  [InlineData(-1, 240, 100, 85)]
-  [InlineData(17, 240, 100, 85)]
-  [InlineData(4, -1, 100, 85)]
-  [InlineData(4, 2001, 100, 85)]
-  [InlineData(4, 240, -1, 85)]
-  [InlineData(4, 240, 101, 85)]
-  [InlineData(4, 240, 100, -1)]
-  [InlineData(4, 240, 100, 101)]
-  public async Task ASettingOutsideItsRangeIsRefusedRatherThanClamped(int bars, int pulseMs, int brightness, int depth) {
+  [InlineData(-1, 240, 100, 85, 1)]
+  [InlineData(17, 240, 100, 85, 1)]
+  [InlineData(4, -1, 100, 85, 1)]
+  [InlineData(4, 2001, 100, 85, 1)]
+  [InlineData(4, 240, -1, 85, 1)]
+  [InlineData(4, 240, 101, 85, 1)]
+  [InlineData(4, 240, 100, -1, 1)]
+  [InlineData(4, 240, 100, 101, 1)]
+  [InlineData(4, 240, 100, 85, 0)]
+  [InlineData(4, 240, 100, 85, 4)]
+  public async Task ASettingOutsideItsRangeIsRefusedRatherThanClamped(int bars, int pulseMs, int brightness, int depth, int colors) {
     Rig rig = new Rig();
     FakeWebSocket socket = new FakeWebSocket();
     Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
@@ -170,7 +174,7 @@ public sealed class HueMessagesTests {
 
     // The palette last so that no interpolation is followed by a run of closing braces,
     // which a raw literal cannot tell from the end of an interpolation.
-    string engine = $$"""{"colorChangeBars":{{bars}},"pulseMs":{{pulseMs}},"brightness":{{brightness}},"pulseDepth":{{depth}},"palette":"warm"}""";
+    string engine = $$"""{"colorChangeBars":{{bars}},"pulseMs":{{pulseMs}},"brightness":{{brightness}},"pulseDepth":{{depth}},"colorCount":{{colors}},"colorLayout":"radial","palette":"warm"}""";
 
     socket.Client($$"""{"type":"setLightSettings","data":{{engine}}}""");
 
@@ -188,13 +192,15 @@ public sealed class HueMessagesTests {
   /// could send a palette alone would rely on the server to supply the rest.
   /// </summary>
   [Theory]
-  [InlineData("""{"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85}""")]
-  [InlineData("""{"palette":"warm","pulseMs":240,"brightness":100,"pulseDepth":85}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"brightness":100,"pulseDepth":85}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"pulseDepth":85}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":12.5,"brightness":100,"pulseDepth":85}""")]
-  [InlineData("""{"palette":4,"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85}""")]
+  [InlineData("""{"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
+  [InlineData("""{"palette":"warm","pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"colorCount":1,"colorLayout":"radial"}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":12.5,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
+  [InlineData("""{"palette":4,"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
   public async Task AnIncompleteStatementOfTheLookIsABugRatherThanARefusal(string data) {
     Rig rig = new Rig();
     FakeWebSocket socket = new FakeWebSocket();
@@ -320,6 +326,8 @@ public sealed class HueMessagesTests {
     Assert.Equal(120, light.GetProperty("pulseMs").GetInt32());
     Assert.Equal(70, light.GetProperty("brightness").GetInt32());
     Assert.Equal(30, light.GetProperty("pulseDepth").GetInt32());
+    Assert.Equal(1, light.GetProperty("colorCount").GetInt32());
+    Assert.Equal("radial", light.GetProperty("colorLayout").GetString());
 
     JsonElement area = data.GetProperty("areas")[0];
     Assert.Equal(Booth.Id, area.GetProperty("id").GetGuid());

@@ -256,7 +256,7 @@
   The stage, and it is the page rather than an element on it.
 
   Behind everything and never interactive: it carries no controls, and a canvas that
-  swallowed a tap would put the drawer's backdrop out of reach on a phone.
+  swallowed a tap would take it from the HUD floating over it.
 -->
 <div class="stage" aria-hidden="true">
   {#if stageOn}
@@ -266,6 +266,7 @@
     <SpectrumCanvas
       frame={store.latestSpectrum}
       color={store.light?.color ?? null}
+      lights={store.light?.channels ?? []}
       stateHz={store.stateHz}
       {stage}
     />
@@ -487,8 +488,10 @@
     padding: var(--gap);
     padding-bottom: max(var(--gap), env(safe-area-inset-bottom));
 
-    /* The layer is a sheet of glass. Without this it is an invisible rectangle over
-       the whole window, and the drawer's backdrop stops being clickable. */
+    /* The layer is a sheet of glass. Without this it is an invisible rectangle over the
+       whole window, and everything under it - the stage, and whatever an overlay puts
+       there - stops receiving a pointer. The two things in here that are controls take
+       it back individually. */
     pointer-events: none;
   }
 

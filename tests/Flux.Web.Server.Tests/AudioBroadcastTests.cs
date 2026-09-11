@@ -290,6 +290,10 @@ public sealed class AudioBroadcastTests {
     public SpectrumSnapshot? Spectrum() {
       return this.Latest;
     }
+
+    public SpectrumLevels? Levels() {
+      return this.Latest is { } frame ? new SpectrumLevels(frame.Kick, frame.Mids, frame.Highs) : null;
+    }
   }
 
   /// <summary>

@@ -15,8 +15,28 @@ public interface IHueStream: IDisposable {
   /// </summary>
   int ChannelCount { get; }
 
-  /// <summary>Points every channel at one colour. Solid colours only in this phase.</summary>
+  /// <summary>
+  /// The channels this session drives, in the order <see cref="Set"/> writes them.
+  ///
+  /// Carries each one's position, which the bridge reports and nothing in Flux read
+  /// until now. A channel the bridge places nowhere reports
+  /// <see cref="LightPosition.Centre"/> rather than being left out: an unplaced light is
+  /// still a light, and dropping it from the room would mean streaming to fewer
+  /// channels than the area has.
+  /// </summary>
+  IReadOnlyList<HueChannel> Channels { get; }
+
+  /// <summary>Points every channel at one colour.</summary>
   void SetAll(HueColor color);
+
+  /// <summary>
+  /// Points each channel at its own colour, in the order of <see cref="Channels"/>.
+  ///
+  /// Shorter than <see cref="Channels"/> is a programming error rather than a partial
+  /// update: a frame that lit six of nine lights and left three showing the previous
+  /// beat would be a flicker nobody could trace back to here.
+  /// </summary>
+  void Set(ReadOnlySpan<HueColor> colors);
 
   /// <summary>
   /// Sends the current colours to the bridge, once.

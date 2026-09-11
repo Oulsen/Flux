@@ -57,6 +57,47 @@ public sealed record SpectrumSnapshot(
   BeatStrength Strength);
 
 /// <summary>
+/// The three band energies of the newest frame, each 0 to 1.
+///
+/// Deliberately smaller than <see cref="SpectrumSnapshot"/> and deliberately without a
+/// verdict, because it exists for a reader that wants the sound and not the decision -
+/// see <see cref="IAudioSpectrum.Levels"/>.
+/// </summary>
+/// <param name="Kick">Bass band energy. The band the detector triggers on.</param>
+/// <param name="Mids">Mid band energy.</param>
+/// <param name="Highs">High band energy.</param>
+public readonly record struct SpectrumLevels(double Kick, double Mids, double Highs) {
+  /// <summary>
+  /// The band at a point on the frequency axis, 0 for the kick and 1 for the top.
+  ///
+  /// Three bands rather than the display columns, and that is a decision rather than a
+  /// convenience: the column count is a slider somebody drags to change how the picture
+  /// looks, and sampling it here would mean a display setting silently retuning the
+  /// room. These three have derivations in <c>docs/audio-constants.md</c> and move only
+  /// when the audio engine does.
+  ///
+  /// Linear between the three, which is coarse and is the right kind of coarse: what it
+  /// has to express is that lights near the centre follow the low end and the outer ones
+  /// follow the top, and no amount of resolution between three real measurements makes
+  /// that statement more true.
+  /// </summary>
+  public double At(double position) {
+    double clamped = Math.Clamp(position, 0, 1);
+
+    return clamped <= 0.5
+      ? Lerp(this.Kick, this.Mids, clamped * 2)
+      : Lerp(this.Mids, this.Highs, (clamped - 0.5) * 2);
+  }
+
+  /// <summary>The loudest of the three, which is what the others are read against.</summary>
+  public double Peak => Math.Max(this.Kick, Math.Max(this.Mids, this.Highs));
+
+  private static double Lerp(double from, double to, double amount) {
+    return from + ((to - from) * amount);
+  }
+}
+
+/// <summary>
 /// Where the visualizer feed comes from.
 ///
 /// Deliberately a pull rather than an event, because the two rates differ on
@@ -81,4 +122,21 @@ public interface IAudioSpectrum {
   /// absence would be read as the detector failing is latched instead.
   /// </summary>
   SpectrumSnapshot? Spectrum();
+
+  /// <summary>
+  /// The newest frame's band energies, or null when nothing is being heard.
+  ///
+  /// <b>This exists because <see cref="Spectrum"/> may only ever have one caller.</b>
+  /// That method consumes the latched verdict, so a second reader takes roughly half
+  /// the beats away from the first - and since the second reader here is the light
+  /// engine at fifty frames a second, the symptom would be beat markers vanishing from
+  /// the visualizer only while the lights are streaming. That is a bug nobody would
+  /// find from the outside, so the two readers are given two methods instead of a
+  /// convention about who is allowed to call which.
+  ///
+  /// Same staleness rule as <see cref="Spectrum"/>: null rather than the last frame
+  /// before the audio stopped, so a room with no music falls back to lights that behave
+  /// identically rather than to a picture frozen mid-track.
+  /// </summary>
+  SpectrumLevels? Levels();
 }

@@ -35,7 +35,7 @@ function connection(over: Partial<HueData> = {}): HueData {
     selectedAreaId: null,
     pairingSecondsRemaining: null,
     latencyOffsetMs: 0,
-    engine: { palette: 'random', colorChangeBars: 4, pulseMs: 240, brightness: 100, pulseDepth: 85 },
+    engine: { palette: 'random', colorChangeBars: 4, pulseMs: 240, brightness: 100, pulseDepth: 85, colorCount: 1, colorLayout: 'radial' },
     message: null,
     ...over,
   };
