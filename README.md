@@ -104,8 +104,8 @@ dotnet run --project src/Flux.App
 The console prints the addresses the page is reachable on, including the one
 to type on a phone. Play a track and the page picks the beat up by itself:
 enable LINK in rekordbox for the Link source, or pick an audio device on the
-page and switch the source to Audio. Which source is selected at startup is
-`Beat:DefaultSource` below.
+page and switch the source to Audio. Whichever source you pick is remembered, so
+`Beat:DefaultSource` below only decides the first run.
 
 The lights are set up from the same page, once: find the bridge, press its link
 button while the countdown runs, pick an entertainment area and start the
@@ -123,7 +123,7 @@ backend.
 | Key | Default | Meaning |
 |---|---|---|
 | `Web:Port` | `5050` | HTTP and WebSocket port for the UI |
-| `Beat:DefaultSource` | `link` | Which sync source is selected at startup: `link`, `audio` or `manual`; a name this build does not have falls back to the first source registered |
+| `Beat:DefaultSource` | `link` | Which sync source is selected at startup: `link`, `audio` or `manual`. Only where a source has never been chosen on the page: one chosen there is remembered and outranks this from then on. A name this build does not have falls back to the first source registered |
 | `Link:InterfaceAddress` | `null` | IP address of the network adapter to listen for Link on; `null` picks one automatically |
 | `Audio:DeviceId` | `null` | Exact endpoint id of the audio device to capture; `null` goes by name instead. Only where a device has never been picked on the page: a device chosen there is remembered and outranks this from then on |
 | `Audio:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the audio device to capture, inputs before outputs; empty captures nothing until one is picked. Still the fallback when the remembered or configured id names a device that is not plugged in |
@@ -166,6 +166,13 @@ name preference rather than capturing nothing, because the file can easily
 outlive the interface - which is exactly the difference between it and a device
 chosen from the page while Flux is running, where capturing something other
 than what was just asked for would be overruling somebody.
+
+The sync source is remembered the same way, in `%APPDATA%\Flux\beat-settings.json`,
+and the reason is a failure worth naming: Link publishes a timeline and nothing
+else, so a restart that put the grid back on Link with rekordbox closed produced
+no beats at all - and a room whose lights sit perfectly still looks like a broken
+light engine rather than like a source nobody selected. A remembered source this
+build no longer has falls back to `Beat:DefaultSource`.
 
 An `appsettings.local.json` beside it overrides any of these and is not
 committed, which is what the recording keys above are usually set from: a

@@ -1,4 +1,4 @@
-﻿using Flux.Beat;
+using Flux.Beat;
 using Flux.Hue;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -396,6 +396,7 @@ public sealed class HueMessagesTests {
       SyncSourceManager sources = new SyncSourceManager(
         new BeatGrid(clock, beat.Quantum, beat.StaleAfter),
         Options.Create(beat),
+        settings: null,
         NullLogger<SyncSourceManager>.Instance);
 
       this.Bridge = new HueBridgeService(

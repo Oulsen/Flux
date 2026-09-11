@@ -1,4 +1,4 @@
-﻿using Flux.Audio;
+using Flux.Audio;
 using Flux.Beat;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -606,6 +606,7 @@ public sealed class SocketHubTests {
     SyncSourceManager sources = new SyncSourceManager(
       grid,
       Options.Create(beat),
+      settings: null,
       NullLogger<SyncSourceManager>.Instance);
 
     ManualSource manual = new ManualSource(clock, sources);

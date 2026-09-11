@@ -27,7 +27,20 @@ public readonly record struct SyncSourceReport(string Name, SyncSourceStatus Sta
 /// </summary>
 public sealed class SyncSourceManager {
   private readonly BeatGrid grid;
+  /// <summary>
+  /// The source to start on: the one last chosen from the page, or
+  /// <c>Beat:DefaultSource</c> where nobody has ever chosen.
+  ///
+  /// Resolved once at construction rather than read on each registration, because
+  /// sources register from their own constructors and a file read on that path would be
+  /// one per source for an answer that cannot change between them.
+  /// </summary>
+  private readonly string preferredSource;
+
+  /// <summary><c>Beat:DefaultSource</c>, which is what a preference nothing answers falls back to.</summary>
   private readonly string defaultSource;
+
+  private readonly IBeatSettingsStore? settings;
   private readonly ILogger<SyncSourceManager> log;
   private readonly object gate = new object();
   private readonly Dictionary<string, Registration> sources =
@@ -35,12 +48,33 @@ public sealed class SyncSourceManager {
 
   private string? active;
 
-  public SyncSourceManager(BeatGrid grid, IOptions<BeatOptions> options, ILogger<SyncSourceManager> log) {
+  /// <param name="grid">The grid every source publishes into.</param>
+  /// <param name="options">Carries <c>Beat:DefaultSource</c>, the answer for a machine nobody has told otherwise.</param>
+  /// <param name="log">Where source changes are announced.</param>
+  /// <param name="settings">
+  /// Where the last chosen source is remembered, or null in a host that remembers
+  /// nothing.
+  ///
+  /// Nullable and deliberately not optional, on the argument the light engine's spectrum
+  /// already makes: a default here would let a construction site forget to pass one and
+  /// produce a build that silently stops remembering, which presents as the configured
+  /// default quietly winning every restart - the exact fault this closes.
+  /// </param>
+  public SyncSourceManager(
+    BeatGrid grid,
+    IOptions<BeatOptions> options,
+    IBeatSettingsStore? settings,
+    ILogger<SyncSourceManager> log) {
     ArgumentNullException.ThrowIfNull(options);
 
     this.grid = grid ?? throw new ArgumentNullException(nameof(grid));
-    this.defaultSource = options.Value.DefaultSource;
+    this.settings = settings;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
+
+    string? remembered = settings?.Load().Source;
+
+    this.defaultSource = options.Value.DefaultSource;
+    this.preferredSource = string.IsNullOrWhiteSpace(remembered) ? this.defaultSource : remembered;
   }
 
   /// <summary>
@@ -57,11 +91,12 @@ public sealed class SyncSourceManager {
   /// <summary>
   /// Adds a source and hands back the sink it publishes through.
   ///
-  /// The source named by <c>Beat:DefaultSource</c> becomes active as soon as it
+  /// The preferred source - the one last chosen from the page, or
+  /// <c>Beat:DefaultSource</c> where nobody has chosen - becomes active as soon as it
   /// registers, whenever that happens to be. Until then the first source to
-  /// register holds the position, so a build without the configured source still
-  /// starts with something selected rather than with nothing. Neither case
-  /// touches the grid: nothing has published yet, so there is no timeline to swap.
+  /// register holds the position, so a build without it still starts with something
+  /// selected rather than with nothing. Neither case touches the grid: nothing has
+  /// published yet, so there is no timeline to swap.
   ///
   /// Sources call this from their own constructors, so <paramref name="source"/>
   /// is not fully constructed yet. That is safe by contract rather than by luck:
@@ -81,8 +116,17 @@ public sealed class SyncSourceManager {
           $"A sync source named '{source.Name}' is already registered. Source names are the protocol's own and must be unique.");
       }
 
-      if(this.active is null
-        || string.Equals(source.Name, this.defaultSource, StringComparison.OrdinalIgnoreCase)) {
+      // Three claims in descending order, settled without knowing what registers next.
+      // The preference outranks the default outright; the default is taken only while
+      // the preference has not been met, so a remembered source that registers after the
+      // configured one still takes the position back; and anything at all beats nothing,
+      // which is what keeps a build that has neither from starting on no source.
+      bool preferred = string.Equals(source.Name, this.preferredSource, StringComparison.OrdinalIgnoreCase);
+      bool configured = string.Equals(source.Name, this.defaultSource, StringComparison.OrdinalIgnoreCase);
+      bool preferenceMet = this.active is not null
+        && string.Equals(this.active, this.preferredSource, StringComparison.OrdinalIgnoreCase);
+
+      if(this.active is null || preferred || (configured && !preferenceMet)) {
         this.active = source.Name;
       }
     }
@@ -118,6 +162,12 @@ public sealed class SyncSourceManager {
       this.active = resolved;
       cached = registration.Last;
     }
+
+    // Outside the lock, because this writes a file and the lock is held on the socket
+    // receive loop. Saved on a change and not on every call, which the early return
+    // above already guarantees: re-selecting the source that is already active is not a
+    // choice and should not cost a write.
+    this.settings?.Save(new BeatSettings(resolved));
 
     // A different source's numbering is a different numbering, even when the two
     // tempi match, so the switch is announced as a rebasing exactly like a Link

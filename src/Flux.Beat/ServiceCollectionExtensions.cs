@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Flux.Beat;
@@ -40,7 +41,26 @@ public static class ServiceCollectionExtensions {
       return new BeatGrid(provider.GetRequiredService<IMonotonicClock>(), options.Quantum, options.StaleAfter);
     });
 
-    services.AddSingleton<SyncSourceManager>();
+    // The same per-user folder the audio and Hue settings live in, named here rather
+    // than shared, for the reason those two are separate files: three projects storing
+    // three strings should not have to depend on each other to do it.
+    string directory = System.IO.Path.Combine(
+      Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+      "Flux");
+
+    services.AddSingleton<IBeatSettingsStore>(provider => new JsonBeatSettingsStore(
+      directory,
+      provider.GetRequiredService<ILogger<JsonBeatSettingsStore>>()));
+
+    // Constructed by hand so the settings store is visibly passed rather than merely
+    // resolvable: the constructor takes it as nullable but not optional, which is what
+    // makes a host that forgets it fail to compile instead of quietly forgetting the
+    // user's source on every restart.
+    services.AddSingleton<SyncSourceManager>(provider => new SyncSourceManager(
+      provider.GetRequiredService<BeatGrid>(),
+      provider.GetRequiredService<IOptions<BeatOptions>>(),
+      provider.GetService<IBeatSettingsStore>(),
+      provider.GetRequiredService<ILogger<SyncSourceManager>>()));
 
     // Manual is registered here rather than behind its own opt-in because it is
     // the source that needs no hardware, no network and no luck. It is what is

@@ -1,4 +1,4 @@
-﻿using Flux.Audio;
+using Flux.Audio;
 using Flux.Beat;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -198,6 +198,7 @@ public sealed class AudioBroadcastTests {
     SyncSourceManager sources = new SyncSourceManager(
       new BeatGrid(clock, beat.Quantum, beat.StaleAfter),
       Options.Create(beat),
+      settings: null,
       NullLogger<SyncSourceManager>.Instance);
 
     return new SocketHub(

@@ -245,6 +245,7 @@ public sealed class AudioSyncSourceTests {
       SyncSourceManager sources = new SyncSourceManager(
         this.Grid,
         Options.Create(beat),
+        settings: null,
         NullLogger<SyncSourceManager>.Instance);
 
       // Never started: the analyzer is here for its frame-rate reading and as the

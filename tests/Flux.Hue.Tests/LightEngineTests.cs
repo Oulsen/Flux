@@ -747,15 +747,17 @@ public class LightEngineTests {
     Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
 
     // A background for the kick to stand out from, or nothing stands out from anything.
-    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 0.3, Highs: 0.3);
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.1, Mids: 0.3, Highs: 0.3);
     harness.Engine.Render();
 
     harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 1, Highs: 1);
     harness.BeatNow(index: 0);
     HueColor loud = harness.Engine.Render();
 
-    // The same kick still landing, in a passage a fifth of the volume.
-    harness.Heard.Bands = new SpectrumLevels(Kick: 0.45, Mids: 0.05, Highs: 0.05);
+    // A kick still landing on its beat, in a passage a fraction of the volume. The kick
+    // gate is wide open in both, so what separates them here is the loudness and nothing
+    // else - which is the thing under test.
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.15, Mids: 0.05, Highs: 0.05);
     harness.BeatNow(index: 1);
     HueColor quiet = harness.Engine.Render();
 

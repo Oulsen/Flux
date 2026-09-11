@@ -782,7 +782,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       // needing a special case, which is right: with the pulse switched off there is no
       // pulse to divide between the lights, and the person who turned it off asked for
       // one steady colour rather than for a room that shimmers by position.
-      return new Envelope(ceiling, ceiling, 1, 1);
+      return new Envelope(ceiling, ceiling, 1, 1, 1);
     }
 
     double floor = Math.Max(
@@ -791,22 +791,13 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     double age = Math.Max(0, now - started);
     double decay = Math.Exp(Math.Log(PulseSpentAt) * age / (settings.PulseMs * MicrosPerMilli));
 
-    // The strength of the beat that started this pulse folds into the decay rather than
-    // sitting beside it, because the two are one quantity: how much pulse is in flight.
-    // It deliberately does not reach the shimmer, which is what carries a break - with no
-    // kick the lights are left following their own bands and nothing else, which is the
-    // whole point of sizing the pulse this way.
-    return new Envelope(floor, ceiling, decay * this.pulseStrength, Math.Clamp(loudness, 0, 1));
+    return new Envelope(floor, ceiling, decay, Math.Clamp(loudness, 0, 1), this.pulseStrength);
   }
 
   /// <summary>Where this frame sits between the resting level and full.</summary>
   /// <param name="Floor">The resting level, which a light never drops below while a stream is open.</param>
   /// <param name="Ceiling">The brightest this room is allowed to get.</param>
-  /// <param name="Decay">
-  /// How much pulse is in flight: the strength of the beat that started it, fading. It
-  /// reaches 1 only on a beat the kick hit at full, and is 0 through a passage with no
-  /// kick in it at all.
-  /// </param>
+  /// <param name="Decay">How much of the last beat's pulse is left, 1 at the beat and falling.</param>
   /// <param name="Loudness">
   /// How much of the range above the floor the music is currently entitled to.
   ///
@@ -816,9 +807,33 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// out altogether is indistinguishable from a stream that has dropped, and telling
   /// those two apart is the one thing the floor has always existed for.
   /// </param>
-  private readonly record struct Envelope(double Floor, double Ceiling, double Decay, double Loudness) {
+  /// <param name="Strength">
+  /// How hard the kick hit on the beat this pulse belongs to.
+  ///
+  /// Reaches the pulse and deliberately not the shimmer, which is what carries a break:
+  /// with no kick the lights are left following their own bands and nothing else, and
+  /// that is the whole point of sizing a pulse this way.
+  /// </param>
+  private readonly record struct Envelope(double Floor, double Ceiling, double Decay, double Loudness, double Strength) {
+    /// <summary>
+    /// <b>Two gates compose by taking the smaller, not by multiplying.</b>
+    ///
+    /// <see cref="Loudness"/> and <see cref="Strength"/> are both answering one question -
+    /// should this beat count for anything - from two directions, so multiplying them
+    /// charges the pulse twice for one doubt. Each was individually defensible and
+    /// together they were a chain of dimmers: sixty frames off the live socket on
+    /// 2026-09-11 never reached half the brightness the settings allowed, on a room whose
+    /// ceiling was a full hundred per cent.
+    ///
+    /// The smaller of the two keeps both behaviours whole. A break still kills the pulse
+    /// because the kick gate goes to nothing; a finished track still kills it because the
+    /// loudness gate does; and ordinary playing, where both are merely high rather than
+    /// perfect, gets the higher of the two readings rather than their product.
+    /// </summary>
+    private double PulseGate => Math.Min(this.Loudness, this.Strength);
+
     /// <summary>The level the room as a whole is at, which is what a page is shown.</summary>
-    internal double Level => this.Above(this.Decay);
+    internal double Level => this.Above(this.Decay * this.PulseGate);
 
     /// <summary>
     /// The level for one light, given its cut of the beat and its own band's shimmer.
@@ -828,13 +843,23 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     /// busy on the beat past the ceiling, and clamping that away would silently flatten
     /// exactly the moments worth seeing. The beat wins wherever it is bigger, which is
     /// every beat, and the shimmer fills in the gaps between them.
+    ///
+    /// The shimmer is gated by loudness alone. It is what a passage with no kick in it
+    /// has left, so gating it by how hard the kick hit would take away the one thing
+    /// carrying the break.
     /// </summary>
     internal double LevelAt(double share, double shimmer) {
-      return this.Above(Math.Max(this.Decay * share, shimmer));
+      return this.Above(Math.Max(this.Decay * share * this.PulseGate, shimmer * this.Loudness));
     }
 
+    /// <summary>
+    /// A drive turned into a level, which is the one place the floor is applied.
+    ///
+    /// Loudness is already folded into whatever reaches here, because the pulse and the
+    /// shimmer are gated differently and this cannot tell them apart.
+    /// </summary>
     private double Above(double drive) {
-      return this.Floor + ((this.Ceiling - this.Floor) * this.Loudness * Math.Clamp(drive, 0, 1));
+      return this.Floor + ((this.Ceiling - this.Floor) * Math.Clamp(drive, 0, 1));
     }
   }
 

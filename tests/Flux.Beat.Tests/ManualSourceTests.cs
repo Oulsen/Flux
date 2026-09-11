@@ -330,6 +330,7 @@ public class ManualSourceTests {
     SyncSourceManager manager = new SyncSourceManager(
       grid,
       Options.Create(new BeatOptions { DefaultSource = ManualSource.SourceName }),
+      settings: null,
       NullLogger<SyncSourceManager>.Instance);
 
     return (new ManualSource(clock, manager), grid, clock);

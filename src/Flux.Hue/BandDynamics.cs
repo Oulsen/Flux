@@ -81,6 +81,22 @@ internal sealed class BandDynamics {
   private const double LoudnessFallsToTenthInSeconds = 60.0;
 
   /// <summary>
+  /// What fraction of its recent loudest the room has to reach to count as fully playing.
+  ///
+  /// Three fifths, and this exists for the same reason <see cref="TransientAtRatio"/> was
+  /// lowered: **a gate, not a dimmer.** Read as a bare ratio, loudness equals one only at
+  /// the single loudest instant of the last minute and sits well below it the rest of the
+  /// time, so multiplying the pulse by it dimmed every beat of every track rather than
+  /// only the quiet ones - which is exactly what sixty frames off the live socket showed
+  /// on 2026-09-11, a room that never passed 44 per cent of its ceiling.
+  ///
+  /// Saturating at three fifths means ordinary playing is simply "playing", and the
+  /// measure does its work where it was always meant to: a breakdown well under the
+  /// track's own level, and a finished track at nothing.
+  /// </summary>
+  private const double LoudEnoughFraction = 0.6;
+
+  /// <summary>
   /// How long a band's running average looks back, which is what a transient is measured
   /// against.
   ///
@@ -95,13 +111,20 @@ internal sealed class BandDynamics {
   /// <summary>
   /// How far above its own running average a band has to be to count as fully hitting.
   ///
-  /// Twice, which is a hit that doubles what the band has been doing. Below this the
-  /// response is proportional, above it the light is simply at the top. The one thing
-  /// this number decides in practice is how much of a hat pattern reaches the outer
-  /// lights, and it is the first thing to move if the room shimmers too much or too
-  /// little.
+  /// Half again, lowered from twice on 2026-09-11 because the room was measurably dim:
+  /// sixty frames off the live socket never reached half the brightness they were
+  /// entitled to. **This is a gate and not a dimmer**, and that distinction is what the
+  /// number has to express. Whether a band is hitting is a yes-or-no question in
+  /// practice, so the answer should reach the top under ordinary playing and bite only
+  /// when the band has genuinely gone flat. Demanding a doubling made an ordinary kick
+  /// worth a fraction of a pulse and left the room permanently under its ceiling.
+  ///
+  /// Zero is unaffected by the change, which is what matters for a breakdown: a band
+  /// sitting at its own average scores nothing whatever this is set to, so what this
+  /// moves is how quickly a real hit counts for everything and never whether silence
+  /// counts for nothing.
   /// </summary>
-  private const double TransientAtRatio = 2.0;
+  private const double TransientAtRatio = 1.5;
 
   private double kickPeak;
   private double midsPeak;
@@ -170,7 +193,7 @@ internal sealed class BandDynamics {
       Above(heard.Mids, this.midsMean),
       Above(heard.Highs, this.highsMean));
 
-    return new RoomSound(drive, transient, Math.Clamp(loudest / this.roomPeak, 0, 1));
+    return new RoomSound(drive, transient, Math.Clamp(loudest / (this.roomPeak * LoudEnoughFraction), 0, 1));
   }
 
   /// <summary>
@@ -248,5 +271,10 @@ internal sealed class BandDynamics {
 /// because absolute level says more about where the gain is set than about the music.
 /// The comparison is the same one a person makes without thinking: quiet compared with
 /// what this has been.
+///
+/// It reaches one well before the room reaches its loudest, and that is the correction
+/// made after watching it: as a bare ratio this is one only at the single loudest instant
+/// of the last minute, so it dimmed every beat of every track instead of only the quiet
+/// ones. See <see cref="BandDynamics.LoudEnoughFraction"/>.
 /// </param>
 internal readonly record struct RoomSound(SpectrumLevels Drive, SpectrumLevels Transient, double Loudness);

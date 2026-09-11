@@ -1,4 +1,4 @@
-﻿using Flux.Beat;
+using Flux.Beat;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -152,6 +152,7 @@ public sealed class StateSnapshotTests {
     SyncSourceManager sources = new SyncSourceManager(
       grid,
       Options.Create(beat),
+      settings: null,
       NullLogger<SyncSourceManager>.Instance);
 
     BeatBroadcaster broadcaster = new BeatBroadcaster(
@@ -179,6 +180,7 @@ public sealed class StateSnapshotTests {
     SyncSourceManager spare = new SyncSourceManager(
       new BeatGrid(clock, beat.Quantum, beat.StaleAfter),
       Options.Create(new BeatOptions()),
+      settings: null,
       NullLogger<SyncSourceManager>.Instance);
 
     return new SocketHub(
