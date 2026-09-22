@@ -147,6 +147,10 @@
     socket?.send({ type: 'tap', data: {} });
   }
 
+  function anchor(): void {
+    socket?.send({ type: 'anchor', data: {} });
+  }
+
   function setBpm(bpm: number | null): void {
     socket?.send({ type: 'setBpm', data: { bpm } });
   }
@@ -367,7 +371,7 @@
       pending={store.pendingSource}
       select={selectSource}
     />
-    <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {setBpm} />
+    <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {anchor} {setBpm} />
   </section>
 
   <!--

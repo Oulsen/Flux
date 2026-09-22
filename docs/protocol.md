@@ -332,18 +332,21 @@ in this track counts as fully lit exactly as a kick at the top of what kicks do 
 the outer lights lead through a break and the centre takes it back on the drop. **The
 ordering has to be able to invert or there is no information in it.**
 
-**A light whose band is busy stays lifted between beats**, up to half of what a beat
-would give it. The beat is divided between the lights, while what happens in the gaps
+**A light whose band is busy stays lifted between beats**, up to seven tenths of what
+a beat would give it. The beat is divided between the lights, while what happens in the gaps
 is a fact about each band on its own: a hat pattern under a held chord lifts the outer
 lights whether or not anything is louder elsewhere. That is the difference between a
 room the music moves through and a set of simultaneous flashes at different heights.
 
-**The pulse answers the music and not only the grid**, and it does so in two ways at
-once because they are two different questions.
+**The pulse answers the music and not only the grid**, and it does so in three ways at
+once because they are three different questions.
 
 *How hard did this beat hit* is the kick band's jump above its own recent average,
-sampled the instant the beat lands and held for the whole fade. **A beat with no kick
-under it does not pulse the room at all.** A grid keeps publishing beats through a
+read as the beat lands and allowed to rise - never fall - while the pulse is alive.
+It may rise because the light path runs deliberately ahead of the audio, so the kick a
+beat announces has usually not reached the analyzer at the moment the beat is consumed;
+it never falls, so the fade is not cut off by the gap after the kick that caused it.
+**A beat with no kick under it does not pulse the room at all.** A grid keeps publishing beats through a
 breakdown - a clock has no opinion about whether anything is playing - so without
 this the lights fire a synchronous pulse right through a passage with no kick in it,
 and it is the unison rather than the brightness that gives it away. What carries a
@@ -363,11 +366,22 @@ average looks back over, and longer than the two bars its level is measured agai
 breakdown runs sixteen to thirty-two bars, and a reference that forgot inside one
 would decide halfway through the break that the break is now normal.
 
-**Neither scale reaches the resting level.** Both apply to the range above the floor
-and never to the floor itself, and the floor is never zero while a stream is open -
-a light that goes out is indistinguishable from one that has stopped receiving
-anything. A `brightness` of 0 is still black, because that is a blackout and somebody
-asking for no light should get none.
+*Is this section loud for this track* is how hot the room runs against its own typical
+of about the last twenty seconds, and it is spent on the resting level rather than on
+the pulse: a drop lifts what the lights fall back to between beats, and a steady
+passage rests on the floor as it always did, because by then it is the typical. This
+is the difference the loudness measure discards on purpose - it saturates well below
+the room's loudest precisely so that ordinary playing counts as simply playing, which
+means it cannot also say how loud - and it is what makes a verse and a drop read as
+two different rooms rather than one. It is also why a track quieter than the one
+before it reads as subdued only for its first half minute rather than for its whole
+length: its level becomes the room's typical, and the room breathes around that.
+
+**None of the three reaches the floor itself.** All of them spend the range above it,
+and the floor is never zero while a stream is open - a light that goes out is
+indistinguishable from one that has stopped receiving anything. A `brightness` of 0
+is still black, because that is a blackout and somebody asking for no light should
+get none.
 
 **`at` is the server's answer and a page must not recompute it.** A browser could
 derive the same ordering from the array and it would be a second implementation of
@@ -950,6 +964,26 @@ while Link supplies the tempo is the primary way a bar ever gets aligned.
 The first tap of a sequence carries no interval and therefore no tempo, and it
 still sets the downbeat. Waiting for a second tap before honouring it would feel
 broken in exactly the case that matters most.
+
+### `anchor`
+
+```json
+{ "type": "anchor", "data": { } }
+```
+
+One press on the downbeat. `data` is empty and is ignored, and the press is
+timestamped on arrival for the reason `tap` is.
+
+The downbeat without the tempo, which is what `tap` cannot say under the manual
+source: a tap there is also a tempo press, so two taps in quick succession retune
+the grid to however fast somebody happened to press. This message never touches a
+tempo - not the manual estimate, not its tap sequence - so it is safe to press
+repeatedly on any source, and it is the way to correct the bar after typing a
+tempo. It reads back as `alignment.method` of `"tap"`, because from the grid's
+side that is what it is: a human press saying where bar one starts.
+
+Like `tap`, it works whatever the active source, on the same argument. With no
+timeline on the grid there is no beat to anchor, and the press does nothing.
 
 ### `setBpm`
 

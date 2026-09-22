@@ -403,6 +403,16 @@ public sealed class SocketHub {
         this.manual.Tap();
         break;
 
+      case "anchor":
+        // The downbeat without the tempo, which is what a tap cannot say under the
+        // manual source: a tap there is also a tempo press, so two of them in quick
+        // succession retune the grid to however fast somebody pressed. Routed straight
+        // to the grid's owner rather than through ManualSource, because a downbeat is
+        // a statement about the music in the room and not one source's opinion about
+        // tempo - the same argument that lets a tap align the bar while Link plays.
+        this.sources.AlignBar(BarAlignmentMethod.Tap);
+        break;
+
       case "setBpm":
         this.SetBpm(client, envelope.Data);
         break;

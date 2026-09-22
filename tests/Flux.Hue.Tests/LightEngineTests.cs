@@ -35,6 +35,71 @@ public class LightEngineTests {
   }
 
   /// <summary>
+  /// The peak has width, because a bulb is not a monitor: the bridge forwards at about
+  /// 25 updates a second, so a decay that starts falling the instant the beat lands has
+  /// its top resampled away before any bulb renders it. The pulse holds for two bridge
+  /// frames and falls over what is left - and the test above pins the other half of the
+  /// arrangement, that hold plus fall still spans exactly the slider's number.
+  /// </summary>
+  [Fact]
+  public void ThePulseHoldsItsPeakBeforeTheFadeBegins() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+
+    harness.BeatNow(index: 0);
+    harness.Engine.Render();
+
+    // Inside the 80 ms hold, where the old curve had already fallen to less than half.
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(70));
+    Assert.Equal(1.0, Brightness(harness.Engine.Render()), 3);
+
+    // Well into the fall: below the peak, nowhere near spent.
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(70));
+    double falling = Brightness(harness.Engine.Render());
+    Assert.True(falling < 0.99, $"The pulse is still at {falling:F3} past its hold, so it is not falling.");
+    Assert.True(falling > SpentBrightness, $"The pulse fell to {falling:F3} in 140 ms, so the hold did not happen.");
+  }
+
+  /// <summary>
+  /// The frame that consumes a beat runs ahead of the audio - the latency offset shifts
+  /// it early on purpose - so the kick the beat announces has usually not reached the
+  /// analyzer at the moment the strength is first read. The strength may rise while the
+  /// pulse is alive, so the hit counts when it lands instead of being judged by the gap
+  /// before it.
+  /// </summary>
+  [Fact]
+  public void AKickThatLandsAfterTheBeatIsConsumedStillCountsForThePulse() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+
+    // A background for the kick to stand out from, and a beat consumed on a frame where
+    // the kick band is doing nothing unusual: the gate reads it as no hit at all.
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.4, Mids: 0.3, Highs: 0.3);
+    harness.BeatNow(index: 0);
+    Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
+
+    // Two stream frames later the kick arrives, and the pulse takes its full height.
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(40));
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 0.3, Highs: 0.3);
+    Assert.Equal(1.0, Brightness(harness.Engine.Render()), 3);
+  }
+
+  /// <summary>
+  /// The other half of the ratchet's contract: it can only pass a hit along, never
+  /// invent one. A beat in a passage where the kick band sits flat stays gated shut
+  /// however long the pulse waits, which is what keeps a breakdown dark.
+  /// </summary>
+  [Fact]
+  public void AKickThatNeverArrivesLeavesThePulseGatedShut() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.4, Mids: 0.3, Highs: 0.3);
+    harness.BeatNow(index: 0);
+    harness.Engine.Render();
+
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(40));
+    Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
+  }
+
+  /// <summary>
   /// The floor exists for the reason the stream's holding colour is a dim white rather
   /// than black: a light that goes out between beats looks exactly like a light that
   /// has stopped receiving anything, and between beats is most of the time.
@@ -612,7 +677,12 @@ public class LightEngineTests {
 
     Assert.Equal(1.0, Brightness(lights[0]), 3);
     Assert.Equal(0.575, Brightness(lights[1]), 3);
-    Assert.Equal(0.235, Brightness(lights[2]), 3);
+
+    // The edge light's band is nearly silent, so its cut of the beat is nothing - what
+    // holds it up on a frame this much hotter than the history is the room's own energy,
+    // which lifts every light alike and reads here as the resting level rather than as a
+    // share of the pulse.
+    Assert.Equal(0.49, Brightness(lights[2]), 3);
 
     // The room's own colour is the full pulse, not the average of the three: it is what
     // the engine decided this beat was worth before any light's position was consulted.
@@ -765,6 +835,54 @@ public class LightEngineTests {
     Assert.True(
       Brightness(quiet) < Brightness(loud) / 2,
       $"The drop was at {Brightness(loud):F3} and the break at {Brightness(quiet):F3}, which is not the room reacting to the music.");
+  }
+
+  /// <summary>
+  /// A section running hotter than the room has been lifts the resting level between
+  /// beats, which is the difference the loudness gate discards on purpose: it saturates
+  /// so that ordinary playing counts as playing, so a verse and a drop pulse alike, and
+  /// before this the room answered them identically everywhere else too.
+  ///
+  /// Measured a second after the beat so the pulse is spent and no kick is hitting:
+  /// whatever holds the room up is its energy and nothing else. And the lift is not
+  /// forever - held long enough, the drop is the room's own level and the rest returns
+  /// to the floor, because a room merely at its own level is not a drop.
+  /// </summary>
+  [Fact]
+  public void ASectionRunningHotterThanTheRoomHasBeenLiftsTheRestingLevel() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 0.3, Highs: 0.3);
+    harness.BeatNow(index: 0);
+    Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
+
+    // The drop arrives: three times what the room has been. The pulse is long spent, so
+    // the lift is the energy's claim on the resting level and nothing else.
+    harness.Clock.Advance(TimeSpan.FromSeconds(1));
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 1, Highs: 1);
+    Assert.Equal(0.49, Brightness(harness.Engine.Render()), 3);
+
+    // Two minutes into the same level it is the room's typical, and the rest settles.
+    harness.Clock.Advance(TimeSpan.FromSeconds(120));
+    double settled = Brightness(harness.Engine.Render());
+    Assert.True(settled < 0.2, $"A level held for two minutes still lifts the rest to {settled:F3}, so the room never settles.");
+  }
+
+  /// <summary>
+  /// The counterpart that keeps the energy honest: a room playing steadily at any level
+  /// is its own typical, so the rest stays on the floor. Without this the measure would
+  /// be reading loudness rather than change, which is the gate's job and already taken.
+  /// </summary>
+  [Fact]
+  public void ARoomHoldingItsUsualLevelRestsOnTheFloor() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.5, Mids: 0.5, Highs: 0.5);
+    harness.BeatNow(index: 0);
+    harness.Engine.Render();
+
+    harness.Clock.Advance(TimeSpan.FromSeconds(1));
+    Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
   }
 
   /// <summary>

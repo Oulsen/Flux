@@ -415,6 +415,9 @@ export type ClientMessage =
   // clocks are unrelated and a timestamp from this one would place the beat
   // somewhere arbitrary.
   | { type: 'tap'; data: Record<string, never> }
+  // The downbeat without the tempo: a tap under the manual source is also a tempo
+  // press, and this is the press for when the tempo is already right.
+  | { type: 'anchor'; data: Record<string, never> }
   | { type: 'setBpm'; data: SetBpmData }
   | { type: 'discoverBridges'; data: Record<string, never> }
   | { type: 'pairBridge'; data: PairBridgeData }

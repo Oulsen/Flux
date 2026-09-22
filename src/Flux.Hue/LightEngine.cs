@@ -66,6 +66,26 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   private const double ShimmerShare = 0.7;
 
   /// <summary>
+  /// The most of the range above the floor that the room's own energy can claim
+  /// between beats.
+  ///
+  /// Flux's own, like <see cref="ShimmerShare"/> above it, and it exists for the
+  /// complaint the gates cannot answer: the loudness gate saturates so that ordinary
+  /// playing counts as playing, which deliberately discards the difference between a
+  /// verse and a drop - so the room answered both identically, reported on 2026-09-11.
+  /// This is that difference, spent on the resting level rather than on the pulse: a
+  /// section running hotter than the room has been lifts what the lights fall back to
+  /// between beats, and a steady passage rests on the floor exactly as it always did.
+  ///
+  /// Below <see cref="ShimmerShare"/> on purpose, which keeps the room legible as a
+  /// hierarchy: the beat is the loudest thing in the room, a band doing something right
+  /// now reads above the room's general body, and the body sits above the floor. First
+  /// to move if the room breathes too much or too little - alongside the two constants
+  /// in <see cref="BandDynamics"/> that decide when and how easily it breathes at all.
+  /// </summary>
+  private const double EnergyShare = 0.4;
+
+  /// <summary>
   /// The dimmest a light is allowed to sit while a stream is open, as a fraction of the
   /// room's own ceiling.
   ///
@@ -106,6 +126,26 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// slider is the number of milliseconds the flash visibly lasts.
   /// </summary>
   private const double PulseSpentAt = 0.1;
+
+  /// <summary>
+  /// How long a pulse holds its peak before the fade begins, in milliseconds.
+  ///
+  /// A departure from the scene, stated as one: the scene's decay constant drove an
+  /// on-screen indicator at 60 frames a second, where the peak frame is guaranteed to
+  /// be displayed. A bulb is not a monitor. The bridge forwards to it at roughly 25
+  /// updates a second - the figure <see cref="LightSettings.PulseMs"/> already
+  /// documents - so the top of a decay that starts falling the instant the beat lands
+  /// exists for one stream frame and is resampled away before any bulb renders it.
+  /// The room then never actually shows the brightness the beat was worth, which is
+  /// what watching it beside the scene showed on 2026-09-11. Two bridge frames is the
+  /// shortest hold that guarantees the peak is forwarded.
+  ///
+  /// Capped at half the pulse in <see cref="EnvelopeOf"/>, so a short pulse stays
+  /// mostly a fade, and the fall runs over what the hold leaves: hold plus fall still
+  /// totals <see cref="LightSettings.PulseMs"/>, so the number on the slider remains
+  /// the number of milliseconds the flash visibly lasts.
+  /// </summary>
+  private const double PulseHoldMs = 80;
 
   /// <summary>
   /// How many un-rendered beats to hold before dropping the oldest.
@@ -210,12 +250,21 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// quieter and left it synchronous, which is the part that reads as wrong: it is the
   /// unison rather than the brightness that gives it away.
   ///
-  /// Captured at the beat rather than followed continuously, which is the opposite choice
-  /// to <c>Loudness</c> beside it and the two answer different questions. How hard this
-  /// beat hit is a fact about one moment and it should hold for the whole fade, or a
-  /// pulse gets cut off by the gap after the kick that caused it. Whether anything is
-  /// playing at all is a fact about now, so a track that stops mid-pulse still kills the
-  /// tail.
+  /// Captured at the beat and then only ever raised while the pulse is alive, never
+  /// followed downward - the opposite choice to <c>Loudness</c> beside it, and the two
+  /// answer different questions. How hard this beat hit should hold for the whole fade,
+  /// or a pulse gets cut off by the gap after the kick that caused it. Whether anything
+  /// is playing at all is a fact about now, so a track that stops mid-pulse still kills
+  /// the tail.
+  ///
+  /// Raised rather than fixed because of when the capture happens: the frame that
+  /// consumes a beat runs ahead of the audio - the latency offset shifts it early on
+  /// purpose, and capture adds its own lag - so the kick this beat announces has
+  /// usually not reached the analyzer yet, and a strength read at that one moment is a
+  /// reading of the gap before the kick. That gated ordinary beats to a fraction of
+  /// their height, differently on every beat, which no slider could correct. Letting
+  /// the hit count when it lands fixes that without touching the breakdown behaviour:
+  /// in a break no hit ever arrives, so there is nothing to ratchet.
   ///
   /// One with no audio, so a build driven by a clock alone pulses on every beat exactly
   /// as it always has.
@@ -358,7 +407,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     this.Split(wanted, settings.Palette);
     this.Slide(elapsedSeconds, lastFrame is null, wanted);
 
-    Envelope envelope = this.EnvelopeOf(now, settings, sound?.Loudness ?? 1);
+    Envelope envelope = this.EnvelopeOf(now, settings, sound?.Loudness ?? 1, sound?.Energy ?? 0);
 
     // The first hue and not an average of them, because an average of two hues is a
     // third colour that no light in the room is showing. What this field has meant since
@@ -527,7 +576,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
 
       lock(this.gate) {
         if(this.pending.Count == 0 || this.pending.Peek().ScheduledMicros > now) {
-          return;
+          break;
         }
 
         beat = this.pending.Dequeue();
@@ -543,6 +592,17 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       if(this.ShouldChangeColor(beat, settings.ColorChangeBars)) {
         this.PickHues(settings.Palette, Math.Clamp(settings.ColorCount, 1, LightSettings.MaxColorCount));
       }
+    }
+
+    // The ratchet the field's own comment argues for. Bounded by the pulse's remaining
+    // life rather than by a second window constant, because the decay already prices
+    // lateness: a hit arriving with the pulse nearly spent raises a strength that
+    // multiplies almost nothing, so the bound never needs to be exact - it only stops
+    // a spent pulse being re-judged by hits that belong to no beat at all.
+    if(kickHit is { } landing
+      && this.pulseStartedMicros is { } started
+      && now - started <= settings.PulseMs * MicrosPerMilli) {
+      this.pulseStrength = Math.Max(this.pulseStrength, Math.Clamp(landing, 0, 1));
     }
   }
 
@@ -766,7 +826,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// Worth revisiting by ear: the two differ only in the couple of hundred milliseconds
   /// after a beat.
   /// </summary>
-  private Envelope EnvelopeOf(double now, LightSettings settings, double loudness) {
+  private Envelope EnvelopeOf(double now, LightSettings settings, double loudness, double energy) {
     double ceiling = settings.Brightness / (double)LightSettings.MaxPercent;
 
     if(settings.PulseMs <= 0 || this.pulseStartedMicros is not { } started) {
@@ -782,16 +842,24 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       // needing a special case, which is right: with the pulse switched off there is no
       // pulse to divide between the lights, and the person who turned it off asked for
       // one steady colour rather than for a room that shimmers by position.
-      return new Envelope(ceiling, ceiling, 1, 1, 1);
+      return new Envelope(ceiling, ceiling, 1, 1, 1, 0);
     }
 
     double floor = Math.Max(
       ceiling * (1.0 - (settings.PulseDepth / (double)LightSettings.MaxPercent)),
       ceiling * MinimumLitFraction);
     double age = Math.Max(0, now - started);
-    double decay = Math.Exp(Math.Log(PulseSpentAt) * age / (settings.PulseMs * MicrosPerMilli));
 
-    return new Envelope(floor, ceiling, decay, Math.Clamp(loudness, 0, 1), this.pulseStrength);
+    // Hold, then fall, together spanning exactly PulseMs - see PulseHoldMs for why the
+    // peak needs width at all. The cap keeps a short pulse mostly a fade, and it keeps
+    // the fall's length positive without a special case.
+    double pulseMicros = settings.PulseMs * MicrosPerMilli;
+    double holdMicros = Math.Min(PulseHoldMs * MicrosPerMilli, pulseMicros / 2);
+    double decay = age <= holdMicros
+      ? 1
+      : Math.Exp(Math.Log(PulseSpentAt) * (age - holdMicros) / (pulseMicros - holdMicros));
+
+    return new Envelope(floor, ceiling, decay, Math.Clamp(loudness, 0, 1), this.pulseStrength, Math.Clamp(energy, 0, 1));
   }
 
   /// <summary>Where this frame sits between the resting level and full.</summary>
@@ -814,7 +882,18 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// with no kick the lights are left following their own bands and nothing else, and
   /// that is the whole point of sizing a pulse this way.
   /// </param>
-  private readonly record struct Envelope(double Floor, double Ceiling, double Decay, double Loudness, double Strength) {
+  /// <param name="Energy">
+  /// How hot the room is running against its own recent typical, which is what lets the
+  /// resting level breathe with the track: a drop lifts what the lights fall back to
+  /// between beats, and a steady passage rests on the floor as it always did.
+  ///
+  /// Deliberately gated by nothing - not the kick, not the loudness. It is derived from
+  /// the same hearing they are and goes to zero with silence on its own, and a swell
+  /// with no kick in it is exactly the thing it exists to show. Uniform across the room
+  /// on purpose, where the shimmer is per band: which lights lead is already said twice,
+  /// and how loud this section is happens to every light at once.
+  /// </param>
+  private readonly record struct Envelope(double Floor, double Ceiling, double Decay, double Loudness, double Strength, double Energy) {
     /// <summary>
     /// <b>Two gates compose by taking the smaller, not by multiplying.</b>
     ///
@@ -833,23 +912,26 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     private double PulseGate => Math.Min(this.Loudness, this.Strength);
 
     /// <summary>The level the room as a whole is at, which is what a page is shown.</summary>
-    internal double Level => this.Above(this.Decay * this.PulseGate);
+    internal double Level => this.Above(Math.Max(this.Decay * this.PulseGate, this.Energy * EnergyShare));
 
     /// <summary>
     /// The level for one light, given its cut of the beat and its own band's shimmer.
     ///
-    /// The larger of the two rather than their sum, because they are two claims about
-    /// the same light and not two lights: adding them would push a light whose band is
+    /// The largest of the three rather than their sum, because they are claims about
+    /// the same light and not three lights: adding them would push a light whose band is
     /// busy on the beat past the ceiling, and clamping that away would silently flatten
     /// exactly the moments worth seeing. The beat wins wherever it is bigger, which is
-    /// every beat, and the shimmer fills in the gaps between them.
+    /// every beat; the shimmer fills the gaps between them; and the room's own energy is
+    /// what everything falls back to when neither has anything to say.
     ///
     /// The shimmer is gated by loudness alone. It is what a passage with no kick in it
     /// has left, so gating it by how hard the kick hit would take away the one thing
     /// carrying the break.
     /// </summary>
     internal double LevelAt(double share, double shimmer) {
-      return this.Above(Math.Max(this.Decay * share * this.PulseGate, shimmer * this.Loudness));
+      return this.Above(Math.Max(
+        Math.Max(this.Decay * share * this.PulseGate, shimmer * this.Loudness),
+        this.Energy * EnergyShare));
     }
 
     /// <summary>

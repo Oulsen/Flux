@@ -514,6 +514,35 @@ public sealed class SocketHubTests {
     await serving;
   }
 
+  /// <summary>
+  /// The press for when the tempo is already right. Under the manual source a tap is
+  /// also a tempo press - two in quick succession retune the grid to however fast
+  /// somebody pressed - so the anchor has to set the downbeat while leaving both the
+  /// tempo and the tap sequence exactly as they were.
+  /// </summary>
+  [Fact]
+  public async Task AnAnchorSetsTheDownbeatWithoutTouchingTheTempo() {
+    FakeWebSocket socket = new FakeWebSocket();
+    Rig rig = NewRig();
+
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await SkipOpeningAsync(socket);
+
+    // A typed tempo puts a timeline on the grid and deliberately leaves the bar alone,
+    // which is exactly the state the anchor exists for.
+    await SettleAsync(socket, """{"type":"setBpm","data":{"bpm":128.0}}""");
+    await SettleAsync(socket, """{"type":"anchor","data":{}}""");
+
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(BarAlignmentMethod.Tap, snapshot.AlignmentMethod);
+
+    Assert.Equal(128.0, rig.Manual.Bpm);
+    Assert.Equal(0, rig.Manual.Status().Diagnostics.Taps);
+
+    socket.ClientClose();
+    await serving;
+  }
+
   [Fact]
   public async Task SetsAndClearsTheManualTempo() {
     FakeWebSocket socket = new FakeWebSocket();
@@ -623,7 +652,7 @@ public sealed class SocketHubTests {
       new FakeHostLifetime(),
       NullLogger<SocketHub>.Instance);
 
-    return new Rig(hub, sources, manual);
+    return new Rig(hub, sources, manual, grid);
   }
 
   /// <summary>
@@ -642,7 +671,7 @@ public sealed class SocketHubTests {
     Assert.Equal("pong", pong.RootElement.GetProperty("type").GetString());
   }
 
-  private sealed record Rig(SocketHub Hub, SyncSourceManager Sources, ManualSource Manual);
+  private sealed record Rig(SocketHub Hub, SyncSourceManager Sources, ManualSource Manual, BeatGrid Grid);
 
   /// <summary>
   /// A source that exists only to be selected. It never publishes, which is

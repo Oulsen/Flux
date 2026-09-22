@@ -7,10 +7,12 @@
     /** The tempo on the grid right now, shown as the box's placeholder. */
     bpm: number | null;
     tap: () => void;
+    /** Sets the downbeat and nothing else - see the button below for why tap cannot. */
+    anchor: () => void;
     setBpm: (bpm: number | null) => void;
   }
 
-  const { manual, bpm, tap, setBpm }: Props = $props();
+  const { manual, bpm, tap, anchor, setBpm }: Props = $props();
 
   /* The bounds ManualSource enforces. Repeated rather than derived because there
      is no shared definition to derive from: the server rejects out of range, and
@@ -103,6 +105,23 @@
     </form>
 
     <p class="caption">a typed tempo leaves the downbeat where it is; empty clears it</p>
+
+    <!--
+      The downbeat without the tempo, which under manual the big pad cannot say:
+      a tap there is also a tempo press, so two quick presses retune the grid to
+      however fast somebody pressed. This is the press for when the tempo is
+      already right - typed, usually - and only the bar is wrong.
+
+      The same component as the pad and not a copy, because the rule worth not
+      duplicating is that the press fires on pointerdown rather than on click.
+      `manual` is false on purpose: presses here never feed the tempo, whatever
+      the source, and false is the prop's way of saying so - it also keeps the
+      label reading "anchor".
+    -->
+    <div class="anchor-only">
+      <AnchorButton manual={false} tap={anchor} />
+      <p class="caption">anchor sets the downbeat and leaves the tempo alone</p>
+    </div>
   </div>
 </div>
 
@@ -147,6 +166,16 @@
   .tempo {
     display: flex;
     gap: 0.5rem;
+  }
+
+  .anchor-only {
+    /* A third of the pad above it: still a comfortable thumb target, visibly
+       subordinate to the pad that does more. The size variable is the contract
+       AnchorButton documents for exactly this kind of caller. */
+    --anchor-size: 3rem;
+    display: flex;
+    align-items: center;
+    gap: var(--gap);
   }
 
   .field {

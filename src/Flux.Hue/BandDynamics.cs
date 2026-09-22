@@ -97,6 +97,37 @@ internal sealed class BandDynamics {
   private const double LoudEnoughFraction = 0.6;
 
   /// <summary>
+  /// How long the room's typical loudness looks back, which is what running hot is
+  /// measured against.
+  ///
+  /// Twenty seconds is eight to ten bars at 120 to 130 BPM, and both ends of that are
+  /// doing a job. Shorter and a drop becomes its own background while it is still
+  /// playing, so the lift dies under the section it announces. Longer and the other
+  /// complaint returns: a track quieter than the one before it reads as subdued for
+  /// minutes, when the difference is mastering rather than music. At twenty, an
+  /// eight-bar drop holds its lift for most of its length and a new track's level is
+  /// the room's new normal inside half a minute.
+  ///
+  /// <b>Flux's own and never listened to</b>, like the two windows above, and paired
+  /// with <see cref="EnergyAtRatio"/>: this decides when the room breathes, that
+  /// decides how easily.
+  /// </summary>
+  private const double RoomTypicalSeconds = 20.0;
+
+  /// <summary>
+  /// How far above its own typical the room has to run to count as fully elevated.
+  ///
+  /// A quarter again, and deliberately smaller than <see cref="TransientAtRatio"/>:
+  /// the band levels are means of squared display bytes, a scale that compresses level
+  /// differences, so a six-decibel rise across the whole room - a real drop - lands
+  /// near a quarter on this ratio rather than near a half. Demanding half again here
+  /// would make the lift something only the hardest drop of the night ever reaches.
+  ///
+  /// Unlistened to, and open to argument like everything else in this file.
+  /// </summary>
+  private const double EnergyAtRatio = 1.25;
+
+  /// <summary>
   /// How long a band's running average looks back, which is what a transient is measured
   /// against.
   ///
@@ -134,6 +165,7 @@ internal sealed class BandDynamics {
   private double kickMean;
   private double midsMean;
   private double highsMean;
+  private double roomTypical;
   private bool heardAnything;
 
   /// <summary>
@@ -175,12 +207,16 @@ internal sealed class BandDynamics {
       this.kickMean = heard.Kick;
       this.midsMean = heard.Mids;
       this.highsMean = heard.Highs;
+      this.roomTypical = loudest;
     } else {
       double approach = 1 - Math.Exp(-elapsed / BandAverageSeconds);
 
       this.kickMean += (heard.Kick - this.kickMean) * approach;
       this.midsMean += (heard.Mids - this.midsMean) * approach;
       this.highsMean += (heard.Highs - this.highsMean) * approach;
+
+      double roomApproach = 1 - Math.Exp(-elapsed / RoomTypicalSeconds);
+      this.roomTypical += (loudest - this.roomTypical) * roomApproach;
     }
 
     SpectrumLevels drive = new SpectrumLevels(
@@ -193,7 +229,19 @@ internal sealed class BandDynamics {
       Above(heard.Mids, this.midsMean),
       Above(heard.Highs, this.highsMean));
 
-    return new RoomSound(drive, transient, Math.Clamp(loudest / (this.roomPeak * LoudEnoughFraction), 0, 1));
+    // The transient's shape applied to the room over bars rather than beats: how far
+    // the level runs above what has been typical lately, and zero for a room merely at
+    // its own level. Seeded at the first frame like the means, so the first note of the
+    // night is a note rather than a drop.
+    double energy = this.roomTypical < SilentBelow
+      ? 0
+      : Math.Clamp(((loudest / this.roomTypical) - 1) / (EnergyAtRatio - 1), 0, 1);
+
+    return new RoomSound(
+      drive,
+      transient,
+      Math.Clamp(loudest / (this.roomPeak * LoudEnoughFraction), 0, 1),
+      energy);
   }
 
   /// <summary>
@@ -277,4 +325,20 @@ internal sealed class BandDynamics {
 /// of the last minute, so it dimmed every beat of every track instead of only the quiet
 /// ones. See <see cref="BandDynamics.LoudEnoughFraction"/>.
 /// </param>
-internal readonly record struct RoomSound(SpectrumLevels Drive, SpectrumLevels Transient, double Loudness);
+/// <param name="Energy">
+/// How hot the room is running against its own recent typical, 0 to 1.
+///
+/// The intra-track measure the other three are not. <paramref name="Loudness"/> gates:
+/// it saturates well below the room's loudest precisely so that ordinary playing counts
+/// as simply playing, which is right for the pulse and discards the difference between
+/// a verse and a drop on purpose. This keeps that difference. A section running hotter
+/// than the passage before it reads high for about as long as the typical takes to
+/// catch up, and a steady passage at any level reads as nothing - by then it is the
+/// typical, and a room merely at its own level is not a drop.
+///
+/// Against a running typical rather than the decaying peak, because the peak cannot
+/// answer this question: steady playing sits at its own recent maximum by construction,
+/// so "how close to the loudest" reads full for a quiet verse exactly as it does for
+/// the drop. Zero is the ordinary state here, not a fault.
+/// </param>
+internal readonly record struct RoomSound(SpectrumLevels Drive, SpectrumLevels Transient, double Loudness, double Energy);
