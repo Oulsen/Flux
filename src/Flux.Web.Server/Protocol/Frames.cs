@@ -264,17 +264,18 @@ public static class Frames {
   /// offending name quoted - which this cannot produce and the caller can.
   /// </summary>
   public static bool TryReadStage(JsonElement data, out StageData stage) {
-    stage = new StageData(string.Empty, string.Empty, string.Empty, 0);
+    stage = new StageData(string.Empty, string.Empty, string.Empty, 0, 0);
 
     if(data.ValueKind != JsonValueKind.Object
       || !TryReadString(data, "layout", out string layout)
       || !TryReadString(data, "shape", out string shape)
       || !TryReadString(data, "color", out string color)
-      || !TryReadInt(data, "bands", out int bands)) {
+      || !TryReadInt(data, "bands", out int bands)
+      || !TryReadInt(data, "trailMs", out int trailMs)) {
       return false;
     }
 
-    stage = new StageData(layout, shape, color, bands);
+    stage = new StageData(layout, shape, color, bands, trailMs);
     return true;
   }
 

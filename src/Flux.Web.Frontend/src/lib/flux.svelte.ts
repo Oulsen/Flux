@@ -11,6 +11,7 @@ import {
   type HueData,
   type HueEngineData,
   type LightData,
+  type PreviewData,
   type RawMessage,
   type SourceReportData,
   type SourceState,
@@ -120,6 +121,9 @@ export class FluxStore {
   /** Non-null exactly while Flux is streaming to a bridge. */
   light = $state<LightData | null>(null);
 
+  /** The engine's picture while nothing streams. Never non-null alongside `light`. */
+  preview = $state<PreviewData | null>(null);
+
   /**
    * How the stage draws, as the server has it.
    *
@@ -134,6 +138,7 @@ export class FluxStore {
     shape: SHAPE_DEFAULT,
     color: COLOR_DEFAULT,
     bands: BAND_DEFAULT,
+    trailMs: 0,
   });
 
   /**
@@ -201,6 +206,7 @@ export class FluxStore {
         this.alignment = state.alignment;
         this.grid = state.grid;
         this.light = state.light;
+        this.preview = state.preview ?? null;
         this.diagnostics = state.diagnostics;
         this.pendingSource = resolvePending(this.pendingSource, state.source);
 
@@ -316,6 +322,7 @@ export class FluxStore {
     // A stream Flux may or may not still be running is not a measured frame rate,
     // and this field's whole contract is that a number in it was measured.
     this.light = null;
+    this.preview = null;
 
     // `hue` is deliberately kept, unlike everything above it. A reconnect brings a
     // fresh frame within a second, the connection badge already marks the whole page

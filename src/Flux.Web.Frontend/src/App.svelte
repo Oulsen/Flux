@@ -80,6 +80,15 @@
   /** The engine as this page believes it to be: the server's picture under its own unconfirmed changes. */
   const engine = $derived(store.hue === null ? null : { ...store.hue.engine, ...store.pendingEngine });
 
+  /*
+   * Whether to say on the stage that the lights are off. The stage looks the same drawn
+   * from the preview as from a running stream, so without this nothing on the picture
+   * says whether the room is lit - and the corner reading is too small to be the only
+   * answer to the one question somebody glances at the page to ask. Only in a build that
+   * can light a room at all; a beat lab has no lights to be off.
+   */
+  const lightsOff = $derived(store.hue !== null && store.light === null && !store.protocolMismatch);
+
   /** The same, for the stage. Never null: the store seeds it with the server's own defaults. */
   const stage = $derived({ ...store.stage, ...store.pendingStage });
 
@@ -271,11 +280,13 @@
   {#if stageOn}
     <!-- The colour comes off the wire rather than being computed here, which is the
          whole reason it is on the wire: a second engine in the browser would drift from
-         the one driving the bulbs and neither could be called wrong. -->
+         the one driving the bulbs and neither could be called wrong. With the lights off
+         it is the server's preview of the same engine, so the look can be judged before
+         the room is lit; the HUD says which of the two is being drawn. -->
     <SpectrumCanvas
       frame={store.latestSpectrum}
-      color={store.light?.color ?? null}
-      lights={store.light?.channels ?? []}
+      color={store.light?.color ?? store.preview?.color ?? null}
+      lights={store.light?.channels ?? store.preview?.channels ?? []}
       stateHz={store.stateHz}
       {stage}
     />
@@ -305,6 +316,12 @@
       {needsSetup ? 'set up' : 'settings'}
     </button>
   </div>
+
+  {#if lightsOff}
+    <p class="lights-off">
+      light sync off{store.preview !== null ? ' · showing a preview' : ''}
+    </p>
+  {/if}
 
   {#if store.protocolMismatch}
     <p class="mismatch">
@@ -461,6 +478,7 @@
       on={stageOn}
       {stage}
       lit={store.light?.color !== undefined}
+      previewing={store.light === null && store.preview !== null}
       setOn={setStageOn}
       {setStage}
     />
@@ -737,6 +755,24 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--ink-dim);
+  }
+
+  /* The mismatch warning's slot, which it never shares: the two are exclusive by the
+     condition above. Quiet rather than alarmed, because lights being off is a state
+     somebody chose, not a fault. */
+  .lights-off {
+    grid-row: 2;
+    align-self: start;
+    justify-self: center;
+    margin: var(--gap) 0 0;
+    padding: 0.35rem 0.9rem;
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    background: rgb(11 13 18 / 70%);
+    color: var(--ink-dim);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 
   .mismatch {

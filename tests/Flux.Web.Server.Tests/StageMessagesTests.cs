@@ -1,5 +1,6 @@
 using Flux.Audio;
 using Flux.Web.Server.Protocol;
+using System.Text.Json;
 using Xunit;
 
 namespace Flux.Web.Server.Tests;
@@ -24,6 +25,40 @@ public sealed class StageMessagesTests {
     Assert.Equal("chonkerBars", composed.Shape);
     Assert.Equal("hueWaveVert", composed.Color);
     Assert.Equal(32, composed.Bands);
+  }
+
+  [Fact]
+  public void TheTrailTravelsAndIsOffUnlessSomebodyAsks() {
+    Assert.Equal(0, StageSettings.Default.TrailMs);
+
+    Assert.Equal(350, StageFrames.Compose(StageSettings.Default with { TrailMs = 350 }).TrailMs);
+  }
+
+  [Theory]
+  [InlineData(0, true)]
+  [InlineData(StageSettings.MaxTrailMs, true)]
+  [InlineData(-1, false)]
+  [InlineData(StageSettings.MaxTrailMs + 1, false)]
+  public void ATrailOutsideItsRangeIsRefused(int trailMs, bool accepted) {
+    MemoryStageSettingsStore store = new MemoryStageSettingsStore();
+    StageService service = new StageService(store);
+
+    Assert.Equal(accepted, service.TrySet(StageSettings.Default with { TrailMs = trailMs }));
+  }
+
+  /// <summary>
+  /// One complete statement of the look, like every other field: a page that left the
+  /// trail out would be relying on the server to remember it, and two pages doing that
+  /// produce a look neither chose.
+  /// </summary>
+  [Fact]
+  public void ALookWithoutItsTrailIsNotAStatementOfTheLook() {
+    using JsonDocument without = JsonDocument.Parse("""{"layout":"upward","shape":"bars","color":"randomBeat","bands":64}""");
+    using JsonDocument with = JsonDocument.Parse("""{"layout":"upward","shape":"bars","color":"randomBeat","bands":64,"trailMs":200}""");
+
+    Assert.False(Frames.TryReadStage(without.RootElement, out _));
+    Assert.True(Frames.TryReadStage(with.RootElement, out StageData read));
+    Assert.Equal(200, read.TrailMs);
   }
 
   [Fact]

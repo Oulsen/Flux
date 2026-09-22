@@ -161,6 +161,7 @@ public sealed class StateSnapshotTests {
       grid,
       sources,
       stream: null,
+      preview: null,
       Options.Create(new WebOptions()));
 
     return new Rig(broadcaster, sources);

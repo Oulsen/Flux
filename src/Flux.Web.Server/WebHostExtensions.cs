@@ -91,6 +91,7 @@ public static class WebHostExtensions {
       provider.GetRequiredService<BeatGrid>(),
       provider.GetRequiredService<SyncSourceManager>(),
       provider.GetService<HueStreamService>(),
+      provider.GetService<LightPreview>(),
       provider.GetRequiredService<IOptions<WebOptions>>()));
 
     // Both audio feeds are registered whether or not this build has audio. Each one

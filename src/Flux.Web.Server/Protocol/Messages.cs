@@ -96,6 +96,11 @@ public sealed record DiagnosticsData(
 /// <param name="Alignment">Whether the bar is anchored, and by what.</param>
 /// <param name="Light">Null exactly when Flux is not streaming to a bridge. The single authority on whether it is.</param>
 /// <param name="Diagnostics">Counters for the active source, plus the grid's own drift metric.</param>
+/// <param name="Preview">
+/// What the light engine would be sending, while nothing is streaming, or null. Never
+/// present alongside <paramref name="Light"/>: that stays the one authority on whether
+/// Flux is streaming, and this is the picture for when it is not.
+/// </param>
 public sealed record StateData(
   string Source,
   string SourceState,
@@ -103,7 +108,24 @@ public sealed record StateData(
   GridData? Grid,
   AlignmentData Alignment,
   LightData? Light,
-  DiagnosticsData Diagnostics);
+  DiagnosticsData Diagnostics,
+  PreviewData? Preview = null);
+
+/// <summary>
+/// The light engine's output while no stream is open: the same two readings as
+/// <see cref="LightData"/> without the frame rate, because nothing is being sent.
+///
+/// A field of its own rather than <see cref="LightData"/> with the rate left out, which
+/// would have changed what a non-null <c>light</c> means - it has always meant "Flux is
+/// streaming", and a page that went on believing that would show a running stream over
+/// a room that is dark.
+/// </summary>
+/// <param name="Color">The colour the engine chose, before any one light's band is applied.</param>
+/// <param name="Channels">
+/// What each light of the selected area would be sent, placed as the bridge laid the area
+/// out; six stand-in lights spread across the spectrum when there is no area to read.
+/// </param>
+public sealed record PreviewData(LightColorData Color, IReadOnlyList<LightChannelData> Channels);
 
 /// <summary>
 /// What the light stream is achieving, and the only field that says Flux is

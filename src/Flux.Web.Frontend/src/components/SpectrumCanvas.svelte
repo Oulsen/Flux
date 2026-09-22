@@ -32,34 +32,37 @@
     StageData,
   } from '../lib/protocol.ts';
   import {
+    type Afterimage,
+    afterimageAlpha,
     approachColor,
     approachLights,
     barRect,
     barThickness,
     dampPulse,
+    HUE_SPEED_DEFAULT,
     hueCss,
     hueShift,
-    HUE_SPEED_DEFAULT,
     isSmooth,
+    keepAfterimages,
     lightAt,
     NEUTRAL_COLOR,
     pixelCapRects,
     rainbowStops,
     rgbCss,
+    type SceneColor,
     sectionColor,
     sectionOf,
+    type Side,
     smoothPoints,
     smoothStride,
+    type StageSize,
     STATIC_STOPS,
     upwardBarRect,
     upwardPixelCapRect,
     upwardSectionOf,
     upwardSmoothPoints,
     WAVE_PHASE_TURNS,
-    type SceneColor,
-    type Side,
-    type StageSize,
-  } from '../lib/scene.ts';
+} from '../lib/scene.ts';
   import { advanceVisual, emptyVisual, receiveFrame } from '../lib/spectrum.ts';
 
   interface Props {
@@ -175,6 +178,7 @@
 
     /** Each light's colour on screen, smoothed the same way and separately. */
     let shownLights: SceneColor[] = [];
+    let afterimages: Afterimage[] = [];
 
     /** Where each light listens, which the wire repeats every frame and only changes with the room. */
     let placements: number[] = [];
@@ -319,10 +323,10 @@
 
       /*
        * Filled rather than cleared, so the canvas is opaque over whatever the page puts
-       * behind it. The reference scene repaints at partial alpha here instead, which is
-       * what makes its picture smear; that setting is not carried across - it ships off
-       * in the scene too, and a screen fade belongs with the light engine's own
-       * background fade rather than arriving before it.
+       * behind it. Always fully, trail or no trail: the reference scene repainted at
+       * partial opacity here to smear the picture, and the afterimage below replaces
+       * that - an 8-bit canvas cannot quite fade a faint smear out, and a trail drawn from
+       * the spectrum is simply not drawn once it has run out.
        */
       painted = null;
       context.fillStyle = surfaceColor;
@@ -341,11 +345,29 @@
 
       const bars = visual.levels;
 
-      if (isSmooth(stage.shape)) {
-        drawSmooth(bars, size, columns, now);
-      } else {
-        drawBars(bars, size, columns, now);
+      const drawShape = (levels: readonly number[]): void => {
+        if (isSmooth(stage.shape)) {
+          drawSmooth(levels, size, columns, now);
+        } else {
+          drawBars(levels, size, columns, now);
+        }
+      };
+
+      /*
+       * The trail, drawn under the live picture in its own paint, oldest first so each
+       * fresher copy lands over the one before it. A copy from before the column count
+       * changed is skipped rather than stretched onto columns it does not belong to.
+       */
+      for (const copy of afterimages) {
+        if (copy.levels.length === columns) {
+          context.globalAlpha = afterimageAlpha(now - copy.atMs, stage.trailMs);
+          drawShape(copy.levels);
+        }
       }
+
+      context.globalAlpha = 1;
+
+      drawShape(bars);
 
       // Intensity is the whole distinction between a beat and a strong one:
       // `flashFor` hands them 0.5 and 1, and both then fall on the same curve.
@@ -576,6 +598,10 @@
        */
       shownLights = approachLights(shownLights, lights, elapsed, interval);
       placements = lights.map((light) => light.at);
+
+      // Emptied by the helper when the trail is off, so turning it back on starts from
+      // the picture as it is rather than from one minutes old.
+      afterimages = keepAfterimages(afterimages, visual.levels, now, stage.trailMs);
 
       resize();
       draw(now);

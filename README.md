@@ -68,13 +68,16 @@ measured by somebody standing in the room watching both.
   restart or a Wi-Fi drop, and a phone that would rather not draw a 64 column
   spectrum thirty times a second can switch to numbers only, which it then
   remembers.
+- Shows the look before the room is lit: with light sync off the visualizer is
+  drawn in the colours the light engine would send, laid out as the selected
+  room's lights, so palettes and colour splits can be judged with the bulbs off
+  or with no bridge at all. The stage says so while it is a preview.
 - Streams state, beats, spectrum and bridge status over a WebSocket. The wire
   contract is [docs/protocol.md](docs/protocol.md).
 
-Not here yet: background fade and gamma correction, which are the rest of
-Phase 4. Flux is also still a console app you start from a terminal: the
-desktop shell and the QR code that gets a phone onto the page without typing an
-address are Phase 5.
+Not here yet: gamma correction, which is the rest of Phase 4. Flux is also
+still a console app you start from a terminal: the desktop shell and the QR
+code that gets a phone onto the page without typing an address are Phase 5.
 
 ## Requirements
 
@@ -155,8 +158,8 @@ it, readable only by the Windows account that paired. `Hue:LatencyOffsetMs` is
 the one setting that goes both ways, and that is the point of it - the lag is a
 property of a rig worth pinning, while the page still owns it during a set.
 
-How the visualizer draws - the layout, the bar shape, the colour style and how many
-bands the spectrum is divided into - is shared the same way, in
+How the visualizer draws - the layout, the bar shape, the colour style, how many
+bands the spectrum is divided into and how long it trails - is shared the same way, in
 `%APPDATA%\Flux\stage-settings.json`. It lives on the server rather than in each
 browser because the look of the stage is part of the show and should be the same on
 the laptop and on the phone in somebody's hand; the band count could never have been
@@ -212,7 +215,7 @@ npm test
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, a spectrum frame, the band energies the light engine follows, and how many columns the visualizer wants it in |
 | `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
-| `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, the light engine that turns beats into a colour per light, the room-to-frequency mapping behind it, and the encrypted store the bridge keys live in |
+| `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, the light engine that turns beats into a colour per light, the preview that runs it while nothing streams, the room-to-frequency mapping behind it, and the encrypted store the bridge keys live in |
 | `src/Flux.Web.Server` | WebSocket hub, beat, spectrum, device, bridge and stage broadcasters, the stage's own settings and their store, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable |

@@ -91,11 +91,42 @@ public enum StageColor {
 /// How many display columns the analyzer produces, inside
 /// <see cref="SpectrumBands"/>' bounds.
 /// </param>
+/// <param name="TrailMs">
+/// How long the picture trails behind itself, in milliseconds, from 0 to
+/// <see cref="MaxTrailMs"/>, where 0 is off and every frame starts clean. Off by default,
+/// as the scene shipped its fade.
+///
+/// The trail is an afterimage: the last few frames of the spectrum drawn again under the
+/// live one, each fainter, falling to a tenth over this long - the threshold
+/// <see cref="Flux.Hue.LightSettings.PulseMs"/> already names, so the number on the slider
+/// is how long the trail visibly lasts.
+///
+/// A departure from the scene on two counts, both settled by looking at the stage. The
+/// scene smeared pixels - it repainted the background at partial opacity - and an 8-bit
+/// canvas cannot quite fade a faint smear to the background, so its long end left a haze
+/// of old bars; an afterimage is drawn from the spectrum and is simply not drawn once it
+/// has run out. And the scene counted its fade per frame, so one setting trailed twice as
+/// long on a 60 Hz display as on a 120 Hz one; this is counted in time. Screen only: in
+/// the scene the canvas was the device and the fade smeared the LEDs too, but Flux's
+/// lights have an envelope of their own, and <see cref="Flux.Hue.LightSettings.PulseMs"/>
+/// is what decides how long a light trails a beat.
+/// </param>
 public sealed record StageSettings(
   StageLayout Layout,
   StageShape Shape,
   StageColor Color,
-  int Bands) {
+  int Bands,
+  int TrailMs = 0) {
+  /// <summary>
+  /// The longest trail, in milliseconds.
+  ///
+  /// A second, chosen by looking rather than carried across. The scene's own top end
+  /// works out to nearly ten seconds at 60 Hz, which on this stage turned every bar into
+  /// one smear of paint; past a second a trail stops reading as the motion of a bar and
+  /// starts reading as a fog over the picture.
+  /// </summary>
+  public const int MaxTrailMs = 1000;
+
   /// <summary>
   /// The look a fresh install opens on.
   ///
@@ -115,7 +146,9 @@ public sealed record StageSettings(
     Enum.IsDefined(this.Layout)
     && Enum.IsDefined(this.Shape)
     && Enum.IsDefined(this.Color)
-    && SpectrumBands.IsValid(this.Bands);
+    && SpectrumBands.IsValid(this.Bands)
+    && this.TrailMs >= 0
+    && this.TrailMs <= MaxTrailMs;
 }
 
 /// <summary>

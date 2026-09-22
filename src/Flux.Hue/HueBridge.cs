@@ -29,4 +29,10 @@ public sealed record HueBridge(string Id, string Address);
 /// an opaque DTLS timeout - and it does not say <i>who</i>, because the bridge does
 /// not offer a name to blame.
 /// </param>
-public sealed record HueArea(Guid Id, string Name, int ChannelCount, bool Streaming);
+/// <param name="Channels">
+/// Each light's channel and where the bridge says it stands, or null where nothing was
+/// read. Kept from the same answer that supplies the count, so the preview can draw the
+/// room as it is laid out without opening a stream to ask; the stream still reads its own
+/// copy when it opens, because the channels it streams to are the ones that decide.
+/// </param>
+public sealed record HueArea(Guid Id, string Name, int ChannelCount, bool Streaming, IReadOnlyList<HueChannel>? Channels = null);

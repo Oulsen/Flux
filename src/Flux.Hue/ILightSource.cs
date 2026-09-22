@@ -25,15 +25,18 @@ public interface ILightSource {
   /// The colours to send right now: one per light, and the one the room is on.
   ///
   /// Called on the stream's own thread, fifty times a second, by a loop whose entire
-  /// job is punctuality. It must not block, allocate heavily, or wait on anything -
-  /// a slow answer here does not delay a colour, it drops a frame.
+  /// job is punctuality - and, while no stream is open, by the preview at the same rate.
+  /// It must not block, allocate heavily, or wait on anything beyond the other caller's
+  /// render at a handover - a slow answer here does not delay a colour, it drops a frame.
   ///
   /// Reads the clock itself rather than being handed a timestamp, so there is exactly
   /// one opinion about what time it is on the path between a beat and a light.
   ///
-  /// <b>Exactly once per frame.</b> The call advances the hue transition, so asking
-  /// twice for one frame slides the colour twice as fast - which is the same
-  /// one-renderer rule the engine has always had, now stated where a caller can see it.
+  /// <b>Once per frame, by one caller at a time.</b> The call advances the hue transition
+  /// and the band references by the time since the last call, whoever made it, so two
+  /// callers taking turns split an interval rather than counting it twice - but two
+  /// calls interleaving inside one render would tear that state, so an implementation
+  /// holding any has to serialise them.
   ///
   /// <b>The geometry is passed in rather than remembered</b>, and that is deliberate.
   /// A session owns its room: the placements are computed when the stream opens and

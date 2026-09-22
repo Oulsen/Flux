@@ -120,10 +120,12 @@ thing to do beyond the number: decide whether to draw `channels` or keep drawing
 bulb received, the other is what the engine decided the beat was worth.
 
 Version 2 has since grown without breaking, and one of those additions is worth
-arguing. `anchor` and `strobe` are new types, which the rule above covers. But
+arguing. `anchor` and `strobe` are new types and `state.preview` is a new field, which
+the rule above covers. But
 `setLightSettings` gained `strobe` and `strobeCycle` as **required** fields, the way
-`colorCount` and `colorLayout` arrived before them, so a page built before them has its
-light settings refused as `invalid_data`. That is loud rather than quiet - the page is
+`colorCount` and `colorLayout` arrived before them, and `setStageSettings` gained `trailMs`
+the same way, so a page built before them has those settings refused as
+`invalid_data`. That is loud rather than quiet - the page is
 told, and nothing is applied that it did not mean - which is the difference between a
 refusal and the misreading the version exists to prevent. Making the fields optional
 instead would have broken the rule that message stands on: that it is one complete
@@ -223,7 +225,8 @@ changed. It is a snapshot and is never a delta.
       { "at": 1, "r": 0.12, "g": 0.03, "b": 0.08 }
     ]
   },
-  "diagnostics": { "reanchorMaxBeats": 0.0, "packets": 4821 }
+  "diagnostics": { "reanchorMaxBeats": 0.0, "packets": 4821 },
+  "preview": null
 }}
 ```
 
@@ -236,6 +239,7 @@ changed. It is a snapshot and is never a delta.
 | `alignment` | object | Whether the bar has been anchored, and by what |
 | `light` | object or **null** | Null exactly when Flux is not streaming to a bridge |
 | `diagnostics` | object | Health counters for the active source |
+| `preview` | object or **null** | What the light engine would be sending while nothing streams. **Null whenever `light` is present** |
 
 `sourceState` distinguishes three situations that a single boolean would blur:
 
@@ -467,6 +471,45 @@ running, and a zero would read as a stream that is running and failing. Why it
 is not running is `hue`'s question, not this one's - no bridge, no area chosen,
 somebody pressed stop, or the bridge's one session belongs to another
 application.
+
+### `state.preview`
+
+The light engine's output while no stream is open, so a page can show the look
+before the room is lit - or with no bridge at all, since the look is stored on this
+machine rather than on the bridge.
+
+```json
+"preview": {
+  "color": { "r": 0.8, "g": 0.2, "b": 0.55 },
+  "channels": [
+    { "at": 0.0, "r": 0.8, "g": 0.2, "b": 0.55 },
+    { "at": 1.0, "r": 0.4, "g": 0.1, "b": 0.27 }
+  ]
+}
+```
+
+`color` and `channels` mean what they mean on `state.light`, with no frame rate
+because nothing is being sent. **It is never present alongside `light`**, and a page
+must not read it as a sign that the room is lit: `light` stays the single authority
+on whether Flux is streaming, which is why this is a field of its own rather than
+`light` with the rate left out. A client drawing the stage draws `light` when there is
+one and this when there is not, and says which it is showing - the picture looks the
+same either way.
+
+It is the same engine the stream runs, not an imitation of it: with no session open
+the server runs the engine itself at the stream's rate, and stands down the moment a
+session starts. So the colours on screen are the colours the bulbs would get, beat
+for beat, and the handover to a real stream continues them rather than starting over.
+
+**`channels` is the selected area as the bridge laid it out**, read from the same
+answer that lists the areas, so each light listens where the stream would place it and
+falls in the colour group it would fall in - a `colorCount` of two or three splits the
+preview exactly as it would split the room. With no area to read - no bridge, or none
+chosen - it is six stand-in lights spread evenly across the spectrum instead of none,
+because a colour split needs lights to divide between and a preview without them could
+only ever show the first colour.
+
+Null in a build with no Hue support, which has no engine to preview.
 
 ### `state.diagnostics`
 
@@ -794,7 +837,8 @@ connects.
   "layout": "upward",
   "shape": "bars",
   "color": "randomBeat",
-  "bands": 64
+  "bands": 64,
+  "trailMs": 0
 }}
 ```
 
@@ -804,6 +848,7 @@ connects.
 | `shape` | string | `"bars"`, `"thinBars"`, `"chonkerBars"`, `"pixel"`, `"smooth"` or `"smoothSimple"` |
 | `color` | string | `"randomBeat"`, `"hueCycle"`, `"hueWave"`, `"hueWaveVert"` or `"static"` |
 | `bands` | int | How many display columns `spectrum.bins` carries, 16 to 128 |
+| `trailMs` | int | How long the picture's afterimage lasts, 0 to 1000 ms. **0 is off**, and the default |
 
 Its own message rather than fields on `state`, on the argument that gave `hue` one:
 state goes out twenty times a second, and a look that changes when somebody taps a
@@ -837,6 +882,23 @@ the whole transform and never these columns, which is why this is a resolution k
 rather than a re-calibration. The derivation of the bounds, and what the transform
 underneath can actually resolve, is in
 [docs/audio-constants.md](audio-constants.md).
+
+**`trailMs` is how long the picture leaves an afterimage**: the last few frames of the
+spectrum drawn again under the live one, each fainter, falling to a tenth over
+`trailMs` - the threshold `pulseMs` names, so the number is how long the trail
+visibly lasts.
+
+It stands in for the reference scene's fade and departs from it on two counts, both
+settled by looking at the stage. The scene smeared pixels, repainting the background at
+partial opacity, and an 8-bit canvas cannot quite fade a faint smear to the background,
+so its long end left a haze of old bars; an afterimage is drawn from the spectrum and
+is simply not drawn once it has run out. And the scene counted its fade per frame, so
+one setting trailed twice as long on a 60 Hz display as on a 120 Hz one, with a top end
+of nearly ten seconds; this is counted in time, on any display, and stops at a second.
+
+It is on the screen only. In the scene the canvas was the device and the fade smeared
+the LEDs along with the picture; Flux's lights have an envelope of their own, and
+`setLightSettings.pulseMs` is what decides how long a light trails a beat.
 
 ### `pong`
 
@@ -1420,7 +1482,8 @@ One complete statement of how the visualizer should draw.
   "layout": "upward",
   "shape": "bars",
   "color": "randomBeat",
-  "bands": 64
+  "bands": 64,
+  "trailMs": 0
 }}
 ```
 
@@ -1435,9 +1498,9 @@ controls too, and a reply addressed to the phone would leave the laptop showing 
 nobody is running.
 
 A name that is not on one of the three lists is `rejected` with the name quoted back.
-A `bands` outside 16 to 128 is `rejected` rather than clamped, on the same argument as
-`setLatencyOffset`. A missing field, a non-integer `bands`, or a name that is not a
-string is `invalid_data`.
+A `bands` outside 16 to 128 or a `trailMs` outside 0 to 1000 is `rejected` rather than
+clamped, on the same argument as `setLatencyOffset`. A missing field, a non-integer
+`bands` or `trailMs`, or a name that is not a string is `invalid_data`.
 
 These survive a restart, in `%APPDATA%\Flux\stage-settings.json`.
 

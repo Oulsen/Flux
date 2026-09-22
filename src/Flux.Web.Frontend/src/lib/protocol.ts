@@ -54,6 +54,11 @@ export interface StageData {
    * is the thing being drawn.
    */
   bands: number;
+  /**
+   * How long the picture's afterimage lasts, 0 to 1000 ms, where 0 is off: the last few
+   * frames drawn again under the live one, each fainter. Screen only.
+   */
+  trailMs: number;
 }
 
 export type DeviceState = 'signal' | 'digitalSilence' | 'noData' | 'failed';
@@ -260,6 +265,24 @@ export interface StateData {
   /** Null exactly when Flux is not streaming. The only field that says whether it is. */
   light: LightData | null;
   diagnostics: DiagnosticsData;
+  /**
+   * What the engine would be sending, while nothing streams; null while `light` is
+   * present, and null in a build with no Hue support. Draw it in place of `light`, and
+   * never treat it as a sign that the room is lit.
+   */
+  preview: PreviewData | null;
+}
+
+/**
+ * The engine's output with no stream open: `light` without the frame rate.
+ *
+ * `channels` is the selected area as the bridge laid it out, or six stand-in lights
+ * spread across the spectrum when there is no area to read - never empty, so a colour
+ * count above one always has lights to split between.
+ */
+export interface PreviewData {
+  color: LightColorData;
+  channels: LightChannelData[];
 }
 
 export interface SpectrumData {

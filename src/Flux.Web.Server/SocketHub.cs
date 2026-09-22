@@ -808,7 +808,7 @@ public sealed class SocketHub {
     if(!Frames.TryReadStage(data, out StageData requested)) {
       client.Enqueue(Frames.Error(
         "invalid_data",
-        "Setting the stage needs strings 'data.layout', 'data.shape' and 'data.color' and an integer 'data.bands'."));
+        "Setting the stage needs strings 'data.layout', 'data.shape' and 'data.color' and integers 'data.bands' and 'data.trailMs'."));
       return;
     }
 
@@ -827,10 +827,10 @@ public sealed class SocketHub {
       return;
     }
 
-    if(!this.stage.TrySet(new StageSettings(layout, shape, color, requested.Bands))) {
+    if(!this.stage.TrySet(new StageSettings(layout, shape, color, requested.Bands, requested.TrailMs))) {
       client.Enqueue(Frames.Error(
         "rejected",
-        $"The band count must be between {SpectrumBands.Min} and {SpectrumBands.Max}."));
+        $"The band count must be between {SpectrumBands.Min} and {SpectrumBands.Max}, and a trail between 0 and {StageSettings.MaxTrailMs} ms."));
     }
   }
 

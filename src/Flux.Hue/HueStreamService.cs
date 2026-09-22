@@ -53,7 +53,7 @@ public readonly record struct LightChannel(double At, HueColor Color);
 /// looks, from outside, exactly like lights that are less smooth than somebody
 /// expected, on a night when everything else is also a suspect.
 /// </summary>
-public sealed class HueStreamService: IDisposable {
+public sealed class HueStreamService: IDisposable, IStreamActivity {
   /// <summary>
   /// The longest single sleep, so a stop is noticed promptly rather than at the end of
   /// whatever the loop was waiting out.
@@ -576,6 +576,14 @@ public sealed class HueStreamService: IDisposable {
         session.Fps = frames * (double)Stopwatch.Frequency / since;
         frames = 0;
         measuredAt = now;
+      }
+    }
+  }
+
+  bool IStreamActivity.IsStreaming {
+    get {
+      lock(this.gate) {
+        return this.running;
       }
     }
   }

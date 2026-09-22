@@ -8,6 +8,12 @@ import {
   barRect,
   barThickness,
   BAND_DEFAULT,
+  AFTERIMAGE_COPIES,
+  AFTERIMAGE_PEAK,
+  afterimageAlpha,
+  keepAfterimages,
+  trailMsLabel,
+  type Afterimage,
   brightnessOf,
   COLOR_RELEASE_REMAINDER,
   columnWidth,
@@ -509,4 +515,27 @@ test('the stage draws the room on a range that does not strobe, in the room\'s o
   // Black is the one thing that stays black: it is not reachable from a pulse, and what
   // does reach it is a brightness of zero, which is somebody asking for a blackout.
   assert.deepEqual(dampPulse({ r: 0, g: 0, b: 0 }), { r: 0, g: 0, b: 0 });
+});
+
+test('the afterimage keeps an evenly spaced history no longer than the trail', () => {
+  let history: Afterimage[] = [];
+  for (let now = 0; now <= 2000; now += 10) {
+    history = keepAfterimages(history, [now], now, 800);
+  }
+
+  assert.ok(history.length <= AFTERIMAGE_COPIES + 1, `kept ${history.length}`);
+  assert.ok(history.every((copy) => 2000 - copy.atMs <= 800));
+  assert.deepEqual(keepAfterimages(history, [1], 2010, 0), []);
+});
+
+test('an afterimage starts faint, falls to a tenth of that over the trail, and is gone past it', () => {
+  assert.equal(afterimageAlpha(0, 400), AFTERIMAGE_PEAK);
+  assert.ok(Math.abs(afterimageAlpha(400, 400) - AFTERIMAGE_PEAK * 0.1) < 1e-12);
+  assert.equal(afterimageAlpha(401, 400), 0);
+  assert.equal(afterimageAlpha(0, 0), 0);
+});
+
+test('a trail of nothing says off', () => {
+  assert.equal(trailMsLabel(0), 'off');
+  assert.equal(trailMsLabel(350), '350 ms');
 });

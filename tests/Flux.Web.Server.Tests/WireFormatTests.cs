@@ -28,6 +28,32 @@ public sealed class WireFormatTests {
     Assert.Equal(10, data.GetProperty("devicesHz").GetInt32());
   }
 
+  /// <summary>
+  /// The preview is the engine's picture while nothing streams: the same two readings as
+  /// <c>light</c> without a frame rate, and sent as null rather than left out when there
+  /// is none, on the rule every other absent reading on this frame follows.
+  /// </summary>
+  [Fact]
+  public void StateCarriesThePreviewAndSaysNullWhenThereIsNone() {
+    StateData previewing = new StateData(
+      "audio",
+      "live",
+      [],
+      Grid: null,
+      new AlignmentData(Aligned: false, Method: null),
+      Light: null,
+      new DiagnosticsData(0.0),
+      new PreviewData(new LightColorData(0.8, 0.2, 0.4), [new LightChannelData(0.5, 0.1, 0.6, 0.3)]));
+
+    JsonElement preview = Payload(Frames.State(previewing), "state").GetProperty("preview");
+    Assert.Equal(0.8, preview.GetProperty("color").GetProperty("r").GetDouble());
+    Assert.Equal(0.5, preview.GetProperty("channels")[0].GetProperty("at").GetDouble());
+    Assert.Equal(0.6, preview.GetProperty("channels")[0].GetProperty("g").GetDouble());
+
+    StateData streaming = previewing with { Preview = null };
+    Assert.Equal(JsonValueKind.Null, Payload(Frames.State(streaming), "state").GetProperty("preview").ValueKind);
+  }
+
   [Fact]
   public void StateNamesEveryFieldTheDocumentPromises() {
     StateData state = new StateData(

@@ -199,6 +199,88 @@ export const BAND_MIN = 16;
 /** @see BAND_MIN */
 export const BAND_MAX = 128;
 
+/**
+ * The longest trail, in milliseconds. Mirrored from `StageSettings.MaxTrailMs`.
+ *
+ * A second, chosen by looking: the scene's own top end is nearly ten seconds at 60 Hz,
+ * which turned every bar into one smear of paint.
+ */
+export const TRAIL_MAX_MS = 1000;
+
+/**
+ * How many earlier frames the afterimage keeps, spread evenly over the trail.
+ *
+ * Eight is enough that a bar moving at an ordinary pace reads as one fading streak
+ * rather than a row of separate copies, and few enough that a phone is drawing nine
+ * spectra a frame rather than sixty. The first thing to move if the copies read as
+ * steps.
+ */
+export const AFTERIMAGE_COPIES = 8;
+
+/**
+ * How opaque the freshest afterimage is drawn, before it fades with age.
+ *
+ * Below one because the copy just behind the live bar sits almost exactly under it, and
+ * at full opacity the two read as one thicker bar rather than as a bar and its trail.
+ */
+export const AFTERIMAGE_PEAK = 0.5;
+
+/** Where a trail counts as gone, as a fraction of its strength: a tenth, the pulse's own threshold. */
+const TRAIL_SPENT_AT = 0.1;
+
+/** A trail length in words: "off" at zero, where every frame starts clean. */
+export function trailMsLabel(trailMs: number): string {
+  const rounded = Math.round(trailMs);
+
+  return !Number.isFinite(rounded) || rounded <= 0 ? 'off' : `${rounded} ms`;
+}
+
+/** One earlier frame, kept for the afterimage. */
+export interface Afterimage {
+  levels: readonly number[];
+  atMs: number;
+}
+
+/**
+ * The afterimages to keep after this frame.
+ *
+ * A new copy is taken whenever the newest is a copy-interval old, and copies older than
+ * the trail are dropped - so the history is at most `AFTERIMAGE_COPIES` long and always
+ * spans the trail evenly. Emptied outright when the trail is off, so switching it back
+ * on does not resurrect a picture from minutes ago.
+ */
+export function keepAfterimages(
+  history: readonly Afterimage[],
+  levels: readonly number[],
+  nowMs: number,
+  trailMs: number,
+): Afterimage[] {
+  if (!(trailMs > 0)) {
+    return [];
+  }
+
+  const kept = history.filter((copy) => nowMs - copy.atMs <= trailMs);
+  const newest = kept[kept.length - 1];
+
+  if (newest === undefined || nowMs - newest.atMs >= trailMs / AFTERIMAGE_COPIES) {
+    kept.push({ levels: [...levels], atMs: nowMs });
+  }
+
+  return kept;
+}
+
+/**
+ * How opaque an afterimage of a given age is drawn: its peak falling to a tenth over the
+ * trail, and nothing past it.
+ */
+export function afterimageAlpha(ageMs: number, trailMs: number): number {
+  if (!(trailMs > 0) || ageMs > trailMs) {
+    return 0;
+  }
+
+  return AFTERIMAGE_PEAK * Math.pow(TRAIL_SPENT_AT, Math.max(0, ageMs) / trailMs);
+}
+
 /** A colour with each channel from 0 to 1, which is how the wire carries one. */
 export type SceneColor = LightColorData;
 

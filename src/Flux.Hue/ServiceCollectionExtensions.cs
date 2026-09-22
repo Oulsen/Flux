@@ -78,6 +78,17 @@ public static class ServiceCollectionExtensions {
     // only slot.
     services.AddSingleton<HueStreamService>();
 
+    // The engine for the page while nothing is streaming. Registered as itself so the web
+    // layer can read its frames, and as a hosted service so its loop runs from startup:
+    // unlike the stream it opens nothing, so there is no reason to wait to be asked.
+    services.AddSingleton(provider => new LightPreview(
+      provider.GetRequiredService<ILightSource>(),
+      provider.GetRequiredService<HueStreamService>(),
+      provider.GetRequiredService<HueBridgeService>(),
+      provider.GetRequiredService<IOptions<HueOptions>>(),
+      provider.GetRequiredService<ILogger<LightPreview>>()));
+    services.AddHostedService(provider => provider.GetRequiredService<LightPreview>());
+
     // Registered as itself and as the hosted service, because the web layer calls it
     // by name: a second instance would hold a second, disagreeing picture of the same
     // bridge, and the page would show whichever one answered.

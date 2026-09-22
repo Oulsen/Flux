@@ -22,7 +22,8 @@ namespace Flux.Web.Server.Protocol;
 /// array is the thing being drawn and a frame in flight when this changed carries the
 /// old count.
 /// </param>
-public sealed record StageData(string Layout, string Shape, string Color, int Bands);
+/// <param name="TrailMs">How long the picture's afterimage lasts, 0 to 1000 milliseconds, where 0 is off. Screen only.</param>
+public sealed record StageData(string Layout, string Shape, string Color, int Bands, int TrailMs);
 
 /// <summary>
 /// Composes the <c>stage</c> frame, and reads a request to change it.
@@ -53,7 +54,8 @@ internal static class StageFrames {
       Name(settings.Layout),
       Name(settings.Shape),
       Name(settings.Color),
-      settings.Bands);
+      settings.Bands,
+      settings.TrailMs);
   }
 
   /// <summary>

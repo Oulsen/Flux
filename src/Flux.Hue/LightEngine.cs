@@ -197,6 +197,13 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   private readonly ILogger<LightEngine> logger;
   private readonly Random random;
   private readonly object gate = new();
+
+  /// <summary>
+  /// Held for the whole of a render, so the stream and the preview take turns. Its own
+  /// lock rather than <see cref="gate"/>, which the beat handler takes on the scheduler's
+  /// thread and must never wait behind a render.
+  /// </summary>
+  private readonly object renderGate = new();
   private readonly Queue<BeatEvent> pending = new(MaxPendingBeats);
 
   /// <summary>
@@ -388,11 +395,14 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// <summary>
   /// The colours for this instant.
   ///
-  /// Called from the stream loop's thread and from nowhere else, which is why the
-  /// render state below is unsynchronised: only the queue of arriving beats is shared,
-  /// and only that is locked. A second concurrent renderer would corrupt the
-  /// transition, and there is deliberately no lock making that safe - the fix for two
-  /// renderers is one renderer.
+  /// Called by the stream loop while a session is open and by <see cref="LightPreview"/>
+  /// while none is, and serialised by <see cref="renderGate"/> so the two can never run
+  /// at once - which matters only at the handover, since the preview stands down the
+  /// moment a session starts rendering. Taking turns is safe where running together is
+  /// not: every piece of state below integrates over the time since the last render,
+  /// whoever made it, so two callers split an interval between them rather than counting
+  /// it twice. What they must not do is interleave inside one render, and the lock is
+  /// what stops that.
   ///
   /// <b>Where a light is decides both how hard the beat hits it and, above one colour,
   /// which colour it is in.</b> A light near the centre of the room follows the kick,
@@ -403,6 +413,12 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// made twice rather than two unrelated ones.
   /// </summary>
   public HueColor Render(ReadOnlySpan<LightPlacement> lights, Span<HueColor> colors) {
+    lock(this.renderGate) {
+      return this.RenderLocked(lights, colors);
+    }
+  }
+
+  private HueColor RenderLocked(ReadOnlySpan<LightPlacement> lights, Span<HueColor> colors) {
     if(colors.Length < lights.Length) {
       throw new ArgumentException($"{lights.Length} light(s) need {lights.Length} colours, and {colors.Length} were offered.", nameof(colors));
     }

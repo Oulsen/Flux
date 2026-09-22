@@ -18,6 +18,8 @@
     BAND_MIN,
     COLOR_STYLES,
     colorLabel,
+    TRAIL_MAX_MS,
+    trailMsLabel,
     LAYOUTS,
     layoutLabel,
     SHAPES,
@@ -36,12 +38,14 @@
     stage: StageData;
     /** Whether there is a real colour to draw, so the placeholder can be explained. */
     lit: boolean;
+    /** Whether the colour is the engine's preview, because nothing is streaming. */
+    previewing: boolean;
     setOn: (on: boolean) => void;
     /** Names the one field that changed. The caller turns it into the whole record. */
     setStage: (change: Partial<StageData>) => void;
   }
 
-  const { on, stage, lit, setOn, setStage }: Props = $props();
+  const { on, stage, lit, previewing, setOn, setStage }: Props = $props();
 </script>
 
 <div class="stage-settings">
@@ -125,6 +129,9 @@
       {:else if lit}
         The colour the bridge was sent, read back. It arrives 20 times a second, so the
         stage trails the room by a frame or so by design.
+      {:else if previewing}
+        A preview: the colour the engine would send, with nothing streaming. Start the
+        stream and the bulbs pick it up from here.
       {:else}
         A placeholder, because nothing is streaming yet. Start the stream and this
         becomes the colour the bulbs are being sent.
@@ -153,6 +160,18 @@
       How many bars the spectrum is divided into. The whole 30 Hz to 16 kHz range is
       drawn at every setting - this changes the resolution, not how far up it goes.
     </p>
+
+    <RangeSetting
+      id="stage-trail"
+      name="trail"
+      min={0}
+      max={TRAIL_MAX_MS}
+      step={50}
+      value={stage.trailMs}
+      format={trailMsLabel}
+      hint="How long the picture leaves a fading afterimage behind it. Off draws every frame clean. On the screen only - the lights trail a beat by their pulse length."
+      commit={(trailMs) => setStage({ trailMs })}
+    />
   {/if}
 </div>
 
