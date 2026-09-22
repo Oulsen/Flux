@@ -20,6 +20,7 @@ import {
   pulseDepthLabel,
   PULSE_LIMIT_MS,
   pulseLabel,
+  strobeCycleLabel,
   renderablePulseMs,
   showsPairing,
   showsRooms,
@@ -35,7 +36,7 @@ function connection(over: Partial<HueData> = {}): HueData {
     selectedAreaId: null,
     pairingSecondsRemaining: null,
     latencyOffsetMs: 0,
-    engine: { palette: 'random', colorChangeBars: 4, pulseMs: 240, brightness: 100, pulseDepth: 85, colorCount: 1, colorLayout: 'radial' },
+    engine: { palette: 'random', colorChangeBars: 4, pulseMs: 240, brightness: 100, pulseDepth: 85, colorCount: 1, colorLayout: 'radial', strobe: false, strobeCycle: 50 },
     message: null,
     ...over,
   };
@@ -258,4 +259,12 @@ test('a pulse long enough to render is left exactly as it was asked for', () => 
   assert.equal(renderablePulseMs(80), 80);
   assert.equal(renderablePulseMs(240), 240);
   assert.equal(renderablePulseMs(2000), 2000);
+});
+
+test('the strobe speed says flashes per beat, because the percentage reads backwards', () => {
+  assert.equal(strobeCycleLabel(100), 'once a beat');
+  assert.equal(strobeCycleLabel(50), 'twice a beat');
+  assert.equal(strobeCycleLabel(25), '4 a beat');
+  assert.equal(strobeCycleLabel(30), '3.3 a beat');
+  assert.equal(strobeCycleLabel(10), '10 a beat');
 });

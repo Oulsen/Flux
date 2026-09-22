@@ -57,16 +57,21 @@ measured by somebody standing in the room watching both.
   between beats, and a latency offset to line the light up against the music - all
   of them owned by the page, changeable while the music plays, and saved for next
   time.
+- A white strobe on the beat grid, off by default: switched on in the drawer to
+  run hands-free, or held from a button on the stage for as long as a finger is
+  on it. A hold ends on its own if the page goes away mid-press, so a phone that
+  falls asleep cannot leave the room strobing.
 - Serves a web UI built around the visualizer, which fills the window: the BPM,
-  the position in the bar, the anchor button, the achieved frame rate and the
-  connection and source health sit over it, and everything adjustable is behind
-  a drawer. The page reconnects on its own through a Flux restart or a Wi-Fi
-  drop, and a phone that would rather not draw a 64 column spectrum thirty
-  times a second can switch to numbers only, which it then remembers.
+  the position in the bar, the anchor and strobe buttons, the achieved frame
+  rate and the connection and source health sit over it, and everything
+  adjustable is behind a drawer. The page reconnects on its own through a Flux
+  restart or a Wi-Fi drop, and a phone that would rather not draw a 64 column
+  spectrum thirty times a second can switch to numbers only, which it then
+  remembers.
 - Streams state, beats, spectrum and bridge status over a WebSocket. The wire
   contract is [docs/protocol.md](docs/protocol.md).
 
-Not here yet: strobe, background fade and gamma correction, which are the rest of
+Not here yet: background fade and gamma correction, which are the rest of
 Phase 4. Flux is also still a console app you start from a terminal: the
 desktop shell and the QR code that gets a phone onto the page without typing an
 address are Phase 5.

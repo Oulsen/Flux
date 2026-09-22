@@ -119,6 +119,16 @@ thing to do beyond the number: decide whether to draw `channels` or keep drawing
 `color`. Both remain honest answers to different questions - one is what each
 bulb received, the other is what the engine decided the beat was worth.
 
+Version 2 has since grown without breaking, and one of those additions is worth
+arguing. `anchor` and `strobe` are new types, which the rule above covers. But
+`setLightSettings` gained `strobe` and `strobeCycle` as **required** fields, the way
+`colorCount` and `colorLayout` arrived before them, so a page built before them has its
+light settings refused as `invalid_data`. That is loud rather than quiet - the page is
+told, and nothing is applied that it did not mean - which is the difference between a
+refusal and the misreading the version exists to prevent. Making the fields optional
+instead would have broken the rule that message stands on: that it is one complete
+statement of the look, never a patch.
+
 Phase 2's lesson about `devices` is worth repeating rather than filing, because
 this document is once again describing messages before anything produces them.
 Where that left a field's honesty uncertain the field is nullable rather than
@@ -649,7 +659,7 @@ immediately after `hello`, and then **only when something changes**.
   "selectedAreaId": "6f3a1c58-0c1e-4f1a-9b7d-2f8e5a0d4c11",
   "pairingSecondsRemaining": null,
   "latencyOffsetMs": 90,
-  "engine": { "palette": "random", "colorChangeBars": 4, "pulseMs": 240, "brightness": 100, "pulseDepth": 85 },
+  "engine": { "palette": "random", "colorChangeBars": 4, "pulseMs": 240, "brightness": 100, "pulseDepth": 85, "colorCount": 1, "colorLayout": "radial", "strobe": false, "strobeCycle": 50 },
   "message": null
 }}
 ```
@@ -717,6 +727,10 @@ documents the ranges and what each value does; this is what is in force now.
 | `pulseMs` | int | How long a beat's brightness pulse takes to fade, 0 to 2000, where **0 means no pulse** |
 | `brightness` | int | How bright a beat drives the lights, 0 to 100 per cent. The ceiling for everything sent |
 | `pulseDepth` | int | How far the light drops between beats, 0 to 100 per cent of `brightness` |
+| `colorCount` | int | How many colours the room is in at once, 1 to 3 |
+| `colorLayout` | string | How the room is divided between them: `radial`, `alternating` or `random` |
+| `strobe` | bool | Whether the strobe is switched on. **A held strobe button never shows here** |
+| `strobeCycle` | int | How long one strobe cycle is, 10 to 100 per cent of a beat |
 
 **Named `engine` and not `light`, because `state.light` already exists and means
 something else** - what the stream is achieving, as a measurement. These are
@@ -1228,7 +1242,9 @@ is `invalid_data`.
   "brightness": 100,
   "pulseDepth": 85,
   "colorCount": 1,
-  "colorLayout": "radial"
+  "colorLayout": "radial",
+  "strobe": false,
+  "strobeCycle": 50
 }}
 ```
 
@@ -1241,6 +1257,8 @@ is `invalid_data`.
 | `pulseDepth` | int | How far the light drops between beats, 0 to 100 per cent of `brightness`. **0 never dips, 100 fades to nothing** |
 | `colorCount` | int | How many colours the room is in at once, 1 to 3 |
 | `colorLayout` | string | How the room is divided between them: `radial`, `alternating` or `random`. A no-op at one colour |
+| `strobe` | bool | Whether the room strobes white on the beat grid until this is switched off. **Off by default** |
+| `strobeCycle` | int | How long one strobe cycle is, 10 to 100 per cent of a beat. **Smaller is faster**: 50 flashes twice a beat, 100 once |
 
 Sets how beats become colour. **Every field is required**: this is one complete
 statement of how the lights should look, not a patch, for the reason `subscribe`
@@ -1328,16 +1346,70 @@ wheel. Two of them - `ocean` and `warm` - are tight on purpose, and a curated
 palette that cannot produce a large enough change gives the largest one it has
 rather than repeating itself.
 
+**The strobe is the reference scene's, carried across**: a cycle of `strobeCycle`
+per cent of a beat, counted from the last beat, white for the first quarter of each
+cycle and the ordinary room for the rest. Off by default, because a strobe is a
+photosensitivity hazard and nobody should meet one from a setting they did not
+choose. The same strobe runs while anybody holds the button - see `strobe` below -
+and `strobeCycle` sets its speed in both cases.
+
+Three things it does that the scene did not, each with its reason. **The flash is
+white at `brightness`, not at full**, so the ceiling somebody set still holds and a
+blackout stays black rather than becoming a strobe. **It needs a beat to flash on**:
+before the first beat there is no grid to strobe to, and once no beat has arrived for
+two beat lengths it stops rather than extrapolating a grid a source has stopped
+publishing. **The page does not draw a strobe of its own**: the stage shows what
+each light was sent through `state.light.channels`, which at 20 frames a second
+catches some flashes and misses others. Timing one in the browser would be a second
+strobe engine that drifts from this one, which is the argument that put the colour
+engine on the server in the first place.
+
+**Short cycles are honoured and will not look like a club strobe.** Each flash is a
+quarter of a cycle, so at 128 BPM and the default of 50 it lasts about 59 ms - one
+or two of the updates the bridge forwards to a bulb each second at roughly 25 Hz.
+On Hue that reads as energetic pulsing. The value is legal and the screen tracks it;
+the bulbs simply stop resolving it.
+
 Values outside the ranges are `rejected` rather than clamped, on the same argument
 as `setLatencyOffset`. A palette name that is not on the list is also `rejected`,
-with the name quoted back; a missing field, a non-integer, or a palette that is not
-a string is `invalid_data`.
+with the name quoted back; a missing field, a non-integer, a palette that is not
+a string, or a `strobe` that is not a boolean is `invalid_data`.
 
 Like the offset, these are server-side and echoed in every `hue` frame as
 `hue.engine`, so a second phone opening the page sees the settings actually in
 force rather than its own controls' idea of them. They survive a restart, and they
 survive `forgetBridge`: a palette is a choice about how a room should look, not a
 fact about the bridge.
+
+### `strobe`
+
+```json
+{ "type": "strobe", "data": { "held": true } }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `held` | bool | Whether this page's finger is on the strobe button |
+
+Strobes the room for as long as the button is held, whether or not `strobe` is
+switched on in `setLightSettings`, at that message's `strobeCycle`. The switch is for
+a strobe that runs hands-free; this is the one for a build-up, pressed through it and
+let go on the drop, and it cannot be left on by accident. Never saved, never echoed
+in `hue`, and not acknowledged: the room is the confirmation.
+
+**A hold is a lease, not a switch.** A page sends `held: true` when the button goes
+down and **repeats it every 500 ms while it stays down**; the server drops any hold
+that goes 1.5 seconds without one. `held: false` ends it at once, and so does the
+connection closing. The lease is for the case neither arrives - a phone whose screen
+sleeps mid-press, Wi-Fi dropping - where a socket can stay open with nobody behind it
+for far longer than a room should strobe unattended.
+
+Each connection is one holder, so the room strobes while any page is holding and
+stops when the last lets go; pressing twice from one page is still one hold. A hold
+with no stream open lights nothing, and is a strobe the moment one opens.
+
+A `held` that is not a boolean is `invalid_data`. A build with no Hue support answers
+`rejected`.
 
 ### `setStageSettings`
 

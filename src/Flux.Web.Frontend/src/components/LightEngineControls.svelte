@@ -13,6 +13,9 @@
     pulseLabel,
     PULSE_LIMIT_MS,
     renderablePulseMs,
+    strobeCycleLabel,
+    STROBE_CYCLE_MAX,
+    STROBE_CYCLE_MIN,
   } from '../lib/hue.ts';
   import type { HueColorLayout, HueEngineData, HuePalette } from '../lib/protocol.ts';
   import RangeSetting from './RangeSetting.svelte';
@@ -72,6 +75,14 @@
 
   function setDepth(pulseDepth: number): void {
     setEngine({ pulseDepth });
+  }
+
+  function chooseStrobe(strobe: boolean): void {
+    setEngine({ strobe });
+  }
+
+  function setStrobeCycle(strobeCycle: number): void {
+    setEngine({ strobeCycle });
   }
 
   /*
@@ -207,6 +218,37 @@
     format={pulseDepthLabel}
     hint="How far the light drops between beats. Shallow keeps the room bright and lets a short pulse read as a flash rather than as darkness."
     commit={setDepth}
+  />
+
+  <!-- Two chips rather than a checkbox, matching every other choice here. The button on
+       the stage runs the same strobe while it is held, whichever of these is chosen. -->
+  <div class="choice">
+    <span class="name">strobe</span>
+    <div class="options">
+      {#each [false, true] as on (on)}
+        <button
+          type="button"
+          class="chip"
+          class:chosen={on === engine.strobe}
+          aria-pressed={on === engine.strobe}
+          onclick={() => chooseStrobe(on)}
+        >
+          {on ? 'on' : 'off'}
+        </button>
+      {/each}
+    </div>
+  </div>
+
+  <RangeSetting
+    id="light-strobe-cycle"
+    name="strobe speed"
+    min={STROBE_CYCLE_MIN}
+    max={STROBE_CYCLE_MAX}
+    step={5}
+    value={engine.strobeCycle}
+    format={strobeCycleLabel}
+    hint="For the switch above and the button on the stage alike. Faster than about twice a beat, Hue bulbs pulse rather than strobe: the bridge updates them about 25 times a second."
+    commit={setStrobeCycle}
   />
 </div>
 

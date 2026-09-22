@@ -85,6 +85,30 @@ namespace Flux.Hue;
 /// settled by standing in front of it rather than by reasoning about it. See
 /// <see cref="LightColorLayout"/> for what each does.
 /// </param>
+/// <param name="Strobe">
+/// Whether the room strobes white on the beat grid until somebody switches it off.
+///
+/// The scene's toggle, and off by default for the reason the scene had it off: a
+/// strobe is a photosensitivity hazard, and nobody should meet one because a room
+/// started with a setting they never chose. It is one of two ways to strobe - the
+/// other is holding the strobe button, which is never saved and ends when the finger
+/// lifts, see <see cref="StrobeHolds"/>. Both run the same strobe at the same
+/// <paramref name="StrobeCycle"/>.
+/// </param>
+/// <param name="StrobeCycle">
+/// How long one strobe cycle is, as a percentage of a beat.
+///
+/// The scene's value and range - 10 to 100, default 50 - under a new name. The scene
+/// called it speed, which read backwards: a lower number meant faster flashing, because
+/// the number is how long a cycle lasts and not how many of them there are. At 50 the
+/// strobe fires twice a beat, at 100 once, on the beat.
+///
+/// Worth knowing at the fast end, on the same hardware limit <paramref name="PulseMs"/>
+/// documents: each flash is a quarter of a cycle, so at 128 BPM and the default a flash
+/// lasts about 59 ms, which the bridge forwards to a bulb as one or two Zigbee frames.
+/// On Hue that reads as energetic pulsing rather than as a club strobe. The value is
+/// honoured regardless; the bulbs simply stop resolving it.
+/// </param>
 public sealed record LightSettings(
   LightPalette Palette,
   int ColorChangeBars,
@@ -92,7 +116,9 @@ public sealed record LightSettings(
   int Brightness = 100,
   int PulseDepth = 85,
   int ColorCount = 1,
-  LightColorLayout ColorLayout = LightColorLayout.Radial) {
+  LightColorLayout ColorLayout = LightColorLayout.Radial,
+  bool Strobe = false,
+  int StrobeCycle = 50) {
   /// <summary>
   /// The most colours the room can be in at once.
   ///
@@ -131,6 +157,18 @@ public sealed record LightSettings(
   public const int MaxPercent = 100;
 
   /// <summary>
+  /// The shortest strobe cycle, as a percentage of a beat. The scene's bound.
+  ///
+  /// A tenth of a beat is 47 ms at 128 BPM, so its flash is about 12 ms - well under a
+  /// single bridge frame. The scene allowed it and so does this; it is the end of the
+  /// range where the screen still flashes and the bulbs mostly do not.
+  /// </summary>
+  public const int MinStrobeCycle = 10;
+
+  /// <summary>The longest strobe cycle: one flash per beat. The scene's bound.</summary>
+  public const int MaxStrobeCycle = 100;
+
+  /// <summary>
   /// The scene's own defaults, carried across rather than chosen.
   ///
   /// <c>Random</c> and four bars are what the reference scene shipped. The pulse has
@@ -161,6 +199,8 @@ public sealed record LightSettings(
       && PulseDepth <= MaxPercent
       && ColorCount >= 1
       && ColorCount <= MaxColorCount
-      && Enum.IsDefined(ColorLayout);
+      && Enum.IsDefined(ColorLayout)
+      && StrobeCycle >= MinStrobeCycle
+      && StrobeCycle <= MaxStrobeCycle;
   }
 }

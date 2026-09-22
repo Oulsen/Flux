@@ -1,4 +1,4 @@
-using Flux.Beat;
+﻿using Flux.Beat;
 using Flux.Hue;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -112,7 +112,7 @@ public sealed class HueMessagesTests {
     Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
     await rig.SkipGreetingAsync(socket);
 
-    socket.Client("""{"type":"setLightSettings","data":{"palette":"neon","colorChangeBars":8,"pulseMs":300,"brightness":60,"pulseDepth":40,"colorCount":2,"colorLayout":"alternating"}}""");
+    socket.Client("""{"type":"setLightSettings","data":{"palette":"neon","colorChangeBars":8,"pulseMs":300,"brightness":60,"pulseDepth":40,"colorCount":2,"colorLayout":"alternating","strobe":true,"strobeCycle":25}}""");
 
     using JsonDocument hue = JsonDocument.Parse(await socket.NextAsync());
     JsonElement engine = hue.RootElement.GetProperty("data").GetProperty("engine");
@@ -124,7 +124,9 @@ public sealed class HueMessagesTests {
     Assert.Equal(40, engine.GetProperty("pulseDepth").GetInt32());
     Assert.Equal(2, engine.GetProperty("colorCount").GetInt32());
     Assert.Equal("alternating", engine.GetProperty("colorLayout").GetString());
-    Assert.Equal(new LightSettings(LightPalette.Neon, 8, 300, 60, 40, 2, LightColorLayout.Alternating), rig.Bridge.Connection.Light);
+    Assert.True(engine.GetProperty("strobe").GetBoolean());
+    Assert.Equal(25, engine.GetProperty("strobeCycle").GetInt32());
+    Assert.Equal(new LightSettings(LightPalette.Neon, 8, 300, 60, 40, 2, LightColorLayout.Alternating, Strobe: true, StrobeCycle: 25), rig.Bridge.Connection.Light);
 
     socket.ClientClose();
     await serving;
@@ -142,7 +144,7 @@ public sealed class HueMessagesTests {
     Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
     await rig.SkipGreetingAsync(socket);
 
-    socket.Client("""{"type":"setLightSettings","data":{"palette":"beige","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}}""");
+    socket.Client("""{"type":"setLightSettings","data":{"palette":"beige","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}}""");
 
     using JsonDocument error = JsonDocument.Parse(await socket.NextAsync());
     JsonElement data = error.RootElement.GetProperty("data");
@@ -156,17 +158,19 @@ public sealed class HueMessagesTests {
   }
 
   [Theory]
-  [InlineData(-1, 240, 100, 85, 1)]
-  [InlineData(17, 240, 100, 85, 1)]
-  [InlineData(4, -1, 100, 85, 1)]
-  [InlineData(4, 2001, 100, 85, 1)]
-  [InlineData(4, 240, -1, 85, 1)]
-  [InlineData(4, 240, 101, 85, 1)]
-  [InlineData(4, 240, 100, -1, 1)]
-  [InlineData(4, 240, 100, 101, 1)]
-  [InlineData(4, 240, 100, 85, 0)]
-  [InlineData(4, 240, 100, 85, 4)]
-  public async Task ASettingOutsideItsRangeIsRefusedRatherThanClamped(int bars, int pulseMs, int brightness, int depth, int colors) {
+  [InlineData(-1, 240, 100, 85, 1, 50)]
+  [InlineData(17, 240, 100, 85, 1, 50)]
+  [InlineData(4, -1, 100, 85, 1, 50)]
+  [InlineData(4, 2001, 100, 85, 1, 50)]
+  [InlineData(4, 240, -1, 85, 1, 50)]
+  [InlineData(4, 240, 101, 85, 1, 50)]
+  [InlineData(4, 240, 100, -1, 1, 50)]
+  [InlineData(4, 240, 100, 101, 1, 50)]
+  [InlineData(4, 240, 100, 85, 0, 50)]
+  [InlineData(4, 240, 100, 85, 4, 50)]
+  [InlineData(4, 240, 100, 85, 1, 9)]
+  [InlineData(4, 240, 100, 85, 1, 101)]
+  public async Task ASettingOutsideItsRangeIsRefusedRatherThanClamped(int bars, int pulseMs, int brightness, int depth, int colors, int strobeCycle) {
     Rig rig = new Rig();
     FakeWebSocket socket = new FakeWebSocket();
     Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
@@ -174,7 +178,7 @@ public sealed class HueMessagesTests {
 
     // The palette last so that no interpolation is followed by a run of closing braces,
     // which a raw literal cannot tell from the end of an interpolation.
-    string engine = $$"""{"colorChangeBars":{{bars}},"pulseMs":{{pulseMs}},"brightness":{{brightness}},"pulseDepth":{{depth}},"colorCount":{{colors}},"colorLayout":"radial","palette":"warm"}""";
+    string engine = $$"""{"colorChangeBars":{{bars}},"pulseMs":{{pulseMs}},"brightness":{{brightness}},"pulseDepth":{{depth}},"colorCount":{{colors}},"strobeCycle":{{strobeCycle}},"colorLayout":"radial","strobe":false,"palette":"warm"}""";
 
     socket.Client($$"""{"type":"setLightSettings","data":{{engine}}}""");
 
@@ -192,15 +196,18 @@ public sealed class HueMessagesTests {
   /// could send a palette alone would rely on the server to supply the rest.
   /// </summary>
   [Theory]
-  [InlineData("""{"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
-  [InlineData("""{"palette":"warm","pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"colorCount":1,"colorLayout":"radial"}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":12.5,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
-  [InlineData("""{"palette":4,"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial"}""")]
+  [InlineData("""{"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
+  [InlineData("""{"palette":"warm","pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"strobe":false,"strobeCycle":50}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"strobe":false,"strobeCycle":50}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":12.5,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
+  [InlineData("""{"palette":4,"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobeCycle":50}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":"off","strobeCycle":50}""")]
   public async Task AnIncompleteStatementOfTheLookIsABugRatherThanARefusal(string data) {
     Rig rig = new Rig();
     FakeWebSocket socket = new FakeWebSocket();
@@ -299,6 +306,86 @@ public sealed class HueMessagesTests {
     await serving;
   }
 
+  /// <summary>
+  /// A press holds and a release lets go, with nothing sent back for either: the room is
+  /// the confirmation, and a reply on every renewal would be two frames a second saying
+  /// nothing. The pong after each proves the message before it was handled.
+  /// </summary>
+  [Fact]
+  public async Task AStrobePressHoldsUntilItIsReleased() {
+    Rig rig = new Rig();
+    FakeWebSocket socket = new FakeWebSocket();
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await rig.SkipGreetingAsync(socket);
+
+    socket.Client("""{"type":"strobe","data":{"held":true}}""");
+    socket.Client("""{"type":"ping","data":{"t":1}}""");
+
+    using(JsonDocument pong = JsonDocument.Parse(await socket.NextAsync())) {
+      Assert.Equal("pong", pong.RootElement.GetProperty("type").GetString());
+    }
+
+    Assert.True(rig.Bridge.Strobe.IsHeld);
+
+    socket.Client("""{"type":"strobe","data":{"held":false}}""");
+    socket.Client("""{"type":"ping","data":{"t":2}}""");
+
+    using(JsonDocument pong = JsonDocument.Parse(await socket.NextAsync())) {
+      Assert.Equal("pong", pong.RootElement.GetProperty("type").GetString());
+    }
+
+    Assert.False(rig.Bridge.Strobe.IsHeld);
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// The safety this message is built around: a page that goes away mid-press is a
+  /// finger leaving the button, and the room must not go on strobing for whoever is
+  /// left in it. No release is ever sent here.
+  /// </summary>
+  [Fact]
+  public async Task AConnectionEndingMidPressReleasesTheStrobe() {
+    Rig rig = new Rig();
+    FakeWebSocket socket = new FakeWebSocket();
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await rig.SkipGreetingAsync(socket);
+
+    socket.Client("""{"type":"strobe","data":{"held":true}}""");
+    socket.Client("""{"type":"ping","data":{"t":1}}""");
+    using(JsonDocument pong = JsonDocument.Parse(await socket.NextAsync())) {
+      Assert.Equal("pong", pong.RootElement.GetProperty("type").GetString());
+    }
+
+    Assert.True(rig.Bridge.Strobe.IsHeld);
+
+    socket.ClientClose();
+    await serving;
+
+    Assert.False(rig.Bridge.Strobe.IsHeld);
+  }
+
+  [Theory]
+  [InlineData("""{}""")]
+  [InlineData("""{"held":1}""")]
+  [InlineData("""{"held":"yes"}""")]
+  public async Task AStrobeWithoutABooleanIsABugRatherThanARefusal(string data) {
+    Rig rig = new Rig();
+    FakeWebSocket socket = new FakeWebSocket();
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await rig.SkipGreetingAsync(socket);
+
+    socket.Client($$"""{"type":"strobe","data":{{data}}}""");
+
+    using JsonDocument error = JsonDocument.Parse(await socket.NextAsync());
+    Assert.Equal("invalid_data", error.RootElement.GetProperty("data").GetProperty("code").GetString());
+    Assert.False(rig.Bridge.Strobe.IsHeld);
+
+    socket.ClientClose();
+    await serving;
+  }
+
   [Fact]
   public void ComposeNamesEveryFieldTheDocumentPromises() {
     HueConnection connection = new HueConnection(
@@ -328,6 +415,8 @@ public sealed class HueMessagesTests {
     Assert.Equal(30, light.GetProperty("pulseDepth").GetInt32());
     Assert.Equal(1, light.GetProperty("colorCount").GetInt32());
     Assert.Equal("radial", light.GetProperty("colorLayout").GetString());
+    Assert.False(light.GetProperty("strobe").GetBoolean());
+    Assert.Equal(50, light.GetProperty("strobeCycle").GetInt32());
 
     JsonElement area = data.GetProperty("areas")[0];
     Assert.Equal(Booth.Id, area.GetProperty("id").GetGuid());
@@ -404,6 +493,7 @@ public sealed class HueMessagesTests {
         new StubCredentialStore(),
         this.Settings,
         Options.Create(new HueOptions()),
+        new MonotonicClock(),
         NullLogger<HueBridgeService>.Instance);
 
       this.Hub = new SocketHub(

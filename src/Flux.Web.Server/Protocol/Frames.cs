@@ -219,7 +219,7 @@ public static class Frames {
   /// with the name quoted - which this cannot produce and the caller can.
   /// </summary>
   public static bool TryReadLightSettings(JsonElement data, out HueEngineData engine) {
-    engine = new HueEngineData(string.Empty, 0, 0, 0, 0, 1, string.Empty);
+    engine = new HueEngineData(string.Empty, 0, 0, 0, 0, 1, string.Empty, false, 0);
 
     if(data.ValueKind != JsonValueKind.Object
       || !TryReadString(data, "palette", out string palette)
@@ -228,12 +228,28 @@ public static class Frames {
       || !TryReadInt(data, "brightness", out int brightness)
       || !TryReadInt(data, "pulseDepth", out int pulseDepth)
       || !TryReadInt(data, "colorCount", out int colorCount)
-      || !TryReadString(data, "colorLayout", out string colorLayout)) {
+      || !TryReadString(data, "colorLayout", out string colorLayout)
+      || !TryReadBool(data, "strobe", out bool strobe)
+      || !TryReadInt(data, "strobeCycle", out int strobeCycle)) {
       return false;
     }
 
-    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth, colorCount, colorLayout);
+    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth, colorCount, colorLayout, strobe, strobeCycle);
     return true;
+  }
+
+  /// <summary>
+  /// Reads a <c>strobe</c> payload: whether the sender's finger is on the button.
+  ///
+  /// A boolean rather than two message types, because press and release are one fact
+  /// changing, and a page repeating its press to keep a hold alive is sending the same
+  /// fact again rather than pressing twice.
+  /// </summary>
+  public static bool TryReadStrobe(JsonElement data, out bool held) {
+    held = false;
+
+    return data.ValueKind == JsonValueKind.Object
+      && TryReadBool(data, "held", out held);
   }
 
   /// <summary>

@@ -12,6 +12,7 @@
   import Diagnostics from './components/Diagnostics.svelte';
   import SourceSelector from './components/SourceSelector.svelte';
   import SpectrumCanvas from './components/SpectrumCanvas.svelte';
+  import StrobeButton from './components/StrobeButton.svelte';
   import StagePanel from './components/StagePanel.svelte';
   import AnchorPad from './components/AnchorPad.svelte';
   import { FluxStore } from './lib/flux.svelte.ts';
@@ -227,6 +228,10 @@
     socket?.send({ type: 'setLightSettings', data: { ...store.hue.engine, ...store.pendingEngine } });
   }
 
+  function holdStrobe(held: boolean): void {
+    socket?.send({ type: 'strobe', data: { held } });
+  }
+
   function startStream(): void {
     socket?.send({ type: 'startStream', data: {} });
   }
@@ -337,6 +342,12 @@
       -->
       <div class="control">
         <AnchorButton manual={store.source === 'manual'} {tap} />
+
+        <!-- Only where there is a room to strobe. Offered without one, the press would
+             be refused by a build with no bridge and would light nothing in one with. -->
+        {#if showsRooms(store.hue)}
+          <StrobeButton hold={holdStrobe} />
+        {/if}
       </div>
 
       <div class="cluster">
@@ -594,6 +605,7 @@
   .control {
     pointer-events: auto;
     display: flex;
+    gap: 0.75rem;
   }
 
   /* Sized to their contents and pushed to their own edges. A grid stretches its

@@ -648,6 +648,100 @@ public class LightEngineTests {
     Assert.True(brightness < 0.2, $"No pulse was due and the lights are at {brightness:F3}.");
   }
 
+  /// <summary>
+  /// The scene's strobe on Flux's grid: at 120 BPM a beat is 500 ms, so a cycle of 50
+  /// per cent is 250 ms and its flash the first quarter of that. The pulse is off so the
+  /// room between flashes is one steady saturated colour, which no flash can be mistaken
+  /// for.
+  /// </summary>
+  [Fact]
+  public void TheStrobeFlashesWhiteForAQuarterOfEachCycleAndLeavesTheRoomBetween() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 0, Strobe = true, StrobeCycle = 50 });
+
+    harness.BeatNow(index: 0);
+    Assert.True(IsWhite(harness.Engine.Render(), 1.0), "The beat itself is the start of a flash.");
+
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(50));
+    Assert.True(IsWhite(harness.Engine.Render(), 1.0), "50 ms is inside the first 62.5 ms of the cycle.");
+
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(50));
+    Assert.False(IsWhite(harness.Engine.Render(), 1.0), "100 ms is past the flash and before the next cycle.");
+
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(160));
+    Assert.True(IsWhite(harness.Engine.Render(), 1.0), "260 ms is 10 ms into the second cycle of the beat.");
+
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(70));
+    Assert.False(IsWhite(harness.Engine.Render(), 1.0), "330 ms is past the second flash.");
+  }
+
+  [Fact]
+  public void TheStrobeIsOffUnlessSomebodyAsksForIt() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 0 });
+
+    harness.BeatNow(index: 0);
+
+    Assert.False(IsWhite(harness.Engine.Render(), 1.0));
+  }
+
+  /// <summary>
+  /// The hold and the setting are one strobe: holding runs the same cycle with the
+  /// setting off, and letting go returns the room at once rather than at the end of a
+  /// cycle.
+  /// </summary>
+  [Fact]
+  public void HoldingTheStrobeFlashesWithTheSettingOffAndLettingGoStopsIt() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 0 });
+    object finger = new object();
+
+    harness.Bridge.Strobe.Press(finger);
+    harness.BeatNow(index: 0);
+    Assert.True(IsWhite(harness.Engine.Render(), 1.0));
+
+    harness.Bridge.Strobe.Release(finger);
+    Assert.False(IsWhite(harness.Engine.Render(), 1.0));
+  }
+
+  /// <summary>
+  /// The brightness ceiling holds through a flash - it is the control somebody reaches
+  /// for first - and a blackout stays black rather than becoming a strobe.
+  /// </summary>
+  [Theory]
+  [InlineData(40, 0.4)]
+  [InlineData(0, 0.0)]
+  public void AStrobeFlashIsNoBrighterThanTheRoomIsAllowedToGet(int brightness, double ceiling) {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 0, Brightness = brightness, Strobe = true });
+
+    harness.BeatNow(index: 0);
+
+    Assert.True(IsWhite(harness.Engine.Render(), ceiling));
+  }
+
+  /// <summary>
+  /// No grid, no strobe: before the first beat there is nothing to flash on, and once
+  /// the beats stop for two beat lengths the strobe stops with them rather than
+  /// extrapolating a grid that is no longer there. 1010 ms after a beat at 120 BPM is
+  /// 10 ms into a cycle, so a strobe still running would be mid-flash.
+  /// </summary>
+  [Fact]
+  public void TheStrobeNeedsABeatToFlashOnAndStopsWhenTheBeatsDo() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 0, Strobe = true, StrobeCycle = 50 });
+
+    Assert.False(IsWhite(harness.Engine.Render(), 1.0), "No beat has arrived, so there is no grid.");
+
+    harness.BeatNow(index: 0);
+    harness.Engine.Render();
+
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(1010));
+    Assert.False(IsWhite(harness.Engine.Render(), 1.0), "Two beat lengths have passed with no beat.");
+  }
+
+  /// <summary>Whether a colour is white at the given level: every channel equal, and at it.</summary>
+  private static bool IsWhite(HueColor color, double level) {
+    return Math.Abs(color.R - level) < 1e-9
+      && Math.Abs(color.G - level) < 1e-9
+      && Math.Abs(color.B - level) < 1e-9;
+  }
+
   private static BeatEvent Beat(long index, double scheduledMicros, int positionInBar = 1, bool barAligned = true) {
     return new BeatEvent(index, positionInBar, barAligned, Bpm: 120, scheduledMicros);
   }
@@ -1167,6 +1261,7 @@ public class LightEngineTests {
         new InMemoryCredentialStore(),
         Settings,
         Options.Create(new HueOptions()),
+        Clock,
         NullLogger<HueBridgeService>.Instance);
 
       // A real scheduler, never started. The engine needs one to subscribe to and the

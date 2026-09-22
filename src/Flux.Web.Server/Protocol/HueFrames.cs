@@ -82,7 +82,9 @@ internal static class HueFrames {
       light.Brightness,
       light.PulseDepth,
       light.ColorCount,
-      LayoutName(light.ColorLayout));
+      LayoutName(light.ColorLayout),
+      light.Strobe,
+      light.StrobeCycle);
   }
 
   /// <summary>A switch with no default arm, for the reason <see cref="PaletteName"/> is one.</summary>

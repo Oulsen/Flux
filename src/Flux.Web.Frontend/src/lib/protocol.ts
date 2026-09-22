@@ -141,6 +141,19 @@ export interface HueEngineData {
    * the spatial mapping. `random` re-draws the assignment on each colour change.
    */
   colorLayout: HueColorLayout;
+  /**
+   * Whether the room strobes white on the beat grid until switched off.
+   *
+   * Off by default, because a strobe is a photosensitivity hazard and nobody should meet
+   * one from a setting they never chose. Holding the strobe button is a separate message
+   * and never shows here.
+   */
+  strobe: boolean;
+  /**
+   * How long one strobe cycle is, 10 to 100 per cent of a beat, white for the first
+   * quarter of each. 50 flashes twice a beat, 100 once. Applies to a held strobe too.
+   */
+  strobeCycle: number;
 }
 
 export type HueColorLayout = 'radial' | 'alternating' | 'random';
@@ -390,6 +403,11 @@ export interface SetLatencyOffsetData {
  */
 export type SetLightSettingsData = HueEngineData;
 
+/** Whether this page's finger is on the strobe button. */
+export interface StrobeData {
+  held: boolean;
+}
+
 /**
  * One complete statement of how the stage should draw, never a patch.
  *
@@ -429,7 +447,10 @@ export type ClientMessage =
   | { type: 'forgetBridge'; data: Record<string, never> }
   | { type: 'setLatencyOffset'; data: SetLatencyOffsetData }
   | { type: 'setLightSettings'; data: SetLightSettingsData }
-  | { type: 'setStageSettings'; data: SetStageSettingsData };
+  | { type: 'setStageSettings'; data: SetStageSettingsData }
+  // Repeated every STROBE_RENEW_MS while the finger stays down, because the server
+  // holds the strobe on a lease rather than until it hears a release.
+  | { type: 'strobe'; data: StrobeData };
 
 /**
  * An inbound message decoded only as far as its type tag.

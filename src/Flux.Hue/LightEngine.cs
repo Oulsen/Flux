@@ -158,6 +158,28 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// </summary>
   private const int MaxPendingBeats = 8;
 
+  /// <summary>
+  /// How much of each strobe cycle is the white flash. The scene's number.
+  ///
+  /// A quarter, which the scene chose so that the lights have time to react even at
+  /// fast settings: most of every cycle is the ordinary room, and the flash is the
+  /// short part.
+  /// </summary>
+  private const double StrobeDuty = 0.25;
+
+  /// <summary>
+  /// How many beat lengths after the last beat the strobe keeps running before it
+  /// stops.
+  ///
+  /// Flux's own. The scene's grid ran on time alone and never stopped once it had a
+  /// tempo, but Flux's beats come from a source that can go away - Link closing, a
+  /// tempo cleared - and a strobe extrapolating a grid that no longer exists is a room
+  /// flashing to nothing. Two is the scheduler's own figure for when a timeline has
+  /// gone stale, so the strobe gives up at the same point the beats themselves do; a
+  /// single late beat is well inside it.
+  /// </summary>
+  private const double StrobeStaleBeats = 2.0;
+
   private readonly BeatScheduler scheduler;
   private readonly HueBridgeService bridge;
   private readonly IMonotonicClock clock;
@@ -238,6 +260,17 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   private long? colorAnchorBeat;
 
   private double? pulseStartedMicros;
+
+  /// <summary>
+  /// When the last beat landed and how long a beat was then, or null before the first.
+  ///
+  /// The strobe's clock. Kept apart from <see cref="pulseStartedMicros"/> although the
+  /// two are written together, because they answer different questions: that one is
+  /// where a fade began, and this is where the grid is.
+  /// </summary>
+  private double? lastBeatMicros;
+
+  private double? beatPeriodMicros;
 
   /// <summary>
   /// How hard the kick was hitting when the last beat landed, 0 to 1, and 1 when there is
@@ -409,6 +442,13 @@ internal sealed class LightEngine: ILightSource, IHostedService {
 
     Envelope envelope = this.EnvelopeOf(now, settings, sound?.Loudness ?? 1, sound?.Energy ?? 0);
 
+    // After everything above rather than instead of it, so the hue keeps sliding and
+    // the bands keep being heard through a flash: the room between flashes is the
+    // ordinary room, and it has to be where it would have been.
+    if(this.IsStrobeFlash(now, settings)) {
+      return Flash(settings, lights.Length, colors);
+    }
+
     // The first hue and not an average of them, because an average of two hues is a
     // third colour that no light in the room is showing. What this field has meant since
     // the per-light feed arrived is what the engine chose, and with the room split it is
@@ -427,6 +467,59 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     }
 
     return shared;
+  }
+
+  /// <summary>
+  /// Whether this instant falls inside a strobe flash.
+  ///
+  /// The scene's rule on Flux's grid: a cycle of <see cref="LightSettings.StrobeCycle"/>
+  /// per cent of a beat, counted from the last beat, and white for the first
+  /// <see cref="StrobeDuty"/> of each. Counted from the beat's own scheduled moment, on
+  /// the argument <see cref="Consume"/> makes for the pulse, so the flashes and the
+  /// beats are one grid rather than two drifting ones. With no beat yet there is no grid
+  /// to flash on and nothing happens, which is also what the scene did before it had a
+  /// tempo.
+  ///
+  /// On when the setting is on or when anybody is holding the button, and those are the
+  /// same strobe: holding it while it is switched on changes nothing.
+  /// </summary>
+  private bool IsStrobeFlash(double now, LightSettings settings) {
+    if(!settings.Strobe && !this.bridge.Strobe.IsHeld) {
+      return false;
+    }
+
+    if(this.lastBeatMicros is not { } beat || this.beatPeriodMicros is not { } period) {
+      return false;
+    }
+
+    double since = now - beat;
+
+    if(since < 0 || since > period * StrobeStaleBeats) {
+      return false;
+    }
+
+    double cycle = period * settings.StrobeCycle / LightSettings.MaxPercent;
+
+    return (since % cycle) / cycle < StrobeDuty;
+  }
+
+  /// <summary>
+  /// Every light white, at the room's ceiling.
+  ///
+  /// The scene's flash was white at full, drawn over everything. White is kept; full is
+  /// not, and that is a departure worth its reason: <see cref="LightSettings.Brightness"/>
+  /// is how bright the room is allowed to get, and a strobe ignoring it would make the
+  /// one control somebody reaches for first stop working at the one moment it matters
+  /// most. It also keeps a blackout black - somebody who asked for no light does not get
+  /// a strobe instead.
+  /// </summary>
+  private static HueColor Flash(LightSettings settings, int lights, Span<HueColor> colors) {
+    double ceiling = settings.Brightness / (double)LightSettings.MaxPercent;
+    HueColor white = new HueColor(ceiling, ceiling, ceiling);
+
+    colors[..lights].Fill(white);
+
+    return white;
   }
 
   /// <summary>
@@ -587,6 +680,8 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       // fade of a couple of hundred milliseconds that is the difference between an
       // envelope and a staircase.
       this.pulseStartedMicros = beat.ScheduledMicros;
+      this.lastBeatMicros = beat.ScheduledMicros;
+      this.beatPeriodMicros = beat.Bpm > 0 ? 60 * MicrosPerSecond / beat.Bpm : null;
       this.pulseStrength = kickHit is { } hit ? Math.Clamp(hit, 0, 1) : 1;
 
       if(this.ShouldChangeColor(beat, settings.ColorChangeBars)) {

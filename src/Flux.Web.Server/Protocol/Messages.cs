@@ -244,7 +244,9 @@ public sealed record HueData(
 /// <param name="PulseDepth">How far the light drops between beats, 0 to 100 per cent of <paramref name="Brightness"/>. 0 never dips, 100 fades to nothing.</param>
 /// <param name="ColorCount">How many colours the room is in at once, 1 to 3. Above one the lights are split into that many groups along the frequency axis.</param>
 /// <param name="ColorLayout">How the room is divided between those colours: "radial", "alternating" or "random". A no-op at one colour.</param>
-public sealed record HueEngineData(string Palette, int ColorChangeBars, int PulseMs, int Brightness, int PulseDepth, int ColorCount, string ColorLayout);
+/// <param name="Strobe">Whether the room strobes white on the beat grid until switched off. Off by default. Holding the strobe button is a separate message and never shows here.</param>
+/// <param name="StrobeCycle">How long one strobe cycle is, 10 to 100 per cent of a beat, white for the first quarter of each. Applies to a held strobe as well as a switched-on one.</param>
+public sealed record HueEngineData(string Palette, int ColorChangeBars, int PulseMs, int Brightness, int PulseDepth, int ColorCount, string ColorLayout, bool Strobe, int StrobeCycle);
 
 /// <summary>
 /// One analyzer frame, for the visualiser.

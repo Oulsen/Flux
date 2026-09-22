@@ -445,6 +445,7 @@ public class HueStreamServiceTests {
         this.Credentials,
         this.Settings,
         Options.Create(options),
+        new FakeClock(),
         NullLogger<HueBridgeService>.Instance);
 
       this.Service = new HueStreamService(

@@ -73,6 +73,15 @@ export const PULSE_LIMIT_MS = 2000;
 export const PERCENT_LIMIT = 100;
 
 /**
+ * The shortest and longest strobe cycle, as a percentage of a beat.
+ *
+ * Mirrored from `LightSettings.MinStrobeCycle` and `MaxStrobeCycle`, which carry the
+ * reference scene's range across unchanged.
+ */
+export const STROBE_CYCLE_MIN = 10;
+export const STROBE_CYCLE_MAX = 100;
+
+/**
  * The shortest pulse a bulb can actually render, in milliseconds.
  *
  * The bridge forwards to a light at roughly 25 updates a second, so a bulb samples the
@@ -346,6 +355,33 @@ export function colorCountLabel(count: number): string {
   const rounded = Math.max(1, Math.round(count));
 
   return rounded === 1 ? 'one colour' : `${rounded} colours`;
+}
+
+/**
+ * How often the strobe flashes, in words.
+ *
+ * Flashes per beat rather than the percentage the wire carries, because the percentage
+ * reads backwards - a smaller number is faster - and "twice a beat" is what somebody
+ * standing in the room would say.
+ */
+export function strobeCycleLabel(cycle: number): string {
+  const rounded = Math.round(cycle);
+
+  if (!Number.isFinite(rounded) || rounded <= 0) {
+    return 'off';
+  }
+
+  const perBeat = 100 / rounded;
+
+  if (perBeat === 1) {
+    return 'once a beat';
+  }
+
+  if (perBeat === 2) {
+    return 'twice a beat';
+  }
+
+  return `${Number.isInteger(perBeat) ? perBeat : perBeat.toFixed(1)} a beat`;
 }
 
 /**

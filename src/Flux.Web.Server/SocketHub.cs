@@ -244,6 +244,10 @@ public sealed class SocketHub {
       // A browser tab closed mid-frame is the ordinary way for this to end.
       this.log.LogDebug(ex, "A web client's connection ended abruptly ({Error}).", ex.WebSocketErrorCode);
     } finally {
+      // A connection ending is a finger leaving the button, whatever the last thing it
+      // said was. The lease would end the hold on its own within a second and a half;
+      // this ends it now, because a closed socket is certain and a lease is a timeout.
+      this.hue?.Strobe.Release(client);
       this.clients.TryRemove(id, out _);
       this.log.LogInformation("Web client disconnected. {Count} still watching.", this.clients.Count);
     }
@@ -451,6 +455,10 @@ public sealed class SocketHub {
 
       case "setStageSettings":
         this.SetStageSettings(client, envelope.Data);
+        break;
+
+      case "strobe":
+        this.HoldStrobe(client, envelope.Data);
         break;
 
       default:
@@ -727,7 +735,7 @@ public sealed class SocketHub {
     if(!Frames.TryReadLightSettings(data, out HueEngineData engine)) {
       client.Enqueue(Frames.Error(
         "invalid_data",
-        "Setting the light engine needs strings 'data.palette' and 'data.colorLayout' and integers 'data.colorChangeBars', 'data.pulseMs', 'data.brightness', 'data.pulseDepth' and 'data.colorCount'."));
+        "Setting the light engine needs strings 'data.palette' and 'data.colorLayout', a boolean 'data.strobe' and integers 'data.colorChangeBars', 'data.pulseMs', 'data.brightness', 'data.pulseDepth', 'data.colorCount' and 'data.strobeCycle'."));
       return;
     }
 
@@ -741,12 +749,49 @@ public sealed class SocketHub {
       return;
     }
 
-    LightSettings settings = new LightSettings(palette, engine.ColorChangeBars, engine.PulseMs, engine.Brightness, engine.PulseDepth, engine.ColorCount, layout);
+    LightSettings settings = new LightSettings(
+      palette,
+      engine.ColorChangeBars,
+      engine.PulseMs,
+      engine.Brightness,
+      engine.PulseDepth,
+      engine.ColorCount,
+      layout,
+      engine.Strobe,
+      engine.StrobeCycle);
 
     if(this.hue is null || !this.hue.TrySetLightSettings(settings)) {
       client.Enqueue(Frames.Error(
         "rejected",
-        $"Colour changes must be between 0 and {LightSettings.MaxColorChangeBars} bars, a pulse between 0 and {LightSettings.MaxPulseMs} ms, brightness and depth between 0 and {LightSettings.MaxPercent} per cent, and between 1 and {LightSettings.MaxColorCount} colours."));
+        $"Colour changes must be between 0 and {LightSettings.MaxColorChangeBars} bars, a pulse between 0 and {LightSettings.MaxPulseMs} ms, brightness and depth between 0 and {LightSettings.MaxPercent} per cent, between 1 and {LightSettings.MaxColorCount} colours, and a strobe cycle between {LightSettings.MinStrobeCycle} and {LightSettings.MaxStrobeCycle} per cent of a beat."));
+    }
+  }
+
+  /// <summary>
+  /// Presses, renews or releases this connection's hold on the strobe.
+  ///
+  /// The connection itself is the holder, so a page holding from two fingers is one
+  /// hold and two pages holding at once are two. No acknowledgement either way: the
+  /// room is the confirmation, and a reply on every renewal would be two frames a
+  /// second saying nothing. Not gated on a running stream, for the reason the light
+  /// settings are not - a hold with no stream open lights nothing, and becomes a strobe
+  /// the moment one opens.
+  /// </summary>
+  private void HoldStrobe(Client client, JsonElement data) {
+    if(!Frames.TryReadStrobe(data, out bool held)) {
+      client.Enqueue(Frames.Error("invalid_data", "A strobe needs a boolean 'data.held'."));
+      return;
+    }
+
+    if(this.hue is null) {
+      client.Enqueue(Frames.Error("rejected", "This build has no Hue support."));
+      return;
+    }
+
+    if(held) {
+      this.hue.Strobe.Press(client);
+    } else {
+      this.hue.Strobe.Release(client);
     }
   }
 

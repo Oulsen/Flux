@@ -497,7 +497,7 @@ public class HueBridgeServiceTests {
       configure?.Invoke(options);
       stored?.Invoke(Settings);
 
-      Service = new HueBridgeService(Client, Credentials, Settings, Options.Create(options), NullLogger<HueBridgeService>.Instance);
+      Service = new HueBridgeService(Client, Credentials, Settings, Options.Create(options), new FakeClock(), NullLogger<HueBridgeService>.Instance);
       Service.Changed += connection => Seen.Add(connection);
     }
 
