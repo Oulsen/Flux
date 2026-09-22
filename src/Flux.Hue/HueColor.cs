@@ -5,9 +5,9 @@ namespace Flux.Hue;
 ///
 /// Linear 0 to 1 per channel, which is the same scale the spectrum bands and the
 /// confidence figures already use, so nothing in Flux has to remember which numbers
-/// are bytes. Gamma and colour spaces are Phase 4's problem deliberately: this phase
-/// sends solid colours, and a conversion invented here would be the wrong one to
-/// inherit.
+/// are bytes. Never gamma corrected, on the way to the bridge or anywhere else: the
+/// bridge reads these as light output, and a curve tried on the bulbs flattened the
+/// quiet lights near the lit floor. <c>docs/protocol.md</c> records what was seen.
 /// </summary>
 /// <param name="R">Red, 0 to 1.</param>
 /// <param name="G">Green, 0 to 1.</param>

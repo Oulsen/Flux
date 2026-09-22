@@ -325,7 +325,7 @@ Each entry of `channels` is `{ "at": 0.25, "r": 0.8, "g": 0.2, "b": 0.55 }`:
 | Field | Type | Meaning |
 |---|---|---|
 | `at` | number | Where this light listens on the frequency axis: 0 follows the kick, 1 follows the top |
-| `r`, `g`, `b` | number | What this light was sent, linear 0 to 1, on the same scale and with the same absence of gamma as `color` |
+| `r`, `g`, `b` | number | What this light was sent, linear 0 to 1, on the same scale as `color` and, like it, with no gamma correction |
 
 **Where a light is decides how hard the beat hits it, and above one colour which
 colour it is in.** A light near the centre of the room follows the low end and one
@@ -439,10 +439,17 @@ room itself has. A client should still interpolate between frames rather than st
 because a brightness pulse of 240 ms is only five frames long here.
 
 The values are linear, on the same 0 to 1 scale the spectrum bands use, and **no gamma
-correction has been applied to them - by anything, anywhere, in this build.** Flux does
-not correct gamma yet. When it does, the correction belongs on the path to the bridge and
-this field keeps carrying what was sent, so a page that corrected them a second time
-would be drawing a room nobody is standing in. Absent rather than black before the first
+correction is applied to them, by anything, and that is a decision rather than a gap.**
+The bridge reads the RGB it is sent as light output, not as screen values: a still
+ladder of whites at 100, 75, 50 and 25 per cent was hard to tell apart on the bulbs,
+while an orange of full red and half green came out orange. A brightness curve on the
+way to the bridge was then built and tried with music, and it flattened the lights that
+spend their time just above the lit floor - the ones on the quieter bands - until they
+stopped visibly moving. Every brightness setting was tuned by eye against the uncurved
+bridge, so it already accounts for it. One consequence for a page: a monitor does curve,
+so the dim end of the stage looks darker than the same value on a bulb. That is the
+honest cost of drawing what was sent, and correcting it in the page would be a second
+engine's opinion about the room. Absent rather than black before the first
 frame, because black is a colour the engine can legitimately send and "not yet" is not
 it.
 

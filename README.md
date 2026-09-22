@@ -75,8 +75,7 @@ measured by somebody standing in the room watching both.
 - Streams state, beats, spectrum and bridge status over a WebSocket. The wire
   contract is [docs/protocol.md](docs/protocol.md).
 
-Not here yet: gamma correction, which is the rest of Phase 4. Flux is also
-still a console app you start from a terminal: the desktop shell and the QR
+Flux is still a console app you start from a terminal: the desktop shell and the QR
 code that gets a phone onto the page without typing an address are Phase 5.
 
 ## Requirements

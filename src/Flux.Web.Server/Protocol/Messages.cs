@@ -186,8 +186,8 @@ public sealed record LightChannelData(double At, double R, double G, double B);
 /// One colour, as the page is told about it.
 ///
 /// Linear 0 to 1 per channel, which is <c>HueColor</c> unchanged and the same scale the
-/// spectrum bands already use. Deliberately not converted to a CSS colour here: gamma
-/// is Phase 4's to decide and doing it in two places would be one place too many.
+/// spectrum bands already use. Deliberately not converted to a CSS colour here, and not
+/// gamma corrected anywhere - see <c>HueColor</c> for why that is settled.
 /// </summary>
 /// <param name="R">Red, 0 to 1.</param>
 /// <param name="G">Green, 0 to 1.</param>
