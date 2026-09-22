@@ -12,7 +12,8 @@ public sealed class BeatOptions {
   public const string SectionName = "Beat";
 
   /// <summary>
-  /// Beats per bar. Only ever used to turn a beat number into a 1-2-3-4 readout.
+  /// Beats per bar: what turns a beat number into a 1-2-3-4 readout, and how long
+  /// a bar is when the light engine changes colour every few bars.
   ///
   /// This is Flux's own interpretation in the strict sense: Link transmits no
   /// meter, and audio detection cannot infer one from onsets, so no source either

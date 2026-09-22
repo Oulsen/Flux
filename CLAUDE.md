@@ -11,7 +11,8 @@ That audit trail is scoped to audio beat detection and does not cover the light
 engine, which is deliberate rather than an omission: the light engine's tuned
 numbers were not derived, they were carried across. Eight palettes as hue
 degrees, the 0.12 hue separation, 50 attempts at meeting it, the
-5.0-per-second transition rate and the 240 ms default pulse all come from the
+5.0-per-second transition rate, the 240 ms default pulse and the strobe's
+quarter-cycle flash all come from the
 scene this project reimplements, and each is documented where it is declared -
 `src/Flux.Hue/LightPalette.cs`, `LightSettings.cs` and `LightEngine.cs`. How
 long a bar is is not among them: it is `Beat:Quantum`, which predates the light
@@ -29,7 +30,11 @@ matters more than the numbers do.** The scene drove colour sections by index and
 never compared one frequency band against another, so everything in
 `src/Flux.Hue/BandDynamics.cs` is Flux's own and has no ancestor to be faithful
 to - the per-band and per-room reference windows, the transient ratio - as are
-`ShimmerShare` and `MinimumLitFraction` in `LightEngine.cs`. These are the
+`ShimmerShare`, `EnergyShare`, `MinimumLitFraction` and `StrobeStaleBeats` in
+`LightEngine.cs`, and the six stand-in lights in `LightPreview.cs`. The stage's
+afterimage trail in `src/Flux.Web.Frontend/src/lib/scene.ts` is Flux's own
+too: the scene's trail ran to nearly ten seconds and was cut to one by looking,
+and the copy count and opacity beside it were reasoned about. These are the
 opposite case to the palette: they were reasoned about rather than listened to,
 they are the first things to move when the room looks wrong, and each says so
 where it is declared. Treating them as carried-across material would protect
