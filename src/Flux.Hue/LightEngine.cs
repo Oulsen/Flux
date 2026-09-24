@@ -696,11 +696,21 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     // the clock, because the latency offset runs this path up to half a second ahead and
     // the clock passing the downbeat says nothing about whether its beat has arrived -
     // answering early would change the colour and then change it again when it did.
-    if(this.colorRestartMicros is { } owed
-      && this.lastBeatMicros is { } last
-      && last >= owed - SameBeatMicros(this.beatPeriodMicros)) {
-      this.colorRestartMicros = null;
-      this.PickHues(settings.Palette, colorCount);
+    //
+    // Bounded above as well, by the same half beat. A drop snaps to the nearest downbeat
+    // it already knows, which can be a beat or two behind the last one rendered, and
+    // answering then would change the colour partway through the bar. That restart is
+    // dropped rather than paid: the beats already carry the new count, so the next
+    // change lands on a downbeat of its own.
+    if(this.colorRestartMicros is { } owed && this.lastBeatMicros is { } last) {
+      double sameBeat = SameBeatMicros(this.beatPeriodMicros);
+
+      if(last > owed + sameBeat) {
+        this.colorRestartMicros = null;
+      } else if(last >= owed - sameBeat) {
+        this.colorRestartMicros = null;
+        this.PickHues(settings.Palette, colorCount);
+      }
     }
 
     while(true) {

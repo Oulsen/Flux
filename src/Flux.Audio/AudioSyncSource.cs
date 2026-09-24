@@ -298,7 +298,7 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
       // nothing else has - see BeatGrid.TryAlignBar for why a guess that rotated the bar
       // out from under a tap was the wrong arrangement.
       this.sink.AlignBar(BarAlignmentMethod.Drop, snapToBar: true);
-      this.log.LogInformation("Audio detection placed a drop, and the bar is anchored to it.");
+      this.log.LogInformation("Audio detection placed a drop. It anchors the bar if nothing has, and otherwise snaps bar one to the nearest downbeat already known.");
     }
   }
 

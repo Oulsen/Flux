@@ -398,6 +398,32 @@ public class LightEngineTests {
   }
 
   /// <summary>
+  /// A drop snaps to the downbeat it rounds to, which can be a beat or more behind the
+  /// last one rendered. Answering that late would change the colour partway through the
+  /// bar, so the restart is dropped and the count carries on from the new anchor.
+  /// </summary>
+  [Fact]
+  public void ARestartOwedToABeatAlreadyPastDoesNotChangeTheColourMidBar() {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
+
+    harness.SettledHue(0);
+    double downbeat = harness.Clock.NowMicros;
+    harness.SettledHue(4);
+    double pastIt = harness.SettledHue(5);
+
+    harness.Anchor(4, downbeat);
+
+    double answered = harness.Settle();
+    Assert.True(Separation(answered, pastIt) <= HueTolerance, "A restart a beat late is not answered mid-bar.");
+
+    double oneBarOn = harness.SettledHue(8);
+    Assert.True(Separation(oneBarOn, answered) <= HueTolerance, "One bar after the anchor is not a change.");
+
+    double twoBarsOn = harness.SettledHue(12);
+    Assert.True(Separation(twoBarsOn, oneBarOn) > HueTolerance, "Two bars after the anchor is a change.");
+  }
+
+  /// <summary>
   /// A positive offset runs the frame path ahead of the clock, so the anchored moment
   /// passes on the frame path before its beat has arrived. Answering on the clock would
   /// change the colour there and again when the beat landed; the answer waits for the beat.

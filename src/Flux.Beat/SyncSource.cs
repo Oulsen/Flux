@@ -104,7 +104,8 @@ public interface ITimelineSink {
   /// <param name="newSession">
   /// True when the beat numbering was rebased rather than merely re-anchored: a
   /// Link session change, an audio drop, a tap that sets a new phase. Anything
-  /// anchored to a beat index has to re-arm when this is set.
+  /// anchored to a beat index has to be moved by the shift when this is set, which the
+  /// grid does for the bar anchor.
   /// </param>
   void Publish(BeatTimeline timeline, bool newSession = false);
 

@@ -21,6 +21,15 @@ public sealed class StageService: ISpectrumBands {
   private readonly IStageSettingsStore store;
   private readonly object gate = new();
 
+  /// <summary>
+  /// Held across a whole change, broadcast included, so two pages dragging at once are
+  /// announced in the order they were applied and every page ends on the look in force.
+  ///
+  /// Separate from <see cref="gate"/> so the analyzer's band-count read never waits on a
+  /// broadcast. Only another change waits on this one, and a broadcast only queues.
+  /// </summary>
+  private readonly object changeGate = new();
+
   private StageSettings settings;
 
   public StageService(IStageSettingsStore store) {
@@ -68,25 +77,28 @@ public sealed class StageService: ISpectrumBands {
       return false;
     }
 
-    lock(this.gate) {
-      if(this.settings == requested) {
-        // Nothing to write and nothing to announce. Worth checking rather than being
-        // idempotent by luck: a slider drag arrives ten times a second and each one
-        // would otherwise be a file write and a broadcast to every open page.
-        return true;
+    lock(this.changeGate) {
+      lock(this.gate) {
+        if(this.settings == requested) {
+          // Nothing to write and nothing to announce. Worth checking rather than being
+          // idempotent by luck: a slider drag arrives ten times a second and each one
+          // would otherwise be a file write and a broadcast to every open page.
+          return true;
+        }
+
+        this.settings = requested;
+
+        // Written the instant it is accepted rather than at shutdown, because Flux is
+        // closed by killing a console window as often as not. The same argument the audio
+        // device store already runs on.
+        this.store.Save(requested);
       }
 
-      this.settings = requested;
-
-      // Written the instant it is accepted rather than at shutdown, because Flux is
-      // closed by killing a console window as often as not. The same argument the audio
-      // device store already runs on.
-      this.store.Save(requested);
+      // Outside the read lock: a handler broadcasts to every client, and holding that
+      // lock across it would put the analyzer's next band-count read behind a socket
+      // write.
+      this.Changed?.Invoke(requested);
     }
-
-    // Outside the lock: a handler broadcasts to every client, and holding a lock across
-    // that would put the analyzer's next band-count read behind a socket write.
-    this.Changed?.Invoke(requested);
 
     return true;
   }

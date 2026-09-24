@@ -26,8 +26,8 @@ namespace Flux.Audio;
 /// </param>
 /// <param name="Rebase">
 /// Whether <paramref name="Timeline"/> renumbers the beats rather than re-anchoring
-/// them, which is what a drop and a first estimate do. Anything anchored to a beat
-/// index has to re-arm when this is set.
+/// them, which is what a drop and a first estimate do. The grid then moves its bar
+/// anchor by the shift rather than counting the jump as drift.
 /// </param>
 internal readonly record struct BeatDecision(
   BeatStrength Strength,
@@ -529,7 +529,8 @@ internal sealed class AudioBeatDetector {
       if(drop || !this.published) {
         // A drop renumbers from zero, and so does the first estimate there has ever
         // been. Both are statements that the old numbering means nothing, which is
-        // exactly what the grid needs to hear before it re-arms the bar.
+        // exactly what the grid needs to hear to carry the bar anchor across the jump
+        // instead of measuring it as drift.
         timeline = BeatTimeline.FromBpm(this.bpm, beat: 0, frame.TimestampMicros);
         rebase = true;
 
@@ -569,10 +570,10 @@ internal sealed class AudioBeatDetector {
   /// biggest risk. A smoothed tempo extrapolated from one anchor is right about the
   /// interval and slowly wrong about the phase, so every strong beat moves the
   /// anchor onto a beat that was actually heard. The beat <em>number</em> is
-  /// carried forward rather than reset, which is what keeps the bar anchor alive:
-  /// the grid keeps an anchor across a numbering shift under half a beat and
-  /// re-arms it for anything larger, so restarting at zero here would throw the
-  /// downbeat away on every kick.
+  /// carried forward rather than reset, which is what keeps this a re-anchor: the
+  /// grid measures a same-tempo republish as drift, and restarting at zero here would
+  /// report every kick as a jump of however many beats had passed, pinning the one
+  /// number that says whether the phase is holding.
   /// </summary>
   private BeatTimeline ReAnchor(double atMicros) {
     double microsPerBeat = 60_000_000.0 / this.bpm;

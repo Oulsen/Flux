@@ -43,6 +43,17 @@ public sealed class SyncSourceManager {
   private readonly IBeatSettingsStore? settings;
   private readonly ILogger<SyncSourceManager> log;
   private readonly object gate = new object();
+
+  /// <summary>
+  /// Held across a whole selection, so two pages choosing at once finish in the order
+  /// they chose.
+  ///
+  /// Separate from <see cref="gate"/> because a selection writes a file and applies a
+  /// timeline, and holding the lock sources publish through across either would put
+  /// every beat behind a disk write. Only another selection waits on this one.
+  /// </summary>
+  private readonly object selectGate = new object();
+
   private readonly Dictionary<string, Registration> sources =
     new Dictionary<string, Registration>(StringComparer.OrdinalIgnoreCase);
 
@@ -146,45 +157,51 @@ public sealed class SyncSourceManager {
       return false;
     }
 
-    BeatTimeline? cached;
-    string resolved;
+    // The file and the grid are both written outside the source lock, so without this a
+    // second page's choice could land in between and leave the file, or the grid,
+    // remembering the choice that lost.
+    lock(this.selectGate) {
+      BeatTimeline? cached;
+      string resolved;
 
-    lock(this.gate) {
-      if(!this.sources.TryGetValue(name, out Registration? registration)) {
-        return false;
+      lock(this.gate) {
+        if(!this.sources.TryGetValue(name, out Registration? registration)) {
+          return false;
+        }
+
+        resolved = registration.Source.Name;
+        if(string.Equals(this.active, resolved, StringComparison.OrdinalIgnoreCase)) {
+          return true;
+        }
+
+        this.active = resolved;
+        cached = registration.Last;
       }
 
-      resolved = registration.Source.Name;
-      if(string.Equals(this.active, resolved, StringComparison.OrdinalIgnoreCase)) {
-        return true;
+      // Outside the source lock, because this writes a file and that lock is on every
+      // publish. Saved on a change and not on every call, which the early return
+      // above already guarantees: re-selecting the source that is already active is not a
+      // choice and should not cost a write.
+      this.settings?.Save(new BeatSettings(resolved));
+
+      // A different source's numbering is a different numbering, even when the two
+      // tempi match, so the switch is announced as a rebasing exactly like a Link
+      // session change. The grid carries the bar anchor across by the shift, so the
+      // downbeat stays where it was in the music rather than at the number it had.
+      if(cached is BeatTimeline timeline) {
+        this.grid.Apply(timeline, newSession: true);
+        this.log.LogInformation("Sync source is now {Source}, at {Bpm:F2} BPM.", resolved, timeline.Bpm);
+      } else {
+        // Keeping the outgoing source's timeline would leave its tempo on screen
+        // under the new source's name, which is the one reading a beat display must
+        // never invent. Reporting nothing is the honest answer until this source
+        // publishes.
+        this.grid.Reset();
+        this.log.LogInformation("Sync source is now {Source}, which has nothing to report yet.", resolved);
       }
 
-      this.active = resolved;
-      cached = registration.Last;
+      return true;
     }
-
-    // Outside the lock, because this writes a file and the lock is held on the socket
-    // receive loop. Saved on a change and not on every call, which the early return
-    // above already guarantees: re-selecting the source that is already active is not a
-    // choice and should not cost a write.
-    this.settings?.Save(new BeatSettings(resolved));
-
-    // A different source's numbering is a different numbering, even when the two
-    // tempi match, so the switch is announced as a rebasing exactly like a Link
-    // session change. Nothing anchored to a beat index survives it.
-    if(cached is BeatTimeline timeline) {
-      this.grid.Apply(timeline, newSession: true);
-      this.log.LogInformation("Sync source is now {Source}, at {Bpm:F2} BPM.", resolved, timeline.Bpm);
-    } else {
-      // Keeping the outgoing source's timeline would leave its tempo on screen
-      // under the new source's name, which is the one reading a beat display must
-      // never invent. Reporting nothing is the honest answer until this source
-      // publishes.
-      this.grid.Reset();
-      this.log.LogInformation("Sync source is now {Source}, which has nothing to report yet.", resolved);
-    }
-
-    return true;
   }
 
   /// <summary>

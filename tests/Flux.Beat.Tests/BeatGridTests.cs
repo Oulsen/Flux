@@ -194,7 +194,7 @@ public class BeatGridTests {
   /// <summary>
   /// A same-tempo session switch renumbers the beat exactly as a tempo change
   /// does, so it is announced the same way: anything anchored to a beat index,
-  /// bar alignment above all, has to re-arm.
+  /// bar alignment above all, has to be moved by the shift.
   /// </summary>
   [Fact]
   public void AnnouncesASessionSwitchWithItsNumberingShift() {

@@ -358,8 +358,8 @@ internal static class AudioConstants {
   /// <summary>
   /// The shortest gap between drops.
   ///
-  /// A drop rebases the beat numbering and re-arms the bar, which is the most
-  /// disruptive thing this detector can do, so it is rate limited twice: a
+  /// A drop rebases the beat numbering and can move bar one, restarting the light
+  /// engine's colour cycle, which is the most disruptive thing this detector can do, so it is rate limited twice: a
   /// cooldown, and a cap per half minute. A breakdown with stabs in it would
   /// otherwise re-anchor the grid every couple of bars.
   /// </summary>

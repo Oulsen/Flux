@@ -68,8 +68,8 @@ public readonly record struct BarPosition(int PositionInBar, bool IsAligned, lon
 /// The shift is worth carrying rather than discarding, because it is large and
 /// surprising: rekordbox does not preserve beat continuity across a tempo
 /// change, so the absolute Link beat number is not a stable identity. Anything
-/// anchored to a beat index - bar alignment above all - has to re-arm when this
-/// fires.
+/// anchored to a beat index has to be moved by the shift when this fires, as the
+/// grid does with its own bar anchor, or it points at a different moment in the music.
 /// </summary>
 /// <param name="Timeline">The timeline now in force.</param>
 /// <param name="BeatNumberingShift">How far the beat number moved at the instant of the change; zero for the first timeline.</param>
@@ -264,10 +264,12 @@ public sealed class BeatGrid {
   /// With this set and an anchor already in place, the anchor moves to the nearest
   /// downbeat of the existing grid instead. That is **phase-preserving by construction**,
   /// since every such downbeat is a whole number of bars from the current anchor, so the
-  /// visible consequence is that a drop can no longer move the bar once one is known - it
-  /// can only confirm it. That is the intended reading of "a guess should not overrule a
-  /// measurement", and the cost is stated rather than hidden: an anchor that is genuinely
-  /// wrong stays wrong until somebody taps again. Where no anchor exists a drop still
+  /// visible consequence is that a drop can no longer rotate the bar once one is known.
+  /// It can still move bar one by whole bars, which leaves every position where it was
+  /// but restarts the bar count, and with it the light engine's colour cycle, from the
+  /// drop. That is the intended reading of "a guess should not overrule a measurement",
+  /// and the cost is stated rather than hidden: an anchor that is genuinely wrong stays
+  /// wrong until somebody taps again. Where no anchor exists a drop still
   /// sets one outright, which is the job it was added for.
   /// </param>
   /// <returns>False when no timeline is known yet, so there is no beat to anchor to.</returns>

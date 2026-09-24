@@ -11,8 +11,8 @@
  * attack and release were measured against real music and confirmed at the desk;
  * this module takes a level from 0 to 1 and decides only where to put it.
  *
- * The constants are the scene's, transcribed as coded from
- * `.plan/reference/oulsen-dj-scene.html` (the drawing half, lines 986 to 1351).
+ * The constants are the scene's, transcribed as coded from the drawing half of the
+ * scene this project reimplements.
  * Four places depart from it, and each says so where it is declared: the level curve,
  * the default layout, what the band control means, and the two static colours.
  */

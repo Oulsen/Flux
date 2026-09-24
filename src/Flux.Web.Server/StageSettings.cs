@@ -211,7 +211,7 @@ internal sealed class JsonStageSettingsStore: IStageSettingsStore {
         // one route into this record that no client message passed through, and a hand
         // edited count outside the bounds would reach the analyzer.
         return stored is { IsValid: true } ? stored : StageSettings.Default;
-      } catch(Exception e) when(e is JsonException or IOException) {
+      } catch(Exception e) when(e is JsonException or IOException or UnauthorizedAccessException) {
         // A preference nobody can read is not worth failing a launch over: the cost is
         // one forgotten choice, against an application that will not start because of a
         // file somebody hand-edited.
@@ -225,8 +225,15 @@ internal sealed class JsonStageSettingsStore: IStageSettingsStore {
     ArgumentNullException.ThrowIfNull(settings);
 
     lock(this.gate) {
-      Directory.CreateDirectory(this.directory);
-      File.WriteAllText(this.Path, JsonSerializer.Serialize(settings, Formatted));
+      try {
+        Directory.CreateDirectory(this.directory);
+        File.WriteAllText(this.Path, JsonSerializer.Serialize(settings, Formatted));
+      } catch(Exception e) when(e is IOException or UnauthorizedAccessException) {
+        // Swallowed, like the sync source. This is saved on every slider drag, and a
+        // throw here would escape the socket's receive loop and drop the page, while
+        // the look it asked for had already taken effect for everyone else.
+        this.logger.LogWarning(e, "Stage settings could not be remembered in {Path}.", this.Path);
+      }
     }
   }
 }

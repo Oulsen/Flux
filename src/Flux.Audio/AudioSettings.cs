@@ -68,7 +68,7 @@ internal sealed class JsonAudioSettingsStore: IAudioSettingsStore {
 
       try {
         return JsonSerializer.Deserialize<AudioSettings>(File.ReadAllText(this.Path), Formatted) ?? AudioSettings.Empty;
-      } catch(Exception e) when(e is JsonException or IOException) {
+      } catch(Exception e) when(e is JsonException or IOException or UnauthorizedAccessException) {
         // A preference nobody can read is not worth failing a launch over: the cost is
         // one forgotten choice, and the alternative is an application that will not
         // start because of a file somebody hand-edited.

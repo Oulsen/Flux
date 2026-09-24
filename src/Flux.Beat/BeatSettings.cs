@@ -70,7 +70,7 @@ internal sealed class JsonBeatSettingsStore: IBeatSettingsStore {
 
       try {
         return JsonSerializer.Deserialize<BeatSettings>(File.ReadAllText(this.Path), Formatted) ?? BeatSettings.Empty;
-      } catch(Exception e) when(e is JsonException or IOException) {
+      } catch(Exception e) when(e is JsonException or IOException or UnauthorizedAccessException) {
         // A preference nobody can read is not worth failing a launch over: the cost is
         // one forgotten choice and a fall back to the configured default, which is
         // exactly where a machine that had never been told otherwise would start.

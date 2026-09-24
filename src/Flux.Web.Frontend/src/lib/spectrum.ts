@@ -8,8 +8,8 @@
  * the kick away or flicker. That decision is here, as pure functions, because it
  * is the half that can be wrong in a way no screenshot would settle.
  *
- * The constants are the scene's, transcribed as coded from
- * `.plan/reference/oulsen-dj-scene.html`, and the rest of Flux's audio numbers
+ * The constants are the scene's, transcribed as coded from the scene this project
+ * reimplements, and the rest of Flux's audio numbers
  * are documented the same way in `docs/audio-constants.md`.
  */
 
