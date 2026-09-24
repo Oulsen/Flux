@@ -16,7 +16,8 @@ quarter-cycle flash all come from the
 scene this project reimplements, and each is documented where it is declared -
 `src/Flux.Hue/LightPalette.cs`, `LightSettings.cs` and `LightEngine.cs`. How
 long a bar is is not among them: it is `Beat:Quantum`, which predates the light
-engine and is Flux's own, and the engine reads it rather than restating four.
+engine and is Flux's own, and the engine takes its bar count from the beat grid,
+which reads it, rather than restating four.
 The standing rule for the carried-across material is that structure gets
 rewritten while values somebody arrived at by listening get copied unchanged,
 so do not re-derive one from colour theory or from a fresh reading of the

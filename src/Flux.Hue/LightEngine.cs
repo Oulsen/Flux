@@ -2,7 +2,6 @@ using Flux.Audio;
 using Flux.Beat;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Flux.Hue;
 
@@ -207,21 +206,6 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   private readonly Queue<BeatEvent> pending = new(MaxPendingBeats);
 
   /// <summary>
-  /// Beats to the bar, taken from the grid's own setting rather than assumed.
-  ///
-  /// The scene's interval is counted in bars and four is still the default, so nothing
-  /// about the tuned behaviour moves. What this closes is a divisor that was written as
-  /// a constant while <see cref="BeatOptions.Quantum"/> was bindable: at a quantum of
-  /// eight the downbeats arrive eight indices apart, dividing by four steps the bar
-  /// count by two, and "every four bars" silently becomes every eight - or never,
-  /// depending on where the grid's anchor happened to fall.
-  ///
-  /// Read once. The quantum is bound at startup and validated there, and this is
-  /// consulted on the frame path.
-  /// </summary>
-  private readonly int beatsPerBar;
-
-  /// <summary>
   /// Each band as a fraction of its own recent loudest, which is the only form in which
   /// the three can be compared - see <see cref="BandDynamics"/> for why the raw levels
   /// cannot be.
@@ -255,16 +239,23 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   private uint colorRoll;
 
   /// <summary>
-  /// The downbeat the colour changes are counted from, or null before one is known.
-  ///
-  /// This is what makes the anchor button reset the colour cycle instead of only the
-  /// beat indicator. Counting bars from the grid's absolute index - which is what this
-  /// did until 2026-09-11 - puts the changes on a phase decided by wherever the source's
-  /// numbering happened to start, so pressing anchor on the downbeat moved the bar count
-  /// and left the colour changes landing one, two or three bars off it for the rest of
-  /// the night. Counting from the anchor itself means bar one is the bar the user marked.
+  /// The timestamp of a downbeat just set by an alignment, handed over by
+  /// <see cref="OnBarAligned"/> and not yet taken by the frame path. Guarded by
+  /// <see cref="gate"/>, since the alignment arrives on whatever thread pressed it.
   /// </summary>
-  private long? colorAnchorBeat;
+  private double? alignedAtMicros;
+
+  /// <summary>
+  /// The newly anchored downbeat the frame path still owes a colour change, or null.
+  ///
+  /// This is what makes the anchor button answer on the beat it was pressed for. The bar
+  /// count itself comes from the grid on every beat, so the cycle restarts from the
+  /// anchor without help; what the count cannot do is change the colour on a beat that
+  /// fired before the press, and a press usually lands a hair after the kick it means.
+  /// Held by time rather than by index because the grid renumbers beats on a tempo
+  /// change, and a moment in the music survives that where an index does not.
+  /// </summary>
+  private double? colorRestartMicros;
 
   private double? pulseStartedMicros;
 
@@ -327,10 +318,9 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     BeatScheduler scheduler,
     HueBridgeService bridge,
     IMonotonicClock clock,
-    IOptions<BeatOptions> beat,
     IAudioSpectrum? spectrum,
     ILogger<LightEngine> logger)
-    : this(scheduler, bridge, clock, beat, spectrum, logger, new Random()) {
+    : this(scheduler, bridge, clock, spectrum, logger, new Random()) {
   }
 
   /// <summary>
@@ -344,19 +334,15 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     BeatScheduler scheduler,
     HueBridgeService bridge,
     IMonotonicClock clock,
-    IOptions<BeatOptions> beat,
     IAudioSpectrum? spectrum,
     ILogger<LightEngine> logger,
     Random random) {
-    ArgumentNullException.ThrowIfNull(beat);
-
     this.scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
     this.bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
     this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
     this.spectrum = spectrum;
     this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     this.random = random ?? throw new ArgumentNullException(nameof(random));
-    this.beatsPerBar = Math.Max(1, beat.Value.Quantum);
 
     // One draw and not one per slot, which keeps a seeded engine's first colour the
     // number it has always been. The other slots are not colours yet: they become them
@@ -382,12 +368,14 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// </summary>
   public Task StartAsync(CancellationToken cancellationToken) {
     this.scheduler.Beat += this.OnBeat;
+    this.scheduler.BarAligned += this.OnBarAligned;
 
     return Task.CompletedTask;
   }
 
   public Task StopAsync(CancellationToken cancellationToken) {
     this.scheduler.Beat -= this.OnBeat;
+    this.scheduler.BarAligned -= this.OnBarAligned;
 
     return Task.CompletedTask;
   }
@@ -669,6 +657,19 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     }
   }
 
+  /// <summary>
+  /// Takes note that the downbeat moved, so the frame path can give the anchored beat
+  /// its colour change even when that beat has already been rendered.
+  ///
+  /// Internal for the same reason as <see cref="OnBeat"/>.
+  /// </summary>
+  /// <param name="downbeatMicros">The local timestamp of the beat that is now position 1.</param>
+  internal void OnBarAligned(double downbeatMicros) {
+    lock(this.gate) {
+      this.alignedAtMicros = downbeatMicros;
+    }
+  }
+
   /// <summary>Applies every beat whose moment has arrived.</summary>
   /// <param name="now">The instant being rendered, already shifted by the latency offset.</param>
   /// <param name="settings">The look in force, which decides whether this beat changes the colour.</param>
@@ -680,6 +681,28 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// A band sitting at a steady level, however loud, is not a hit.
   /// </param>
   private void Consume(double now, LightSettings settings, double? kickHit) {
+    lock(this.gate) {
+      if(this.alignedAtMicros is { } aligned) {
+        this.colorRestartMicros = aligned;
+        this.alignedAtMicros = null;
+      }
+    }
+
+    int colorCount = Math.Clamp(settings.ColorCount, 1, LightSettings.MaxColorCount);
+
+    // The anchored beat was rendered before the press was heard, carrying the old count.
+    // Answering now is a frame or so after the beat the user meant, against a bar later
+    // if the change waited for the count. Judged by the last beat rendered and not by
+    // the clock, because the latency offset runs this path up to half a second ahead and
+    // the clock passing the downbeat says nothing about whether its beat has arrived -
+    // answering early would change the colour and then change it again when it did.
+    if(this.colorRestartMicros is { } owed
+      && this.lastBeatMicros is { } last
+      && last >= owed - SameBeatMicros(this.beatPeriodMicros)) {
+      this.colorRestartMicros = null;
+      this.PickHues(settings.Palette, colorCount);
+    }
+
     while(true) {
       BeatEvent beat;
 
@@ -700,8 +723,17 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       this.beatPeriodMicros = beat.Bpm > 0 ? 60 * MicrosPerSecond / beat.Bpm : null;
       this.pulseStrength = kickHit is { } hit ? Math.Clamp(hit, 0, 1) : 1;
 
-      if(this.ShouldChangeColor(beat, settings.ColorChangeBars)) {
-        this.PickHues(settings.Palette, Math.Clamp(settings.ColorCount, 1, LightSettings.MaxColorCount));
+      // The anchored beat takes a colour whatever bar it was stamped with, since one that
+      // fired just before the press still carries the old count. Earlier beats are left
+      // to the old phase, which was still the right one for them.
+      bool anchored = this.colorRestartMicros is { } restart
+        && beat.ScheduledMicros >= restart - SameBeatMicros(this.beatPeriodMicros);
+      if(anchored) {
+        this.colorRestartMicros = null;
+      }
+
+      if(anchored || this.ShouldChangeColor(beat, settings.ColorChangeBars)) {
+        this.PickHues(settings.Palette, colorCount);
       }
     }
 
@@ -723,61 +755,36 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// The scene's rule, in the scene's unit: colours change on the downbeat of every
   /// n-th bar, and zero bars means every beat instead. What is rewritten is how the
   /// position is worked out - the scene counted beats it had detected, while this reads
-  /// the grid's index, so a dropped beat cannot leave the changes landing off the bar
-  /// for the rest of the night.
+  /// the grid's bar number, so a dropped beat cannot leave the changes landing off the
+  /// bar for the rest of the night.
   ///
-  /// <b>Counted from the anchor rather than from the grid's zero</b>, corrected on
-  /// 2026-09-11 after the behaviour was seen: the two differ by wherever the source's
-  /// numbering happened to begin, which is arbitrary, so the first bar of the count was
-  /// some bar the user never marked and pressing anchor visibly moved the beat indicator
-  /// while leaving the colours changing on the old phase. Anchoring means "this is bar
-  /// one", and it has to mean that for everything the bar count drives or it only half
-  /// means it.
+  /// <b>The bar number is the grid's, counted from the anchor.</b> Until 2026-09-24 the
+  /// engine kept an anchor of its own and inferred a new one whenever a downbeat arrived
+  /// out of phase within the bar. That caught a press one beat off the old phase and
+  /// missed the commoner one: a press on a beat that was already a downbeat, but in the
+  /// second, third or fourth bar of the cycle, moved the readout's bar one and left the
+  /// colours counting from the old one. Anchoring means "this is bar one", and it has to
+  /// mean that for everything the bar count drives. Before any anchor the grid counts
+  /// from its own beat 0, which is the scene's raw form - every n-th bar from wherever
+  /// the numbering started - and worth more than not changing at all.
   /// </summary>
   private bool ShouldChangeColor(BeatEvent beat, int bars) {
     if(bars <= 0) {
       return true;
     }
 
-    if(!beat.IsBarAligned) {
-      // No downbeat is known, so there is no bar to land on and the honest fallback is
-      // the scene's raw form: every n-th beat from wherever the grid happens to start.
-      // Changing on a guessed phase is worth more than not changing at all, and the
-      // moment an alignment arrives the branch below takes over.
-      //
-      // The anchor is deliberately left alone here. An alignment that drops out and
-      // comes back on the same phase is the same anchor, and clearing it would restart
-      // the colour cycle every time a source went quiet for a moment.
-      return FloorMod(beat.Index, (long)this.beatsPerBar * bars) == 0;
-    }
+    return beat.PositionInBar == 1 && FloorMod(beat.Bar, bars) == 0;
+  }
 
-    if(beat.PositionInBar != 1) {
-      return false;
-    }
-
-    // A downbeat out of phase with the one being counted from is a new anchor, and the
-    // comparison is a congruence rather than an equality because every later downbeat is
-    // a whole number of bars from the first. That is also what makes this quiet when
-    // nothing has changed: a re-alignment landing on the same phase leaves the count
-    // where it was rather than restarting it.
-    if(this.colorAnchorBeat is not { } anchor || FloorMod(beat.Index - anchor, this.beatsPerBar) != 0) {
-      this.colorAnchorBeat = beat.Index;
-
-      // The anchored bar is bar one, so it takes a colour. Pressing the button is a
-      // deliberate act on a downbeat and answering it with a visible change is the
-      // confirmation that it landed.
-      return true;
-    }
-
-    // Counted in bars rather than in beats, because a bar's first beat is not
-    // necessarily at an index divisible by the quantum: the grid's alignment can put
-    // the downbeat anywhere in the numbering, and a modulo over beat indices would then
-    // never come out at zero and the colour would never change again. Dividing is safe
-    // from here whatever the phase - consecutive downbeats are a bar apart, so they
-    // always land in consecutive bars.
-    long bar = FloorDiv(beat.Index - anchor, this.beatsPerBar);
-
-    return FloorMod(bar, bars) == 0;
+  /// <summary>
+  /// How close a beat's moment has to be to a downbeat's to be that beat: half a beat,
+  /// which is the same nearest-beat rounding the alignment itself used to pick it. The
+  /// timeline can be rebased between the press and the beat, so the two moments are not
+  /// always equal, but the beats either side are a whole beat away. Zero before any beat
+  /// has given a tempo, when there is nothing to be near.
+  /// </summary>
+  private static double SameBeatMicros(double? beatPeriodMicros) {
+    return (beatPeriodMicros ?? 0) / 2;
   }
 
   /// <summary>
@@ -1098,10 +1105,10 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// <summary>
   /// Division that rounds toward negative infinity.
   ///
-  /// Needed because C# rounds toward zero, and the grid's beat index can be negative:
-  /// it extrapolates backwards from its anchor, so the beats just before a fresh
-  /// alignment are numbered below zero. With the language's own operators the bar
-  /// counting would reverse across that boundary.
+  /// Needed because C# rounds toward zero, and the grid's bar number can be negative:
+  /// it counts from the anchor, so the bars just before a fresh alignment are numbered
+  /// below zero. With the language's own operators the colour cycle would reverse across
+  /// that boundary.
   /// </summary>
   private static long FloorDiv(long value, long divisor) {
     long quotient = Math.DivRem(value, divisor, out long remainder);

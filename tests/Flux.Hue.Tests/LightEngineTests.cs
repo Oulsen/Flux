@@ -298,14 +298,11 @@ public class LightEngineTests {
   }
 
   /// <summary>
-  /// The phase of the changes comes from the beat's index measured against the anchor,
+  /// The phase of the changes comes from the bar number the grid stamps on each beat,
   /// and not from a count the engine keeps, which is what makes a dropped beat harmless:
   /// beats are dropped, by the bounded queue here and by a stream that was stopped when
   /// they arrived, and a running count would leave every colour change after one landing
   /// off the bar for the rest of the night.
-  ///
-  /// The anchor is established first, because establishing one is itself a colour change
-  /// - see <see cref="AnchoringRestartsTheColourCycleFromTheBarThatWasMarked"/>.
   /// </summary>
   [Theory]
   [InlineData(4L, false)]
@@ -325,40 +322,111 @@ public class LightEngineTests {
 
   /// <summary>
   /// Pressing anchor means "this is bar one", and it has to mean that for everything the
-  /// bar count drives or it only half means it.
-  ///
-  /// Counting bars from the grid's own zero - which this did until 2026-09-11 - puts the
-  /// changes on a phase decided by wherever the source's numbering happened to begin, so
-  /// the visible effect of anchoring was that the beat indicator moved and the colours
-  /// went on changing on the old phase. The re-anchor here is deliberately off the
-  /// previous phase by one beat, which is the case the arithmetic has to notice.
+  /// bar count drives or it only half means it. This press is one beat off the previous
+  /// phase, and early: the anchored beat has not arrived yet.
   /// </summary>
   [Fact]
   public void AnchoringRestartsTheColourCycleFromTheBarThatWasMarked() {
     Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
 
-    harness.SettledHue(0);
+    double before = harness.SettledHue(0);
 
-    // A downbeat one beat off the established phase, which is what a press on a bar the
-    // grid did not consider a bar looks like.
-    double anchored = harness.SettledHue(index: 9, positionInBar: 1);
-    double before = anchored;
+    harness.Anchor(9, harness.Clock.NowMicros);
 
-    Assert.True(Separation(anchored, HueOf(harness.Engine.Render())) <= HueTolerance);
+    double anchored = harness.SettledHue(9);
+    Assert.True(Separation(anchored, before) > HueTolerance, "The anchored bar is bar one, so it takes a colour.");
 
     // Two bars on from the new anchor, and not two bars on from the old one. Index 13 is
     // one bar past 9 and must be quiet; 17 is two and must change.
-    double oneBarOn = harness.SettledHue(index: 13, positionInBar: 1);
-    Assert.True(Separation(oneBarOn, before) <= HueTolerance, "One bar after the anchor is not a change.");
+    double oneBarOn = harness.SettledHue(13);
+    Assert.True(Separation(oneBarOn, anchored) <= HueTolerance, "One bar after the anchor is not a change.");
 
-    double twoBarsOn = harness.SettledHue(index: 17, positionInBar: 1);
+    double twoBarsOn = harness.SettledHue(17);
     Assert.True(Separation(twoBarsOn, oneBarOn) > HueTolerance, "Two bars after the anchor is a change.");
   }
 
   /// <summary>
-  /// An alignment that drops out and returns on the same phase is the same anchor.
-  /// Restarting the cycle every time a source went quiet for a moment would put the
-  /// colour changes wherever the dropouts happened to fall.
+  /// The press that was missed until 2026-09-24: on a beat that is already a downbeat,
+  /// but in a bar of the cycle that does not change colour. Nothing about the bar's
+  /// phase moves, so an engine inferring the anchor from the downbeats it sees has no
+  /// way to notice it - the readout said bar one and the colours kept the old count.
+  /// </summary>
+  [Fact]
+  public void AnchoringOnADownbeatMidCycleRestartsTheCycleToo() {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
+
+    harness.SettledHue(0);
+    double quiet = harness.SettledHue(4);
+
+    // Bar 3 of the old count, which would not have changed.
+    harness.Anchor(12, harness.Clock.NowMicros);
+
+    double anchored = harness.SettledHue(12);
+    Assert.True(Separation(anchored, quiet) > HueTolerance, "The anchored bar takes a colour.");
+
+    // Bar 4 of the old count would have changed; it is bar 1 of the new one.
+    double oneBarOn = harness.SettledHue(16);
+    Assert.True(Separation(oneBarOn, anchored) <= HueTolerance, "One bar after the anchor is not a change.");
+
+    double twoBarsOn = harness.SettledHue(20);
+    Assert.True(Separation(twoBarsOn, oneBarOn) > HueTolerance, "Two bars after the anchor is a change.");
+  }
+
+  /// <summary>
+  /// A press a hair after the kick rounds to the beat that just played, and that beat
+  /// has already been rendered carrying the old count. Waiting for the count would put
+  /// the answer a bar later; the colour changes on the next frame instead.
+  /// </summary>
+  [Fact]
+  public void APressJustAfterTheBeatChangesTheColourOnTheNextFrame() {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
+
+    harness.SettledHue(0);
+    double beat = harness.Clock.NowMicros;
+    double quiet = harness.SettledHue(4);
+
+    harness.Anchor(4, beat);
+
+    double answered = harness.Settle();
+    Assert.True(Separation(answered, quiet) > HueTolerance, "The press is answered without waiting for a beat.");
+
+    double oneBarOn = harness.SettledHue(8);
+    Assert.True(Separation(oneBarOn, answered) <= HueTolerance, "One bar after the anchor is not a change.");
+
+    double twoBarsOn = harness.SettledHue(12);
+    Assert.True(Separation(twoBarsOn, oneBarOn) > HueTolerance, "Two bars after the anchor is a change.");
+  }
+
+  /// <summary>
+  /// A positive offset runs the frame path ahead of the clock, so the anchored moment
+  /// passes on the frame path before its beat has arrived. Answering on the clock would
+  /// change the colour there and again when the beat landed; the answer waits for the beat.
+  /// </summary>
+  [Fact]
+  public void AnEarlyPressUnderAPositiveOffsetWaitsForItsBeat() {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0), offsetMs: 400);
+
+    double before = harness.SettledHue(0);
+
+    harness.Anchor(4, harness.Clock.NowMicros + (300 * 1000.0));
+
+    double first = HueOf(harness.Engine.Render());
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(100));
+    double second = HueOf(harness.Engine.Render());
+
+    Assert.True(Separation(first, before) <= HueTolerance, "Nothing changes before the beat arrives.");
+    Assert.True(Separation(second, first) <= HueTolerance, "Nothing changes before the beat arrives.");
+
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(200));
+    double anchored = harness.SettledHue(4);
+
+    Assert.True(Separation(anchored, before) > HueTolerance, "The anchored beat takes a colour when it lands.");
+  }
+
+  /// <summary>
+  /// A source that goes quiet and comes back does not move the grid's anchor, and the
+  /// beats carry the grid's bar, so the count carries on rather than restarting wherever
+  /// the dropouts happened to fall.
   /// </summary>
   [Fact]
   public void AReAlignmentOnTheSamePhaseLeavesTheCountWhereItWas() {
@@ -366,7 +434,7 @@ public class LightEngineTests {
 
     harness.SettledHue(0);
 
-    double before = harness.SettledHue(index: 4, positionInBar: 1);
+    double before = harness.SettledHue(4);
 
     Assert.True(Separation(before, HueOf(harness.Engine.Render())) <= HueTolerance, "One bar in is not a change.");
   }
@@ -521,7 +589,7 @@ public class LightEngineTests {
     harness.Clock.Advance(TimeSpan.FromSeconds(2));
 
     double due = harness.Clock.NowMicros + (1000.0 * 1000.0);
-    harness.Engine.OnBeat(Beat(index: 4, scheduledMicros: due));
+    harness.Engine.OnBeat(harness.BeatAt(index: 4, scheduledMicros: due));
 
     // 150 ms before the beat is due, which a 100 ms offset does not reach.
     harness.Clock.Advance(TimeSpan.FromMilliseconds(850));
@@ -541,7 +609,7 @@ public class LightEngineTests {
     harness.Clock.Advance(TimeSpan.FromSeconds(2));
 
     double due = harness.Clock.NowMicros + (1000.0 * 1000.0);
-    harness.Engine.OnBeat(Beat(index: 4, scheduledMicros: due));
+    harness.Engine.OnBeat(harness.BeatAt(index: 4, scheduledMicros: due));
 
     // The moment the beat was aimed at, which a negative offset has not reached.
     harness.Clock.Advance(TimeSpan.FromMilliseconds(1000));
@@ -581,7 +649,7 @@ public class LightEngineTests {
 
     for(long index = 0; index < 200; index++) {
       harness.Clock.Advance(TimeSpan.FromMilliseconds(500));
-      harness.Engine.OnBeat(Beat(index, harness.Clock.NowMicros));
+      harness.Engine.OnBeat(harness.BeatAt(index, harness.Clock.NowMicros));
     }
 
     HueColor color = harness.Engine.Render();
@@ -601,7 +669,7 @@ public class LightEngineTests {
     Harness harness = new Harness(new LightSettings(LightPalette.Party, ColorChangeBars: 1, PulseMs: 240));
 
     for(long index = 0; index < 400; index++) {
-      harness.Engine.OnBeat(Beat(index, harness.Clock.NowMicros, positionInBar: (int)(index % 4) + 1));
+      harness.BeatNow(index);
 
       for(int frame = 0; frame < 5; frame++) {
         harness.Clock.Advance(TimeSpan.FromMilliseconds(20));
@@ -740,10 +808,6 @@ public class LightEngineTests {
     return Math.Abs(color.R - level) < 1e-9
       && Math.Abs(color.G - level) < 1e-9
       && Math.Abs(color.B - level) < 1e-9;
-  }
-
-  private static BeatEvent Beat(long index, double scheduledMicros, int positionInBar = 1, bool barAligned = true) {
-    return new BeatEvent(index, positionInBar, barAligned, Bpm: 120, scheduledMicros);
   }
 
   /// <summary>The largest channel of a fully saturated colour, which is its brightness.</summary>
@@ -1277,7 +1341,6 @@ public class LightEngineTests {
         scheduler,
         Bridge,
         Clock,
-        Options.Create(new BeatOptions { Quantum = quantum }),
         Heard,
         NullLogger<LightEngine>.Instance,
         new Random(seed));
@@ -1297,9 +1360,45 @@ public class LightEngineTests {
     /// <summary>Beats to the bar, which the grid and the engine are both built on.</summary>
     internal int Quantum { get; }
 
+    /// <summary>
+    /// The downbeat the harness numbers bars from, as the grid would, or null before
+    /// <see cref="Anchor"/> - when the count runs from beat 0, which is also what the grid
+    /// does before anything anchors it.
+    /// </summary>
+    internal long? AnchorBeat { get; private set; }
+
+    /// <summary>
+    /// A beat as the grid would stamp it: position and bar both counted from the anchor.
+    /// </summary>
+    /// <param name="index">The grid's own beat index, which is absolute and not counted from the anchor.</param>
+    /// <param name="scheduledMicros">The moment the beat is aimed at.</param>
+    /// <param name="barAligned">Whether a downbeat is known at all.</param>
+    internal BeatEvent BeatAt(long index, double scheduledMicros, bool barAligned = true) {
+      long fromAnchor = index - (AnchorBeat ?? 0);
+
+      return new BeatEvent(
+        index,
+        (int)FloorMod(fromAnchor, Quantum) + 1,
+        barAligned,
+        Bpm: 120,
+        scheduledMicros,
+        Bar: (fromAnchor - FloorMod(fromAnchor, Quantum)) / Quantum);
+    }
+
     /// <summary>Delivers a beat aimed at this instant.</summary>
-    internal void BeatNow(long index, int positionInBar = 1, bool barAligned = true) {
-      Engine.OnBeat(Beat(index, Clock.NowMicros, positionInBar, barAligned));
+    internal void BeatNow(long index, bool barAligned = true) {
+      Engine.OnBeat(BeatAt(index, Clock.NowMicros, barAligned));
+    }
+
+    /// <summary>
+    /// Presses anchor: every later beat is stamped from this one, and the engine hears
+    /// where the new downbeat falls, which is what <see cref="BeatGrid.BarAligned"/> does.
+    /// </summary>
+    /// <param name="index">The beat that becomes position 1.</param>
+    /// <param name="downbeatMicros">That beat's moment, which may be past or still to come.</param>
+    internal void Anchor(long index, double downbeatMicros) {
+      AnchorBeat = index;
+      Engine.OnBarAligned(downbeatMicros);
     }
 
     /// <summary>
@@ -1311,13 +1410,14 @@ public class LightEngineTests {
     /// </summary>
     /// <param name="index">The grid's own beat index, which is absolute and not counted from the anchor.</param>
     /// <param name="barAligned">Whether a downbeat is known at all.</param>
-    /// <param name="positionInBar">
-    /// Overrides the position the index would imply, which is what a re-anchor looks
-    /// like from here: the grid renumbers the bar under a beat whose index does not
-    /// move, so a test for anchoring has to be able to say so.
-    /// </param>
-    internal double SettledHue(long index, bool barAligned = true, int? positionInBar = null) {
-      BeatNow(index, positionInBar: positionInBar ?? (barAligned ? (int)FloorMod(index, Quantum) + 1 : 1), barAligned);
+    internal double SettledHue(long index, bool barAligned = true) {
+      BeatNow(index, barAligned);
+
+      return Settle();
+    }
+
+    /// <summary>Renders, lets the transition finish, and reads the hue it landed on.</summary>
+    internal double Settle() {
       Engine.Render();
 
       Clock.Advance(TimeSpan.FromSeconds(2));

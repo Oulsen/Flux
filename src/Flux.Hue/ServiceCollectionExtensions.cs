@@ -66,7 +66,6 @@ public static class ServiceCollectionExtensions {
       provider.GetRequiredService<BeatScheduler>(),
       provider.GetRequiredService<HueBridgeService>(),
       provider.GetRequiredService<IMonotonicClock>(),
-      provider.GetRequiredService<IOptions<BeatOptions>>(),
       provider.GetService<IAudioSpectrum>(),
       provider.GetRequiredService<ILogger<LightEngine>>()));
     services.AddSingleton<ILightSource>(provider => provider.GetRequiredService<LightEngine>());

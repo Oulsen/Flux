@@ -251,6 +251,66 @@ public class BeatGridTests {
     Assert.Equal(4, grid.PositionOf(8).PositionInBar);
     Assert.Equal(1, grid.PositionOf(9).PositionInBar);
     Assert.Equal(4, grid.PositionOf(4).PositionInBar);
+
+    // Bars too, floored, so the beats just before the anchor are the bar before it.
+    Assert.Equal(0, grid.PositionOf(5).Bar);
+    Assert.Equal(0, grid.PositionOf(8).Bar);
+    Assert.Equal(1, grid.PositionOf(9).Bar);
+    Assert.Equal(-1, grid.PositionOf(4).Bar);
+    Assert.Equal(-1, grid.PositionOf(1).Bar);
+    Assert.Equal(-2, grid.PositionOf(0).Bar);
+  }
+
+  /// <summary>
+  /// The light engine answers a press on the beat it was meant for, and a press usually
+  /// lands after that beat has fired, so the grid says where the new downbeat falls
+  /// rather than leaving it to be noticed on the next one.
+  /// </summary>
+  [Fact]
+  public void AnAlignmentSaysWhereTheNewDownbeatFallsAndOnlyWhenItMoved() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+    List<double> reported = [];
+    grid.BarAligned += reported.Add;
+
+    grid.Apply(AtOneTwenty);
+
+    // 2.5 s at 120 BPM is exactly beat 5, and a press 100 ms later still rounds to it.
+    clock.Advance(TimeSpan.FromSeconds(2.5));
+    double beatFive = clock.NowMicros;
+    clock.Advance(TimeSpan.FromMilliseconds(100));
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Tap));
+
+    Assert.Equal([beatFive], reported);
+
+    // The same beat again moves nothing, so there is nothing to answer.
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Tap));
+    Assert.Single(reported);
+  }
+
+  /// <summary>
+  /// A drop within half a bar of the anchor only confirms it, which is not reported; one
+  /// a whole bar on moves bar one by that bar without rotating it, which is, because it
+  /// restarts the bar count the light engine's colour cycle runs on.
+  /// </summary>
+  [Fact]
+  public void ADropIsReportedOnlyWhenItMovesBarOne() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+    List<double> reported = [];
+
+    grid.Apply(AtOneTwenty);
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Tap));
+    grid.BarAligned += reported.Add;
+
+    clock.Advance(TimeSpan.FromMilliseconds(500));
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Drop, snapToBar: true));
+    Assert.Empty(reported);
+
+    // Beat 4, a bar after the tap.
+    clock.Advance(TimeSpan.FromMilliseconds(1500));
+    Assert.True(grid.TryAlignBar(BarAlignmentMethod.Drop, snapToBar: true));
+    Assert.Equal([clock.NowMicros], reported);
   }
 
   /// <summary>

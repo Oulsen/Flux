@@ -1347,9 +1347,13 @@ four times a bar.
 one, and it takes a colour. Anchoring means "this is bar one", and it has to mean
 that for everything the bar count drives or it only half means it - before this the
 count ran from wherever the source's numbering happened to start, so anchoring
-moved the beat indicator and left the colours changing on the old phase. Re-anchoring
-onto the same phase changes nothing, so a source that goes quiet for a moment does
-not restart the cycle. How long a bar is comes from the same `quantum` the `hello`
+moved the beat indicator and left the colours changing on the old phase. A press
+restarts the cycle even on a beat that was already a downbeat, and a press a hair
+after the kick, which names a beat that has already been lit, is answered on the next
+frame rather than a bar later. A drop only ever moves bar one by whole bars, so it
+restarts the cycle when it lands a bar or more from the anchor and changes nothing
+when it only confirms it. A source going quiet does not touch the anchor, so it does
+not restart the cycle either. How long a bar is comes from the same `quantum` the `hello`
 frame carries - four by default, and the engine has no separate opinion about it.
 Where no downbeat is known - `alignment.method` of `none` - it falls back to every
 `quantum x n`-th beat from wherever the numbering starts, because changing on a

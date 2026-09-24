@@ -54,7 +54,13 @@ public readonly record struct BeatGridSnapshot(
 /// </summary>
 /// <param name="PositionInBar">1-based position within the quantum.</param>
 /// <param name="IsAligned">False while the count has an arbitrary starting point.</param>
-public readonly record struct BarPosition(int PositionInBar, bool IsAligned);
+/// <param name="Bar">
+/// Which bar the beat is in, counted from the anchor so the anchored bar is bar 0, or from
+/// beat 0 while unaligned. Carried so that anything counting bars - the light engine's
+/// colour changes - counts from the same downbeat the readout shows, rather than working
+/// out for itself whether the anchor moved.
+/// </param>
+public readonly record struct BarPosition(int PositionInBar, bool IsAligned, long Bar);
 
 /// <summary>
 /// A newly published tempo, and what adopting it did to the beat numbering.
@@ -123,6 +129,21 @@ public sealed class BeatGrid {
 
   /// <summary>Raised on the first accepted packet, and again after every tempo change.</summary>
   public event Action<TempoChange>? TempoChanged;
+
+  /// <summary>
+  /// Raised when an alignment moves the downbeat, with the local timestamp of the beat
+  /// that is now position 1.
+  ///
+  /// The bar number on each beat event is not enough on its own, because an alignment is
+  /// usually late for its own beat: a press rounds to the nearest beat, and a press a hair
+  /// after the kick names a beat that has already fired carrying the old bar. Whoever
+  /// wants to answer the press on the beat it meant needs to hear about it directly.
+  ///
+  /// Not raised when nothing moved - a press on the beat already anchored, or a drop that
+  /// only confirmed the bar - since a restart answering a no-op would be a visible change
+  /// with no cause.
+  /// </summary>
+  public event Action<double>? BarAligned;
 
   /// <summary>
   /// Adopts a freshly received timeline.
@@ -251,14 +272,17 @@ public sealed class BeatGrid {
   /// </param>
   /// <returns>False when no timeline is known yet, so there is no beat to anchor to.</returns>
   public bool TryAlignBar(BarAlignmentMethod method, bool snapToBar = false) {
+    double? movedTo;
+
     lock(this.gate) {
       if(this.timeline is not BeatTimeline known) {
         return false;
       }
 
       long beat = (long)Math.Round(known.BeatAt(this.clock.NowMicros));
+      long? previous = this.barAnchorBeat;
 
-      if(snapToBar && this.barAnchorBeat is { } anchor) {
+      if(snapToBar && previous is { } anchor) {
         // Rounded rather than floored, so a drop landing late in a bar belongs to the bar
         // it is closer to rather than always to the one it is inside.
         long bars = (long)Math.Round((beat - anchor) / (double)this.quantum);
@@ -268,14 +292,19 @@ public sealed class BeatGrid {
         // The method is left alone on purpose. Nothing about where the bar falls has
         // changed, so the downbeat still came from whatever supplied it, and relabelling
         // a cue press as a drop would put a wrong answer on screen to describe a no-op.
-        return true;
+      } else {
+        this.barAnchorBeat = beat;
+        this.alignmentMethod = method;
       }
 
-      this.barAnchorBeat = beat;
-      this.alignmentMethod = method;
-
-      return true;
+      movedTo = this.barAnchorBeat == previous ? null : known.MicrosOfBeat(this.barAnchorBeat.Value);
     }
+
+    if(movedTo is { } micros) {
+      this.BarAligned?.Invoke(micros);
+    }
+
+    return true;
   }
 
   /// <summary>
@@ -346,9 +375,19 @@ public sealed class BeatGrid {
   /// tap or not at all.
   /// </summary>
   private BarPosition PositionWhileLocked(long beatIndex) {
+    long fromAnchor = beatIndex - (this.barAnchorBeat ?? 0);
+
+    // Floored, for the same reason the position is normalised: beats before the anchor
+    // belong to bar -1 and not to a second bar 0.
+    long bar = fromAnchor / this.quantum;
+    if(fromAnchor % this.quantum < 0) {
+      bar--;
+    }
+
     return new BarPosition(
-      PositionInBar(beatIndex - (this.barAnchorBeat ?? 0), this.quantum),
-      this.barAnchorBeat is not null);
+      PositionInBar(fromAnchor, this.quantum),
+      this.barAnchorBeat is not null,
+      bar);
   }
 
   /// <summary>
