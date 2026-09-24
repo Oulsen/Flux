@@ -94,3 +94,13 @@ jobs:
 
       - name: Test Flux.Web.Server
         run: dotnet run --no-build --project tests/Flux.Web.Server.Tests
+
+      # Nothing here reaches a bridge: the fakes stand in for it, and the light engine
+      # is tested through the colours it returns.
+      - name: Test Flux.Hue
+        run: dotnet run --no-build --project tests/Flux.Hue.Tests
+
+      # Nothing here opens a window, a WebView2 or a console: the launch flag and the
+      # log's retention are what the shell decides, and the rest is verified by use.
+      - name: Test Flux.App
+        run: dotnet run --no-build --project tests/Flux.App.Tests

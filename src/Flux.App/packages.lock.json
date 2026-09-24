@@ -32,6 +32,12 @@
           "Microsoft.Extensions.Options": "10.0.11"
         }
       },
+      "Microsoft.Web.WebView2": {
+        "type": "Direct",
+        "requested": "[1.0.4022.49, )",
+        "resolved": "1.0.4022.49",
+        "contentHash": "Dwewh8bbbXoFiF2y0jT3MBEV5ZXZVA7FDbMl6DixUCCLQAoymLMxMwqibdBaY/eWCG/BBSAILUOFDIzJZ9lfNQ=="
+      },
       "HueApi": {
         "type": "Transitive",
         "resolved": "3.3.0",
@@ -262,8 +268,7 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.11",
           "Microsoft.Extensions.Logging": "10.0.11",
           "Microsoft.Extensions.Logging.Abstractions": "10.0.11",
-          "Microsoft.Extensions.Options": "10.0.11",
-          "System.Diagnostics.EventLog": "10.0.11"
+          "Microsoft.Extensions.Options": "10.0.11"
         }
       },
       "Microsoft.Extensions.Logging.EventSource": {
@@ -322,21 +327,11 @@
         "resolved": "1.9.0",
         "contentHash": "eZZBCABzVOek+id9Xy04HhmgykF0wZg9wpByzrWN7q8qEI0Qen9b7tfd7w8VA3dOeesumMG7C5ZPy0jk7PSRHw=="
       },
-      "System.Diagnostics.EventLog": {
-        "type": "Transitive",
-        "resolved": "10.0.11",
-        "contentHash": "QTXEoQBzz00SFWbo7nAg1Ogd4f99lwqcO9uAJ7MYSLEUR28f6As32QktrqG2Fr9cfAfd1GjLyGYspE7Ipj7P6w=="
-      },
-      "System.Security.Cryptography.ProtectedData": {
-        "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "wO0W8VDMeRJZakRySOmemAnrBZMwEFRlbfBtATxUiLf2I3IhSRnCp1Vt157NWptdE4IJ7eftd5n8q9LtaKHFTQ=="
-      },
       "flux.audio": {
         "type": "Project",
         "dependencies": {
-          "Flux.Audio.Contract": "[0.3.0, )",
-          "Flux.Beat": "[0.3.0, )",
+          "Flux.Audio.Contract": "[0.4.0, )",
+          "Flux.Beat": "[0.4.0, )",
           "NAudio.Wasapi": "[2.2.1, )"
         }
       },
@@ -354,26 +349,25 @@
       "flux.hue": {
         "type": "Project",
         "dependencies": {
-          "Flux.Audio.Contract": "[0.3.0, )",
-          "Flux.Beat": "[0.3.0, )",
+          "Flux.Audio.Contract": "[0.4.0, )",
+          "Flux.Beat": "[0.4.0, )",
           "HueApi": "[3.3.0, )",
           "HueApi.ColorConverters": "[3.3.0, )",
-          "HueApi.Entertainment": "[3.3.0, )",
-          "System.Security.Cryptography.ProtectedData": "[10.0.12, )"
+          "HueApi.Entertainment": "[3.3.0, )"
         }
       },
       "flux.midi": {
         "type": "Project",
         "dependencies": {
-          "Flux.Beat": "[0.3.0, )"
+          "Flux.Beat": "[0.4.0, )"
         }
       },
       "flux.web.server": {
         "type": "Project",
         "dependencies": {
-          "Flux.Audio.Contract": "[0.3.0, )",
-          "Flux.Beat": "[0.3.0, )",
-          "Flux.Hue": "[0.3.0, )"
+          "Flux.Audio.Contract": "[0.4.0, )",
+          "Flux.Beat": "[0.4.0, )",
+          "Flux.Hue": "[0.4.0, )"
         }
       }
     }

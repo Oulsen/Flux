@@ -178,37 +178,33 @@ public static class WebHostExtensions {
   }
 
   /// <summary>
-  /// Runs the host, and turns the one startup failure that is genuinely likely
+  /// Starts the host, and turns the one startup failure that is genuinely likely
   /// into a sentence.
   ///
-  /// A port already in use is not an edge case here: launching Flux twice is the
-  /// obvious way to meet it, and a stock Windows 11 already listens on some of
-  /// the plausible ports. Unhandled, it arrives as forty lines of Kestrel stack
-  /// trace whose actual content is "something else has the port".
+  /// A port already in use is not an edge case here: a stock Windows 11 already
+  /// listens on some of the plausible ports, and another program can take this one
+  /// at any time. Unhandled, it arrives as forty lines of Kestrel stack trace whose
+  /// actual content is "something else has the port".
+  ///
+  /// Started rather than run, because the host is no longer the thing the process
+  /// waits on: the desktop shell's message loop is, and it decides when to stop.
   /// </summary>
-  /// <returns>A process exit code.</returns>
-  public static async Task<int> RunFluxAsync(this WebApplication app) {
+  /// <exception cref="FluxStartupException">The port is taken, with the sentence that says so.</exception>
+  public static async Task StartFluxAsync(this WebApplication app) {
     ArgumentNullException.ThrowIfNull(app);
 
-    // Read before the run, not inside the catch. A failed start disposes the
-    // service provider on its way out, so a lookup afterwards throws
+    // Read before the start, not inside the catch. A failed start can leave the
+    // service provider disposed, so a lookup afterwards throws
     // ObjectDisposedException and buries the very cause this exists to report.
     int port = app.Services.GetRequiredService<IOptions<WebOptions>>().Value.Port;
 
     try {
-      await app.RunAsync().ConfigureAwait(false);
-      return 0;
+      await app.StartAsync().ConfigureAwait(false);
     } catch(IOException ex) when(ex.InnerException is AddressInUseException) {
-      // Written to the console rather than logged, for the same reason: the
-      // logging providers are being torn down alongside everything else, and a
-      // fatal startup message that might not be delivered is worth nothing.
-      Console.Error.WriteLine();
-      Console.Error.WriteLine(
-        $"Port {port} is already in use, so Flux has no web interface and has stopped.");
-      Console.Error.WriteLine(
-        "Another copy of Flux may already be running. Otherwise set Web:Port in appsettings.json to a free port.");
-
-      return 1;
+      throw new FluxStartupException(
+        $"Port {port} is already in use, so Flux has no web interface and has stopped. "
+          + "Another program may be using it: set Web:Port in appsettings.json to a free port.",
+        ex);
     }
   }
 

@@ -1,0 +1,12 @@
+{
+  "name": "flux-branding",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build-ico": "node build-ico.mjs"
+  },
+  "devDependencies": {
+    "png-to-ico": "2.1.8",
+    "sharp": "0.33.5"
+  }
+}

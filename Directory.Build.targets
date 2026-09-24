@@ -1,0 +1,19 @@
+<Project>
+
+  <!-- The WebView2 package references its WPF control on every .NET 5+ target, with no
+       switch to turn that off, and the WPF assembly asks for a WindowsBase that a
+       WinForms app does not have: MSB3277, which -warnaserror makes a build failure.
+       Dropped before references resolve rather than answered with UseWPF, which would
+       bring the whole WPF framework into an app that has no WPF in it.
+
+       Here rather than in Flux.App, because the package's build logic is transitive:
+       every project that references the app inherits the same reference and the same
+       failure, starting with its tests. A project without the package has nothing to
+       remove, so this does nothing there. -->
+  <Target Name="DropWebView2Wpf" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
+
+</Project>

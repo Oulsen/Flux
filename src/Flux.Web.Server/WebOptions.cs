@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace Flux.Web.Server;
 
 /// <summary>
@@ -66,4 +68,21 @@ public sealed class WebOptions {
   /// is the right end to drop from.
   /// </summary>
   public int ClientQueueCapacity { get; set; } = 32;
+
+  /// <summary>
+  /// The address this machine opens its own page on, which is what the desktop
+  /// window loads.
+  ///
+  /// The IPv4 loopback rather than <c>localhost</c>, because the wildcard bind is
+  /// IPv4 and Windows resolves <c>localhost</c> to <c>::1</c> first: the window would
+  /// try the address nothing listens on, wait, and only then fall back. A specific
+  /// bind address is the one address that works, loopback or not.
+  /// </summary>
+  public Uri LocalPageUri() {
+    IPAddress bound = IPAddress.Parse(this.BindAddress);
+
+    IPAddress local = bound.Equals(IPAddress.Any) ? IPAddress.Loopback : bound;
+
+    return new UriBuilder(Uri.UriSchemeHttp, local.ToString(), this.Port, "/").Uri;
+  }
 }

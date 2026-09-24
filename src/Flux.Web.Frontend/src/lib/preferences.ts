@@ -1,18 +1,32 @@
 /*
  * What this device wants the page to look like, remembered between visits.
  *
- * Deliberately per device and never on the server, and deliberately down to one thing.
+ * Deliberately per device and never on the server, and deliberately kept to what is
+ * about the device rather than about the show.
  *
  * How the stage *looks* started out here and moved to the server, because the look is
  * part of the show: it is set by whoever is standing at the page, and it should be the
- * same on the laptop and on the phone in somebody's hand. What is left is the switch
- * that argument never covered - whether this device draws a canvas at all is a fact
- * about this device, and syncing it would let the booth laptop blank the visualizer on
- * somebody's handset.
+ * same on the laptop and on the phone in somebody's hand. What is left is what that
+ * argument never covered. Whether this device draws a canvas at all is a fact about
+ * this device, and syncing it would let the booth laptop blank the visualizer on
+ * somebody's handset. Which settings tab it last had open is the same kind of fact:
+ * the laptop living on setup says nothing about the phone that only ever wants show.
  */
 
 /** Whether the stage is drawn. Namespaced, because a browser origin is shared. */
 const STAGE_KEY = 'flux.stage';
+
+/** Which settings tab was open last. */
+const DRAWER_TAB_KEY = 'flux.drawerTab';
+
+/**
+ * The settings drawer's tabs, grouped by how often they are touched rather than by
+ * what they configure: show is reached for with music playing, stage now and then,
+ * setup once and then rarely.
+ */
+export const DRAWER_TABS = ['show', 'stage', 'setup'] as const;
+
+export type DrawerTab = (typeof DRAWER_TABS)[number];
 
 /**
  * The part of `Storage` this module uses, so a test can supply one.
@@ -42,6 +56,22 @@ export function readStageOn(storage: PreferenceStore | null): boolean {
 /** Remembers the choice, or silently does not. */
 export function writeStageOn(storage: PreferenceStore | null, on: boolean): void {
   write(storage, STAGE_KEY, on ? 'on' : 'off');
+}
+
+/**
+ * The tab the drawer opens on. Show when nothing was remembered, or when what was
+ * remembered is not a tab this page has - a key from another version, most likely -
+ * because show is the tab the page is open for.
+ */
+export function readDrawerTab(storage: PreferenceStore | null): DrawerTab {
+  const saved = read(storage, DRAWER_TAB_KEY);
+
+  return DRAWER_TABS.find((tab) => tab === saved) ?? 'show';
+}
+
+/** Remembers the tab, or silently does not. */
+export function writeDrawerTab(storage: PreferenceStore | null, tab: DrawerTab): void {
+  write(storage, DRAWER_TAB_KEY, tab);
 }
 
 /*

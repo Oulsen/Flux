@@ -61,3 +61,38 @@ body {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
 }
+
+/*
+ * Slim scrollbars without a track, as in Clowder: the thumb is the ink at a low
+ * strength and firms up under the pointer. A default scrollbar is a light grey bar the
+ * height of the drawer, which on a page built dark for a dark room is the brightest
+ * thing beside the stage.
+ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ink) 28%, transparent);
+}
+
+/* Firefox, which has no pseudo-elements for this and takes the standard properties
+   instead. Only where those pseudo-elements are missing: Chromium honours both, and
+   the standard ones, when set, switch its own styling above off. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--ink) 14%, transparent) transparent;
+  }
+}

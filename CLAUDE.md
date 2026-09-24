@@ -51,8 +51,9 @@ numbers nobody has ever heard.
   `dotnet run --project tests/Flux.Beat.Tests`,
   `dotnet run --project tests/Flux.Audio.Tests`,
   `dotnet run --project tests/Flux.Midi.Tests`,
-  `dotnet run --project tests/Flux.Web.Server.Tests` and
-  `dotnet run --project tests/Flux.Hue.Tests`.
+  `dotnet run --project tests/Flux.Web.Server.Tests`,
+  `dotnet run --project tests/Flux.Hue.Tests` and
+  `dotnet run --project tests/Flux.App.Tests`.
 - Frontend checks, from `src/Flux.Web.Frontend`: `npm run check`
   (svelte-check) and `npm test` (node --test). Both must pass; `npm run check`
   is the frontend's only type gate.
@@ -62,6 +63,12 @@ numbers nobody has ever heard.
   A skip there is not a broken suite. Recordings are made by running with
   `Audio:RecordAudioPath` and `Audio:RecordFramesPath` set, and a new take
   needs a new filename, since both recorders truncate.
+- `Flux.App` is a window application. Its log is in
+  `%LOCALAPPDATA%\Flux\logs`, and `--console` (after `--` under `dotnet run`)
+  prints it to the terminal too. Only one copy runs per Windows session: a
+  second launch shows the first one's window and exits with code 0 at once, which
+  looks like a start that quietly died. Check `tasklist` for a running `Flux.exe`
+  before reading anything into that.
 - After C# edits are complete, run
   `dotnet format style --severity warn --verbosity quiet` (this repo opts in;
   it strips unused usings), then build, then run the tests.

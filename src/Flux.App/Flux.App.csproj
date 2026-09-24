@@ -1,10 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Windows-specific from the start, even as a plain console host: this process
-       raises the multimedia timer resolution and opts out of background timer
-       throttling, and Phase 5 grows it into the WinForms + WebView2 shell. The
-       Windows-specific target is what makes the platform analyzers useful rather
-       than noisy.
+  <!-- Windows-specific from the start: this process raises the multimedia timer
+       resolution, opts out of background timer throttling, and is the WinForms +
+       WebView2 shell. The Windows-specific target is what makes the platform
+       analyzers useful rather than noisy.
 
        The Windows version is not a choice made here. Flux.Midi needs it for the
        WinRT MIDI projection, and a project cannot reference one that targets a
@@ -13,19 +12,36 @@
        net10.0 and Flux.Audio on net10.0-windows: a higher target can reference a
        lower one, so the cascade stops here rather than spreading through the
        solution. -->
+  <!-- A window application and no longer a console one: the console was the thing
+       closed to quit, which also cut the Hue stream mid-frame. The console flag
+       brings one back for development (see LaunchOptions). -->
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <RootNamespace>Flux.App</RootNamespace>
     <AssemblyName>Flux</AssemblyName>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Native rendering at each monitor's own DPI. The default, SystemAware, has
+         Windows stretch the whole WebView2 surface as a bitmap on a 125% or 150%
+         display, which blurs every line of text in the page. -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!-- Embedded for Explorer and a pinned taskbar button. The window and the tray load
+         the same file from beside the executable instead, which keeps every size cut. -->
+    <ApplicationIcon>..\..\assets\branding\flux.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <InternalsVisibleTo Include="Flux.App.Tests" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4022.49" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\assets\branding\flux.ico" Link="flux.ico" CopyToOutputDirectory="PreserveNewest" />
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="appsettings.local.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
