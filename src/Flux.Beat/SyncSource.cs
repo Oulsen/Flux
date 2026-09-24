@@ -104,7 +104,8 @@ public interface ITimelineSink {
   /// <param name="newSession">
   /// True when the beat numbering was rebased rather than merely re-anchored: a
   /// Link session change, an audio drop, a tap that sets a new phase. Anything
-  /// anchored to a beat index has to re-arm when this is set.
+  /// anchored to a beat index has to be moved by the shift when this is set, which the
+  /// grid does for the bar anchor.
   /// </param>
   void Publish(BeatTimeline timeline, bool newSession = false);
 
@@ -136,5 +137,10 @@ public interface ITimelineSink {
   /// transmits a downbeat.
   /// </summary>
   /// <param name="method">What supplied the downbeat, for the UI to show.</param>
-  void AlignBar(BarAlignmentMethod method);
+  /// <param name="snapToBar">
+  /// Whether this is a guess that defers to a bar already known, rather than a statement
+  /// that this beat is position one. True for the drop detector and for nothing else -
+  /// the argument is on <see cref="BeatGrid.TryAlignBar"/>.
+  /// </param>
+  void AlignBar(BarAlignmentMethod method, bool snapToBar = false);
 }

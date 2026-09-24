@@ -308,14 +308,84 @@ public class SyncSourceManagerTests {
     Assert.Empty(manager.Sources());
   }
 
+  /// <summary>
+  /// The source last chosen from the page outranks <c>Beat:DefaultSource</c>, which is
+  /// the answer for a machine nobody has told otherwise.
+  ///
+  /// Found by using it on 2026-09-11: a restart put the grid back on Link, Link publishes
+  /// a timeline and nothing else, and with rekordbox closed there were no beats at all -
+  /// so a room whose lights sat perfectly still looked like a broken light engine rather
+  /// than like a source nobody had selected.
+  /// </summary>
+  [Fact]
+  public void StartsOnTheSourceLastChosenRatherThanTheConfiguredDefault() {
+    FakeBeatSettingsStore store = new FakeBeatSettingsStore(new BeatSettings("manual"));
+    SyncSourceManager manager = NewManager(NewGrid(new FakeClock()), defaultSource: "link", store);
+
+    manager.Register(new FakeSource("link"));
+    manager.Register(new FakeSource("manual"));
+
+    Assert.Equal("manual", manager.ActiveSource);
+  }
+
+  /// <summary>
+  /// A remembered name that no longer matches anything registered falls through to the
+  /// configured default rather than leaving the grid on nothing. A preference for a
+  /// source a build no longer has is still only a preference.
+  /// </summary>
+  [Fact]
+  public void FallsBackToTheDefaultWhenTheRememberedSourceIsGone() {
+    FakeBeatSettingsStore store = new FakeBeatSettingsStore(new BeatSettings("audio"));
+    SyncSourceManager manager = NewManager(NewGrid(new FakeClock()), defaultSource: "link", store);
+
+    manager.Register(new FakeSource("manual"));
+    manager.Register(new FakeSource("link"));
+
+    Assert.Equal("link", manager.ActiveSource);
+  }
+
+  [Fact]
+  public void RemembersASourceAsItIsSelectedAndNotOnEveryCall() {
+    FakeBeatSettingsStore store = new FakeBeatSettingsStore(BeatSettings.Empty);
+    SyncSourceManager manager = NewManager(NewGrid(new FakeClock()), defaultSource: "link", store);
+
+    manager.Register(new FakeSource("link"));
+    manager.Register(new FakeSource("manual"));
+
+    Assert.True(manager.TrySelect("manual"));
+    Assert.Equal("manual", store.Saved?.Source);
+
+    // Re-selecting what is already active is not a choice and must not cost a write.
+    store.Writes = 0;
+    Assert.True(manager.TrySelect("manual"));
+    Assert.Equal(0, store.Writes);
+  }
+
   private static BeatGrid NewGrid(IMonotonicClock clock) {
     return new BeatGrid(clock, quantum: 4, TimeSpan.FromSeconds(2.5));
   }
 
-  private static SyncSourceManager NewManager(BeatGrid grid, string defaultSource) {
+  /// <summary>A settings store that touches no disk, so a test cannot move a real preference.</summary>
+  private sealed class FakeBeatSettingsStore(BeatSettings initial): IBeatSettingsStore {
+    internal BeatSettings? Saved { get; private set; }
+
+    internal int Writes { get; set; }
+
+    public BeatSettings Load() {
+      return initial;
+    }
+
+    public void Save(BeatSettings settings) {
+      Saved = settings;
+      Writes++;
+    }
+  }
+
+  private static SyncSourceManager NewManager(BeatGrid grid, string defaultSource, IBeatSettingsStore? settings = null) {
     return new SyncSourceManager(
       grid,
       Options.Create(new BeatOptions { DefaultSource = defaultSource }),
+      settings,
       NullLogger<SyncSourceManager>.Instance);
   }
 

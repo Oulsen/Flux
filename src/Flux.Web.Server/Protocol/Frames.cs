@@ -19,8 +19,15 @@ public static class Frames {
   /// for a change an existing client could misread - a removed or renamed field,
   /// a changed unit, a changed meaning. Adding a message type or a field does
   /// not count.
+  ///
+  /// Moved to 2 when the light engine started sending a colour per light. Nothing was
+  /// removed and nothing was renamed, so this is the third case: <c>state.light.color</c>
+  /// was the colour every light had been sent and is now the colour before each light's
+  /// own band is applied. A version 1 page would keep drawing it and would keep looking
+  /// correct while being slightly brighter than the room, which is the failure this
+  /// number exists to turn into a refusal.
   /// </summary>
-  public const int Version = 1;
+  public const int Version = 2;
 
   /// <summary>
   /// Longest inbound message accepted, in bytes. Version 1's largest client
@@ -58,6 +65,10 @@ public static class Frames {
 
   public static ReadOnlyMemory<byte> Hue(HueData hue) {
     return Encode("hue", hue, ProtocolJson.Default.EnvelopeHueData);
+  }
+
+  public static ReadOnlyMemory<byte> Stage(StageData stage) {
+    return Encode("stage", stage, ProtocolJson.Default.EnvelopeStageData);
   }
 
   public static ReadOnlyMemory<byte> Pong(long t) {
@@ -208,18 +219,63 @@ public static class Frames {
   /// with the name quoted - which this cannot produce and the caller can.
   /// </summary>
   public static bool TryReadLightSettings(JsonElement data, out HueEngineData engine) {
-    engine = new HueEngineData(string.Empty, 0, 0, 0, 0);
+    engine = new HueEngineData(string.Empty, 0, 0, 0, 0, 1, string.Empty, false, 0);
 
     if(data.ValueKind != JsonValueKind.Object
       || !TryReadString(data, "palette", out string palette)
       || !TryReadInt(data, "colorChangeBars", out int bars)
       || !TryReadInt(data, "pulseMs", out int pulseMs)
       || !TryReadInt(data, "brightness", out int brightness)
-      || !TryReadInt(data, "pulseDepth", out int pulseDepth)) {
+      || !TryReadInt(data, "pulseDepth", out int pulseDepth)
+      || !TryReadInt(data, "colorCount", out int colorCount)
+      || !TryReadString(data, "colorLayout", out string colorLayout)
+      || !TryReadBool(data, "strobe", out bool strobe)
+      || !TryReadInt(data, "strobeCycle", out int strobeCycle)) {
       return false;
     }
 
-    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth);
+    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth, colorCount, colorLayout, strobe, strobeCycle);
+    return true;
+  }
+
+  /// <summary>
+  /// Reads a <c>strobe</c> payload: whether the sender's finger is on the button.
+  ///
+  /// A boolean rather than two message types, because press and release are one fact
+  /// changing, and a page repeating its press to keep a hold alive is sending the same
+  /// fact again rather than pressing twice.
+  /// </summary>
+  public static bool TryReadStrobe(JsonElement data, out bool held) {
+    held = false;
+
+    return data.ValueKind == JsonValueKind.Object
+      && TryReadBool(data, "held", out held);
+  }
+
+  /// <summary>
+  /// Reads a complete statement of how the stage should look.
+  ///
+  /// Every field required, on the argument the light settings run on: a page that could
+  /// send a shape alone would be relying on the server for the rest, and two pages doing
+  /// that at once produce a look neither chose.
+  ///
+  /// The three names come back as the strings they arrived as. Whether they name
+  /// anything is not a question about shape, and its answer is <c>rejected</c> with the
+  /// offending name quoted - which this cannot produce and the caller can.
+  /// </summary>
+  public static bool TryReadStage(JsonElement data, out StageData stage) {
+    stage = new StageData(string.Empty, string.Empty, string.Empty, 0, 0);
+
+    if(data.ValueKind != JsonValueKind.Object
+      || !TryReadString(data, "layout", out string layout)
+      || !TryReadString(data, "shape", out string shape)
+      || !TryReadString(data, "color", out string color)
+      || !TryReadInt(data, "bands", out int bands)
+      || !TryReadInt(data, "trailMs", out int trailMs)) {
+      return false;
+    }
+
+    stage = new StageData(layout, shape, color, bands, trailMs);
     return true;
   }
 
@@ -315,6 +371,7 @@ public static class Frames {
 [JsonSerializable(typeof(Envelope<SpectrumData>))]
 [JsonSerializable(typeof(Envelope<DevicesData>))]
 [JsonSerializable(typeof(Envelope<HueData>))]
+[JsonSerializable(typeof(Envelope<StageData>))]
 [JsonSerializable(typeof(Envelope<EchoData>))]
 [JsonSerializable(typeof(Envelope<ErrorData>))]
 [JsonSerializable(typeof(ClientEnvelope))]

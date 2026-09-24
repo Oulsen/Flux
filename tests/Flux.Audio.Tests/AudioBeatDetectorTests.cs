@@ -145,7 +145,7 @@ public class AudioBeatDetectorTests {
 
     BeatDecision drop = Assert.Single(decisions, decision => decision.Drop);
 
-    Assert.True(drop.Rebase, "A drop has to renumber the beats, or the bar cannot re-arm on it.");
+    Assert.True(drop.Rebase, "A drop has to be announced as a renumbering, or the grid counts the jump as drift.");
     Assert.Equal(0, drop.Timeline!.Value.BeatOrigin);
 
     // The tempo survives, and only the phase is thrown away. A drop is where the bar
@@ -155,8 +155,8 @@ public class AudioBeatDetectorTests {
 
   [Fact]
   public void RefusesADropAfterAShortGap() {
-    // A passing gap between phrases is not a breakdown, and re-arming the bar on one
-    // would move the downbeat several times a track.
+    // A passing gap between phrases is not a breakdown, and snapping the bar to one
+    // would restart the bar count several times a track.
     List<BeatDecision> decisions = Replay(new FrameTrack()
       .Warmup()
       .Beats(Bpm, 16)

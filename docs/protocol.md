@@ -88,6 +88,49 @@ does not know by the rule above, so the worst it suffers is a build whose lights
 it cannot see - a degradation and not a misreading. Nothing existing changed name,
 unit or meaning.
 
+Version 1 grew once more in Phase 4 and again did not break, in three additions.
+`state.light` gained a `color`, which is one added field on an existing payload; an
+older page ignores it and keeps reading the frame rate it came for. A `stage` message
+and a `setStageSettings` message arrived together, and both are new types, which the
+rule above already covers.
+
+The third is the one worth arguing rather than asserting: **`spectrum.bins` went from
+64 columns to a count between 16 and 128, and the version did not move.** Narrowing a
+promise is normally exactly the change that increments it. It does not here because the
+promise was never made: this document has always said to read the array's length rather
+than to assume it, and it said so in the same paragraph that shows a shortened example.
+A client that followed that draws a finer or coarser spectrum and notices nothing else.
+One that hardcoded 64 was outside the contract before this change, which is a different
+thing from being broken by it.
+
+**Version 2 is the first break, and it is one changed meaning rather than a
+rewrite.** The light engine now sends a colour per light instead of one for the
+room, so `state.light` gained a `channels` array - an addition, which on its own
+would not have moved anything. What moved it is `state.light.color`, which meant
+"the colour every light was sent" and now means "the colour the engine chose
+before each light's own band was applied". Those differ by however much the
+spectrum is favouring one part of the room, and a version 1 page reading the new
+field would go on looking correct while drawing a room slightly brighter than the
+real one. That is precisely the quiet misreading the version exists to convert
+into a refusal, so it was converted into one.
+
+Everything else in version 2 is unchanged, and a client updating to it has one
+thing to do beyond the number: decide whether to draw `channels` or keep drawing
+`color`. Both remain honest answers to different questions - one is what each
+bulb received, the other is what the engine decided the beat was worth.
+
+Version 2 has since grown without breaking, and one of those additions is worth
+arguing. `anchor` and `strobe` are new types and `state.preview` is a new field, which
+the rule above covers. But
+`setLightSettings` gained `strobe` and `strobeCycle` as **required** fields, the way
+`colorCount` and `colorLayout` arrived before them, and `setStageSettings` gained `trailMs`
+the same way, so a page built before them has those settings refused as
+`invalid_data`. That is loud rather than quiet - the page is
+told, and nothing is applied that it did not mean - which is the difference between a
+refusal and the misreading the version exists to prevent. Making the fields optional
+instead would have broken the rule that message stands on: that it is one complete
+statement of the look, never a patch.
+
 Phase 2's lesson about `devices` is worth repeating rather than filing, because
 this document is once again describing messages before anything produces them.
 Where that left a field's honesty uncertain the field is nullable rather than
@@ -129,7 +172,7 @@ Sent once, immediately after the socket opens, before anything else.
 ```json
 { "type": "hello", "data": {
   "protocol": 1,
-  "app": "0.3.0",
+  "app": "0.4.0",
   "quantum": 4,
   "stateHz": 20,
   "spectrumHz": 30,
@@ -173,8 +216,17 @@ changed. It is a snapshot and is never a delta.
     "barAligned": false
   },
   "alignment": { "aligned": false, "method": null },
-  "light": { "fps": 49.7 },
-  "diagnostics": { "reanchorMaxBeats": 0.0, "packets": 4821 }
+  "light": {
+    "fps": 49.7,
+    "color": { "r": 0.8, "g": 0.2, "b": 0.55 },
+    "channels": [
+      { "at": 0, "r": 0.8, "g": 0.2, "b": 0.55 },
+      { "at": 0.5, "r": 0.46, "g": 0.12, "b": 0.32 },
+      { "at": 1, "r": 0.12, "g": 0.03, "b": 0.08 }
+    ]
+  },
+  "diagnostics": { "reanchorMaxBeats": 0.0, "packets": 4821 },
+  "preview": null
 }}
 ```
 
@@ -187,6 +239,7 @@ changed. It is a snapshot and is never a delta.
 | `alignment` | object | Whether the bar has been anchored, and by what |
 | `light` | object or **null** | Null exactly when Flux is not streaming to a bridge |
 | `diagnostics` | object | Health counters for the active source |
+| `preview` | object or **null** | What the light engine would be sending while nothing streams. **Null whenever `light` is present** |
 
 `sourceState` distinguishes three situations that a single boolean would blur:
 
@@ -264,6 +317,141 @@ Flux is streaming at all.
 | Field | Type | Meaning |
 |---|---|---|
 | `fps` | number | Frames a second the stream is achieving, measured over the last second. Not the configured rate |
+| `color` | object or **absent** | The colour the room is on: `{ "r": 0.8, "g": 0.2, "b": 0.55 }`, linear 0 to 1 per channel. Absent until a frame has gone out |
+| `channels` | array | One entry per light, in the order the bridge streams them. Empty until a frame has gone out |
+
+Each entry of `channels` is `{ "at": 0.25, "r": 0.8, "g": 0.2, "b": 0.55 }`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `at` | number | Where this light listens on the frequency axis: 0 follows the kick, 1 follows the top |
+| `r`, `g`, `b` | number | What this light was sent, linear 0 to 1, on the same scale as `color` and, like it, with no gamma correction |
+
+**Where a light is decides how hard the beat hits it, and above one colour which
+colour it is in.** A light near the centre of the room follows the low end and one
+out at the edge follows the high end, so a kick punches in the middle and a cymbal
+wash lifts the corners. Which band a light listens to is decided from the position
+the bridge reports for its channel, ranked by distance from the centre of the room
+and then spread across the spectrum - ranked rather than scaled, because a real room
+clusters: four of the seven lights in one area measured here sit within 0.07 of
+each other, and scaling raw distance would have given those four almost the same
+band while three lights covered everything else.
+
+**Each band is measured against its own recent loudest and never against the other
+two.** Music carries far more energy in the kick band than in the top on essentially
+every frame of every track, so comparing the raw levels answers "which lights lead"
+the same way every time and the room becomes a fixed bright-in-the-middle gradient
+that pulses in unison. Measured against itself, a hi-hat at the top of what hats do
+in this track counts as fully lit exactly as a kick at the top of what kicks do - so
+the outer lights lead through a break and the centre takes it back on the drop. **The
+ordering has to be able to invert or there is no information in it.**
+
+**A light whose band is busy stays lifted between beats**, up to seven tenths of what
+a beat would give it. The beat is divided between the lights, while what happens in the gaps
+is a fact about each band on its own: a hat pattern under a held chord lifts the outer
+lights whether or not anything is louder elsewhere. That is the difference between a
+room the music moves through and a set of simultaneous flashes at different heights.
+
+**The pulse answers the music and not only the grid**, and it does so in three ways at
+once because they are three different questions.
+
+*How hard did this beat hit* is the kick band's jump above its own recent average,
+read as the beat lands and allowed to rise - never fall - while the pulse is alive.
+It may rise because the light path runs deliberately ahead of the audio, so the kick a
+beat announces has usually not reached the analyzer at the moment the beat is consumed;
+it never falls, so the fade is not cut off by the gap after the kick that caused it.
+**A beat with no kick under it does not pulse the room at all.** A grid keeps publishing beats through a
+breakdown - a clock has no opinion about whether anything is playing - so without
+this the lights fire a synchronous pulse right through a passage with no kick in it,
+and it is the unison rather than the brightness that gives it away. What carries a
+break instead is the per-band response above: with the pulse out of the way the lights
+follow their own bands, so hats lift the outer lights and a stab lifts the middle.
+There is no break mode; this is what the room already does once the pulse stops
+sitting on top of it. The measure is the transient and not the level, because a
+breakdown often still has bass in it and what it lacks is a kick landing.
+
+*Is anything playing at all* is how loud the room is now against the loudest it has
+been over about the last minute, applied continuously rather than captured, so a
+track that stops mid-pulse kills the tail instead of finishing at the volume of a
+track that is no longer playing. Against the room's own recent loudest rather than
+against full scale, because absolute level says more about where the gain is set than
+about the music. A minute is deliberately far longer than the second a band's own
+average looks back over, and longer than the two bars its level is measured against: a
+breakdown runs sixteen to thirty-two bars, and a reference that forgot inside one
+would decide halfway through the break that the break is now normal.
+
+*Is this section loud for this track* is how hot the room runs against its own typical
+of about the last twenty seconds, and it is spent on the resting level rather than on
+the pulse: a drop lifts what the lights fall back to between beats, and a steady
+passage rests on the floor as it always did, because by then it is the typical. This
+is the difference the loudness measure discards on purpose - it saturates well below
+the room's loudest precisely so that ordinary playing counts as simply playing, which
+means it cannot also say how loud - and it is what makes a verse and a drop read as
+two different rooms rather than one. It is also why a track quieter than the one
+before it reads as subdued only for its first half minute rather than for its whole
+length: its level becomes the room's typical, and the room breathes around that.
+
+**None of the three reaches the floor itself.** All of them spend the range above it,
+and the floor is never zero while a stream is open - a light that goes out is
+indistinguishable from one that has stopped receiving anything. A `brightness` of 0
+is still black, because that is a blackout and somebody asking for no light should
+get none.
+
+**`at` is the server's answer and a page must not recompute it.** A browser could
+derive the same ordering from the array and it would be a second implementation of
+one tuned rule, which is the arrangement this document already rejects for colour.
+It is fixed for the life of a stream, since the geometry belongs to the area the
+session opened against, and it is still sent on every frame: a page that connected
+mid-show cannot be told to wait for a message it already missed.
+
+**A light whose band is silent falls back to the room's resting level and never to
+black.** The spectrum scales the pulse above the floor and never the floor itself,
+for the reason the floor exists at all - a light that goes out is indistinguishable
+from a light that has stopped receiving anything.
+
+**Where there is nothing to listen to, every light gets the room's own envelope.**
+A build with no audio, a closed capture device, silence, and a frame with no energy
+in any band all arrive at the same answer, which is the behaviour Flux had before
+per-light colour existed. Link supplying a tempo with no microphone anywhere near it
+is an ordinary configuration and not a degraded one.
+
+**`color` is not the average of `channels`**, and the distinction is the same one that
+keeps this whole object honest: an average of nine bulbs is a colour nothing in the room
+is showing, while this is a value the engine genuinely computes on its way to deciding
+what each light gets. With `colorCount` above one it is the first of the hues the engine
+chose - again a colour some of the room is genuinely on, rather than a blend of two that
+none of it is. A page wanting one number for the room should use it; a page drawing the
+room itself should use `channels`.
+
+**Both are what the bridge was sent, read back**, and they are here so that a page can
+draw the room rather than compute its own opinion of it. The alternative - a second
+beat-to-colour engine in the browser - needs no protocol at all and was rejected: two
+implementations of one tuned behaviour drift apart the first time either is retuned, and
+what a viewer then has is a screen and a room that disagree with no way to tell which is
+right. **Anything a bulb also does is decided on the server and read from here.**
+Embellishments a bulb cannot do, such as a hue gradient across the frequency axis, remain
+the page's own business.
+
+It rides the 20 Hz state feed rather than getting a feed of its own, and the rate is
+defensible rather than merely convenient: a bulb renders roughly 25 updates a second over
+Zigbee whatever the stream sends, so a 20 Hz preview is within a hair of the fidelity the
+room itself has. A client should still interpolate between frames rather than stepping,
+because a brightness pulse of 240 ms is only five frames long here.
+
+The values are linear, on the same 0 to 1 scale the spectrum bands use, and **no gamma
+correction is applied to them, by anything, and that is a decision rather than a gap.**
+The bridge reads the RGB it is sent as light output, not as screen values: a still
+ladder of whites at 100, 75, 50 and 25 per cent was hard to tell apart on the bulbs,
+while an orange of full red and half green came out orange. A brightness curve on the
+way to the bridge was then built and tried with music, and it flattened the lights that
+spend their time just above the lit floor - the ones on the quieter bands - until they
+stopped visibly moving. Every brightness setting was tuned by eye against the uncurved
+bridge, so it already accounts for it. One consequence for a page: a monitor does curve,
+so the dim end of the stage looks darker than the same value on a bulb. That is the
+honest cost of drawing what was sent, and correcting it in the page would be a second
+engine's opinion about the room. Absent rather than black before the first
+frame, because black is a colour the engine can legitimately send and "not yet" is not
+it.
 
 It rides the 20 Hz feed rather than the `hue` message because it is a moving
 measurement, and `hue` is pushed on change: a frame rate belongs with the other
@@ -290,6 +478,45 @@ running, and a zero would read as a stream that is running and failing. Why it
 is not running is `hue`'s question, not this one's - no bridge, no area chosen,
 somebody pressed stop, or the bridge's one session belongs to another
 application.
+
+### `state.preview`
+
+The light engine's output while no stream is open, so a page can show the look
+before the room is lit - or with no bridge at all, since the look is stored on this
+machine rather than on the bridge.
+
+```json
+"preview": {
+  "color": { "r": 0.8, "g": 0.2, "b": 0.55 },
+  "channels": [
+    { "at": 0.0, "r": 0.8, "g": 0.2, "b": 0.55 },
+    { "at": 1.0, "r": 0.4, "g": 0.1, "b": 0.27 }
+  ]
+}
+```
+
+`color` and `channels` mean what they mean on `state.light`, with no frame rate
+because nothing is being sent. **It is never present alongside `light`**, and a page
+must not read it as a sign that the room is lit: `light` stays the single authority
+on whether Flux is streaming, which is why this is a field of its own rather than
+`light` with the rate left out. A client drawing the stage draws `light` when there is
+one and this when there is not, and says which it is showing - the picture looks the
+same either way.
+
+It is the same engine the stream runs, not an imitation of it: with no session open
+the server runs the engine itself at the stream's rate, and stands down the moment a
+session starts. So the colours on screen are the colours the bulbs would get, beat
+for beat, and the handover to a real stream continues them rather than starting over.
+
+**`channels` is the selected area as the bridge laid it out**, read from the same
+answer that lists the areas, so each light listens where the stream would place it and
+falls in the colour group it would fall in - a `colorCount` of two or three splits the
+preview exactly as it would split the room. With no area to read - no bridge, or none
+chosen - it is six stand-in lights spread evenly across the spectrum instead of none,
+because a colour split needs lights to divide between and a preview without them could
+only ever show the first colour.
+
+Null in a build with no Hue support, which has no engine to preview.
 
 ### `state.diagnostics`
 
@@ -352,15 +579,24 @@ What the audio analyzer is hearing, sent only to clients that asked for it with
 
 | Field | Type | Meaning |
 |---|---|---|
-| `bins` | array of int | 64 log-spaced display columns, low frequency first, each 0 to 255 |
+| `bins` | array of int | 128 log-spaced display columns, low frequency first, each 0 to 255 |
 | `kick` | number | Bass band energy, 0 to 1 |
 | `mids` | number | Mid band energy, 0 to 1 |
 | `highs` | number | High band energy, 0 to 1 |
 | `flux` | number | Spectral flux against the previous frame: the number the beat detector actually triggers on |
 | `beat` | string | `"none"`, `"beat"` or `"strong"` - the strongest verdict the detector reached since the previous frame sent to this client |
 
-The example shows eight bins for readability. There are always exactly 64, and a
+The example shows eight bins for readability. There are always exactly 128, and a
 client should still check rather than index blindly.
+
+**The count changed from 64 to 128 and the protocol version did not move**, which is
+the rule this document sets for itself applied rather than bent: a version bump is for
+a change an existing client could misread. A client that derives its column count from
+the array it was sent, as this rule has always told it to, draws a finer spectrum and
+notices nothing else. One that hardcoded 64 was already outside the contract, and the
+sentence above is why. The derivation of the number itself, and what the transform
+underneath it can actually resolve, is in
+[docs/audio-constants.md](audio-constants.md).
 
 This is a **test instrument, not a decoration.** It exists so that a beat marker
 can be watched against the music and against the spectrum that produced it,
@@ -473,7 +709,7 @@ immediately after `hello`, and then **only when something changes**.
   "selectedAreaId": "6f3a1c58-0c1e-4f1a-9b7d-2f8e5a0d4c11",
   "pairingSecondsRemaining": null,
   "latencyOffsetMs": 90,
-  "engine": { "palette": "random", "colorChangeBars": 4, "pulseMs": 240, "brightness": 100, "pulseDepth": 85 },
+  "engine": { "palette": "random", "colorChangeBars": 4, "pulseMs": 240, "brightness": 100, "pulseDepth": 85, "colorCount": 1, "colorLayout": "radial", "strobe": false, "strobeCycle": 50 },
   "message": null
 }}
 ```
@@ -541,6 +777,10 @@ documents the ranges and what each value does; this is what is in force now.
 | `pulseMs` | int | How long a beat's brightness pulse takes to fade, 0 to 2000, where **0 means no pulse** |
 | `brightness` | int | How bright a beat drives the lights, 0 to 100 per cent. The ceiling for everything sent |
 | `pulseDepth` | int | How far the light drops between beats, 0 to 100 per cent of `brightness` |
+| `colorCount` | int | How many colours the room is in at once, 1 to 3 |
+| `colorLayout` | string | How the room is divided between them: `radial`, `alternating` or `random` |
+| `strobe` | bool | Whether the strobe is switched on. **A held strobe button never shows here** |
+| `strobeCycle` | int | How long one strobe cycle is, 10 to 100 per cent of a beat |
 
 **Named `engine` and not `light`, because `state.light` already exists and means
 something else** - what the stream is achieving, as a measurement. These are
@@ -593,6 +833,79 @@ It does not say *who* is streaming, because the bridge does not offer a name to
 blame. It also does not distinguish Flux's own stream from another
 application's: when Flux is streaming to the selected area, that area reports
 `streaming` too. `state.light` is the field that answers "is this us".
+
+### `stage`
+
+How the visualizer draws, pushed on change and once to every client the moment it
+connects.
+
+```json
+{ "type": "stage", "data": {
+  "layout": "upward",
+  "shape": "bars",
+  "color": "randomBeat",
+  "bands": 64,
+  "trailMs": 0
+}}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `layout` | string | `"upward"` (bars from the floor, full width) or `"mirrored"` (outward from the centre, each bar centred on the axis) |
+| `shape` | string | `"bars"`, `"thinBars"`, `"chonkerBars"`, `"pixel"`, `"smooth"` or `"smoothSimple"` |
+| `color` | string | `"randomBeat"`, `"hueCycle"`, `"hueWave"`, `"hueWaveVert"` or `"static"` |
+| `bands` | int | How many display columns `spectrum.bins` carries, 16 to 128 |
+| `trailMs` | int | How long the picture's afterimage lasts, 0 to 1000 ms. **0 is off**, and the default |
+
+Its own message rather than fields on `state`, on the argument that gave `hue` one:
+state goes out twenty times a second, and a look that changes when somebody taps a
+chip would be twelve hundred identical copies a minute of something nobody moved.
+Like `hue`, that means it does not repeat, which is why a client is sent one on
+connecting.
+
+**Server-side rather than per browser, and that is a reversal worth stating.** The
+first version of these settings lived in each browser's own storage, on the argument
+that whether a phone draws a canvas is a fact about the phone. That argument survives
+for exactly one switch - whether the stage is drawn at all, which is still local and
+is not in this protocol - and fails for the rest: the look of the stage is part of the
+show, it is set by whoever is standing at the page, and it should be the same look on
+the laptop and on the phone in somebody's hand.
+
+`bands` settles it on its own, because it is not a drawing preference at all. It
+decides how many columns the **analyzer** produces, which is what makes every count
+exact: the display columns are log-spaced between fixed endpoints, so column *c* of 64
+spans precisely columns 2c and 2c+1 of 128. Folding a finer feed down in the browser
+is exact only where the counts nest like that, and a count such as 100 would leave
+some bars covering two source columns and their neighbours one - a faint comb across a
+smooth spectrum. Computing them at the source makes any count evenly spaced and sends
+less over the wire at a low one.
+
+**Size a drawing from the length of `spectrum.bins`, not from this field.** The two
+agree, but a spectrum frame already in flight when the count changed carries the old
+one, and the array is the thing being drawn.
+
+Nothing the beat detector decides is affected by `bands`. It reads band energies over
+the whole transform and never these columns, which is why this is a resolution knob
+rather than a re-calibration. The derivation of the bounds, and what the transform
+underneath can actually resolve, is in
+[docs/audio-constants.md](audio-constants.md).
+
+**`trailMs` is how long the picture leaves an afterimage**: the last few frames of the
+spectrum drawn again under the live one, each fainter, falling to a tenth over
+`trailMs` - the threshold `pulseMs` names, so the number is how long the trail
+visibly lasts.
+
+It stands in for the reference scene's fade and departs from it on two counts, both
+settled by looking at the stage. The scene smeared pixels, repainting the background at
+partial opacity, and an 8-bit canvas cannot quite fade a faint smear to the background,
+so its long end left a haze of old bars; an afterimage is drawn from the spectrum and
+is simply not drawn once it has run out. And the scene counted its fade per frame, so
+one setting trailed twice as long on a 60 Hz display as on a 120 Hz one, with a top end
+of nearly ten seconds; this is counted in time, on any display, and stops at a second.
+
+It is on the screen only. In the scene the canvas was the device and the fade smeared
+the LEDs along with the picture; Flux's lights have an envelope of their own, and
+`setLightSettings.pulseMs` is what decides how long a light trails a beat.
 
 ### `pong`
 
@@ -658,10 +971,15 @@ reconnecting client and a server disagreeing about what is on, and the
 disagreement is invisible until someone wonders why the visualiser is dark.
 
 Both default to false until a client asks. That is the point of the message
-rather than a detail of it: the phone in the booth wants a BPM readout and a
-flash, and shipping it a spectrum frame thirty times a second would spend its
-battery and its Wi-Fi on a canvas nobody is looking at. Everything expensive on
-this socket is opt-in.
+rather than a detail of it: everything expensive on this socket is opt-in, so a
+client that draws nothing pays for nothing, and the server never has to guess
+which kind it is talking to.
+
+What any given client then asks for is its own business. Flux's own page asks
+for the spectrum from the first frame, because the visualizer is the page rather
+than a panel in it, and offers a numbers-only switch for the phone in the booth
+that would rather not spend its battery and its Wi-Fi drawing a canvas thirty
+times a second.
 
 A `devices` snapshot is sent immediately on any subscribe that asks for
 `deviceLevels`, whether or not it was already on, so a picker fills in at once
@@ -698,6 +1016,14 @@ Points audio analysis at one of the devices from `devices`. Answered with
 a device unplugged while its button was on screen, and the case of a build with
 no audio support at all.
 
+**A device accepted here is remembered across restarts**, so this message is a
+lasting choice rather than a setting for the session. Flux comes back to it next
+launch in preference to `Audio:DeviceId`, and falls back to
+`Audio:PreferDeviceNamed` if it is not plugged in - which is deliberately *not*
+what happens to a selection made while Flux is running, since capturing
+something other than what was just asked for would be overruling the person who
+asked.
+
 ### `tap`
 
 ```json
@@ -721,6 +1047,26 @@ while Link supplies the tempo is the primary way a bar ever gets aligned.
 The first tap of a sequence carries no interval and therefore no tempo, and it
 still sets the downbeat. Waiting for a second tap before honouring it would feel
 broken in exactly the case that matters most.
+
+### `anchor`
+
+```json
+{ "type": "anchor", "data": { } }
+```
+
+One press on the downbeat. `data` is empty and is ignored, and the press is
+timestamped on arrival for the reason `tap` is.
+
+The downbeat without the tempo, which is what `tap` cannot say under the manual
+source: a tap there is also a tempo press, so two taps in quick succession retune
+the grid to however fast somebody happened to press. This message never touches a
+tempo - not the manual estimate, not its tap sequence - so it is safe to press
+repeatedly on any source, and it is the way to correct the bar after typing a
+tempo. It reads back as `alignment.method` of `"tap"`, because from the grid's
+side that is what it is: a human press saying where bar one starts.
+
+Like `tap`, it works whatever the active source, on the same argument. With no
+timeline on the grid there is no beat to anchor, and the press does nothing.
 
 ### `setBpm`
 
@@ -963,7 +1309,11 @@ is `invalid_data`.
   "colorChangeBars": 4,
   "pulseMs": 240,
   "brightness": 100,
-  "pulseDepth": 85
+  "pulseDepth": 85,
+  "colorCount": 1,
+  "colorLayout": "radial",
+  "strobe": false,
+  "strobeCycle": 50
 }}
 ```
 
@@ -974,6 +1324,10 @@ is `invalid_data`.
 | `pulseMs` | int | How long a beat's brightness pulse takes to fade, 0 to 2000. **0 means no pulse** |
 | `brightness` | int | How bright a beat drives the lights, 0 to 100 per cent. **0 is a blackout** |
 | `pulseDepth` | int | How far the light drops between beats, 0 to 100 per cent of `brightness`. **0 never dips, 100 fades to nothing** |
+| `colorCount` | int | How many colours the room is in at once, 1 to 3 |
+| `colorLayout` | string | How the room is divided between them: `radial`, `alternating` or `random`. A no-op at one colour |
+| `strobe` | bool | Whether the room strobes white on the beat grid until this is switched off. **Off by default** |
+| `strobeCycle` | int | How long one strobe cycle is, 10 to 100 per cent of a beat. **Smaller is faster**: 50 flashes twice a beat, 100 once |
 
 Sets how beats become colour. **Every field is required**: this is one complete
 statement of how the lights should look, not a patch, for the reason `subscribe`
@@ -988,14 +1342,42 @@ separation is the point - one setting doing both jobs gives either lights that s
 still for eight seconds between colours or lights that strobe through the palette
 four times a bar.
 
-**Colour changes land on the downbeat**, not merely every fourth beat. Flux counts
-bars from the beat grid's own bar position, so the changes stay on the bar across a
-re-anchor rather than drifting off it for the rest of the night. How long a bar is
-comes from the same `quantum` the `hello` frame carries - four by default, and the
-engine has no separate opinion about it. Where no downbeat is known -
-`alignment.method` of `none` - it falls back to every `quantum x n`-th beat from
-wherever the numbering starts, because changing on a guessed phase is worth more
-than not changing at all.
+**Colour changes land on the downbeat**, not merely every fourth beat, and they are
+**counted from the anchor**: the bar a `tap`, a cue press or a drop marked is bar
+one, and it takes a colour. Anchoring means "this is bar one", and it has to mean
+that for everything the bar count drives or it only half means it - before this the
+count ran from wherever the source's numbering happened to start, so anchoring
+moved the beat indicator and left the colours changing on the old phase. A press
+restarts the cycle even on a beat that was already a downbeat, and a press a hair
+after the kick, which names a beat that has already been lit, is answered on the next
+frame rather than a bar later. A drop only ever moves bar one by whole bars, so it
+restarts the cycle when it lands a bar or more from the anchor and changes nothing
+when it only confirms it. A source going quiet does not touch the anchor, so it does
+not restart the cycle either. How long a bar is comes from the same `quantum` the `hello`
+frame carries - four by default, and the engine has no separate opinion about it.
+Where no downbeat is known - `alignment.method` of `none` - it falls back to every
+`quantum x n`-th beat from wherever the numbering starts, because changing on a
+guessed phase is worth more than not changing at all.
+
+**`colorCount` splits the room along the frequency axis**, which is the same axis
+that already decides how hard each light is hit: at two, the lights listening to the
+lower half of the spectrum take one hue and the upper half another; at three, inner,
+middle and outer. Grouped by frequency rather than by channel order, so a light's
+colour says the same thing about where it is as its brightness does. The hues are
+drawn from the same palette and held the same distance apart from each other that a
+new colour is held from the one it replaces, so two colours can never be two shades
+of one. A palette too tight to supply that many distinct hues gets the farthest
+apart it can manage rather than a failure.
+
+**`colorLayout` decides how those groups are handed out**, and only `radial` has an
+argument behind it - the other two exist to be tried against a real room, which is
+the only way a look gets settled. `radial` gives contiguous groups along the axis, so
+the lights nearest the centre share a hue. `alternating` hands the hues to every
+other light in order of distance, which is bolder and discards the spatial mapping
+entirely. `random` draws each light's group from its own place on the axis mixed with
+a number re-drawn at each colour change, so the shape holds between changes rather
+than flickering. All three are a no-op at one colour, and all three are functions of
+where a light sits and never of its channel id or its position in the array.
 
 **Both zeroes read backwards and both are deliberate.** `colorChangeBars` of 0
 does not stop the colours changing, it removes the interval, so they change as
@@ -1037,16 +1419,101 @@ wheel. Two of them - `ocean` and `warm` - are tight on purpose, and a curated
 palette that cannot produce a large enough change gives the largest one it has
 rather than repeating itself.
 
+**The strobe is the reference scene's, carried across**: a cycle of `strobeCycle`
+per cent of a beat, counted from the last beat, white for the first quarter of each
+cycle and the ordinary room for the rest. Off by default, because a strobe is a
+photosensitivity hazard and nobody should meet one from a setting they did not
+choose. The same strobe runs while anybody holds the button - see `strobe` below -
+and `strobeCycle` sets its speed in both cases.
+
+Three things it does that the scene did not, each with its reason. **The flash is
+white at `brightness`, not at full**, so the ceiling somebody set still holds and a
+blackout stays black rather than becoming a strobe. **It needs a beat to flash on**:
+before the first beat there is no grid to strobe to, and once no beat has arrived for
+two beat lengths it stops rather than extrapolating a grid a source has stopped
+publishing. **The page does not draw a strobe of its own**: the stage shows what
+each light was sent through `state.light.channels`, which at 20 frames a second
+catches some flashes and misses others. Timing one in the browser would be a second
+strobe engine that drifts from this one, which is the argument that put the colour
+engine on the server in the first place.
+
+**Short cycles are honoured and will not look like a club strobe.** Each flash is a
+quarter of a cycle, so at 128 BPM and the default of 50 it lasts about 59 ms - one
+or two of the updates the bridge forwards to a bulb each second at roughly 25 Hz.
+On Hue that reads as energetic pulsing. The value is legal and the screen tracks it;
+the bulbs simply stop resolving it.
+
 Values outside the ranges are `rejected` rather than clamped, on the same argument
 as `setLatencyOffset`. A palette name that is not on the list is also `rejected`,
-with the name quoted back; a missing field, a non-integer, or a palette that is not
-a string is `invalid_data`.
+with the name quoted back; a missing field, a non-integer, a palette that is not
+a string, or a `strobe` that is not a boolean is `invalid_data`.
 
 Like the offset, these are server-side and echoed in every `hue` frame as
 `hue.engine`, so a second phone opening the page sees the settings actually in
 force rather than its own controls' idea of them. They survive a restart, and they
 survive `forgetBridge`: a palette is a choice about how a room should look, not a
 fact about the bridge.
+
+### `strobe`
+
+```json
+{ "type": "strobe", "data": { "held": true } }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `held` | bool | Whether this page's finger is on the strobe button |
+
+Strobes the room for as long as the button is held, whether or not `strobe` is
+switched on in `setLightSettings`, at that message's `strobeCycle`. The switch is for
+a strobe that runs hands-free; this is the one for a build-up, pressed through it and
+let go on the drop, and it cannot be left on by accident. Never saved, never echoed
+in `hue`, and not acknowledged: the room is the confirmation.
+
+**A hold is a lease, not a switch.** A page sends `held: true` when the button goes
+down and **repeats it every 500 ms while it stays down**; the server drops any hold
+that goes 1.5 seconds without one. `held: false` ends it at once, and so does the
+connection closing. The lease is for the case neither arrives - a phone whose screen
+sleeps mid-press, Wi-Fi dropping - where a socket can stay open with nobody behind it
+for far longer than a room should strobe unattended.
+
+Each connection is one holder, so the room strobes while any page is holding and
+stops when the last lets go; pressing twice from one page is still one hold. A hold
+with no stream open lights nothing, and is a strobe the moment one opens.
+
+A `held` that is not a boolean is `invalid_data`. A build with no Hue support answers
+`rejected`.
+
+### `setStageSettings`
+
+One complete statement of how the visualizer should draw.
+
+```json
+{ "type": "setStageSettings", "data": {
+  "layout": "upward",
+  "shape": "bars",
+  "color": "randomBeat",
+  "bands": 64,
+  "trailMs": 0
+}}
+```
+
+Every field is required, for the reason `setLightSettings` requires all of its own: a
+page that could send a shape alone would be relying on the server to remember the
+rest, and two pages doing that at once produce a look neither of them chose.
+
+Confirmed by the `stage` frame that follows rather than by a reply, and that frame goes
+to **every** client rather than to the one that asked. That is the whole point of the
+setting having moved to the server: a shape chosen on a phone has to move the laptop's
+controls too, and a reply addressed to the phone would leave the laptop showing a look
+nobody is running.
+
+A name that is not on one of the three lists is `rejected` with the name quoted back.
+A `bands` outside 16 to 128 or a `trailMs` outside 0 to 1000 is `rejected` rather than
+clamped, on the same argument as `setLatencyOffset`. A missing field, a non-integer
+`bands` or `trailMs`, or a name that is not a string is `invalid_data`.
+
+These survive a restart, in `%APPDATA%\Flux\stage-settings.json`.
 
 ## Backpressure
 

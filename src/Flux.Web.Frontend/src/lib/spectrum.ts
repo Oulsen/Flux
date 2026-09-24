@@ -8,8 +8,8 @@
  * the kick away or flicker. That decision is here, as pure functions, because it
  * is the half that can be wrong in a way no screenshot would settle.
  *
- * The constants are the scene's, transcribed as coded from
- * `.plan/reference/oulsen-dj-scene.html`, and the rest of Flux's audio numbers
+ * The constants are the scene's, transcribed as coded from the scene this project
+ * reimplements, and the rest of Flux's audio numbers
  * are documented the same way in `docs/audio-constants.md`.
  */
 
@@ -41,42 +41,6 @@ export const FLASH_ON_STRONG_BEAT = 1;
 
 /** Spectrum bins arrive quantized to a byte, as the protocol specifies. */
 const BIN_MAX = 255;
-
-/** A gap between columns, so sixty-four of them read as bars and not as a block. */
-export const BAR_GAP_PX = 1;
-
-/** Any narrower and a column would vanish rather than read as quiet. */
-export const MIN_BAR_WIDTH_PX = 1;
-
-/** Where one column of the spectrum goes, in CSS pixels. */
-export interface BarGeometry {
-  /** Left edge to left edge, so column n starts at n * slot. */
-  slot: number;
-  /** How wide to paint one column. */
-  width: number;
-}
-
-/**
- * Where the columns go, given a canvas width and how many there are.
- *
- * Here rather than in the component because it is the one part of the drawing
- * that can be wrong arithmetically rather than merely ugly: subtracting a gap
- * without a floor under it leaves nothing to paint once the canvas is narrow
- * enough, and a spectrum that has silently stopped drawing looks exactly like
- * one that is hearing silence.
- */
-export function barGeometry(canvasWidth: number, count: number): BarGeometry {
-  if (!Number.isFinite(canvasWidth) || !Number.isFinite(count) || canvasWidth <= 0 || count <= 0) {
-    return { slot: 0, width: 0 };
-  }
-
-  const slot = canvasWidth / count;
-
-  // Columns touch rather than disappear once the slot is down to a pixel. A
-  // solid block says "too narrow to resolve one band", which is true; a blank
-  // rectangle says the analyzer stopped, which is not.
-  return { slot, width: Math.max(MIN_BAR_WIDTH_PX, slot - BAR_GAP_PX) };
-}
 
 /**
  * What the visualizer is holding between frames.

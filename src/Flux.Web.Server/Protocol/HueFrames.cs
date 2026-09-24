@@ -61,8 +61,40 @@ internal static class HueFrames {
     return false;
   }
 
+  /// <summary>Reads a layout name off the wire, on the same terms as a palette.</summary>
+  internal static bool TryParseColorLayout(string name, out LightColorLayout layout) {
+    foreach(LightColorLayout candidate in Enum.GetValues<LightColorLayout>()) {
+      if(string.Equals(LayoutName(candidate), name, StringComparison.OrdinalIgnoreCase)) {
+        layout = candidate;
+        return true;
+      }
+    }
+
+    layout = LightColorLayout.Radial;
+    return false;
+  }
+
   private static HueEngineData Describe(LightSettings light) {
-    return new HueEngineData(PaletteName(light.Palette), light.ColorChangeBars, light.PulseMs, light.Brightness, light.PulseDepth);
+    return new HueEngineData(
+      PaletteName(light.Palette),
+      light.ColorChangeBars,
+      light.PulseMs,
+      light.Brightness,
+      light.PulseDepth,
+      light.ColorCount,
+      LayoutName(light.ColorLayout),
+      light.Strobe,
+      light.StrobeCycle);
+  }
+
+  /// <summary>A switch with no default arm, for the reason <see cref="PaletteName"/> is one.</summary>
+  private static string LayoutName(LightColorLayout layout) {
+    return layout switch {
+      LightColorLayout.Radial => "radial",
+      LightColorLayout.Alternating => "alternating",
+      LightColorLayout.Random => "random",
+      _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "No protocol name for this layout."),
+    };
   }
 
   /// <summary>

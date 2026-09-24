@@ -85,6 +85,26 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples, IAudi
   private AudioDevice? open;
 
   private string? requestedDeviceId;
+
+  /// <summary>Where a device choice is kept between runs, or null when nothing keeps it.</summary>
+  private readonly IAudioSettingsStore? settings;
+
+  /// <summary>
+  /// The device picked in some previous session, or null when there was none.
+  ///
+  /// Deliberately <b>not</b> loaded into <see cref="requestedDeviceId"/>, and the
+  /// distinction is the whole design of this. A live selection came from a list
+  /// somebody was looking at, so it never falls back to something else; a remembered
+  /// one came from a file that may predate an unplugging, so it must. Seeding the
+  /// request would have meant that pulling the interface out and restarting Flux
+  /// captures nothing at all, forever, with the log explaining only that "the selected
+  /// device" was missing - a device nobody selected this year.
+  ///
+  /// So it is handed to <see cref="AudioDeviceCatalog.Select"/> in place of the
+  /// configured id, where falling through to the name preference is already the
+  /// documented behaviour for exactly this reason.
+  /// </summary>
+  private readonly string? remembered;
   private int sampleRate;
 
   /// <summary>
@@ -125,7 +145,8 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples, IAudi
     IMonotonicClock clock,
     IOptions<AudioOptions> options,
     IMonoTap tap,
-    ILogger<AudioCaptureService> log) {
+    ILogger<AudioCaptureService> log,
+    IAudioSettingsStore? settings = null) {
     ArgumentNullException.ThrowIfNull(options);
 
     this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -134,6 +155,12 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples, IAudi
     this.tap = tap ?? throw new ArgumentNullException(nameof(tap));
     this.log = log ?? throw new ArgumentNullException(nameof(log));
     this.meter = new AudioMeter(clock);
+    this.settings = settings;
+
+    // Read once, at construction. A file that changes underneath a running Flux is
+    // this process writing to it, and re-reading would only be able to disagree with
+    // what it already knows.
+    this.remembered = settings?.Load().DeviceId;
   }
 
   /// <summary>
@@ -206,6 +233,11 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples, IAudi
       // blocks, so holding the lock across it costs nothing.
       this.wake.Release();
     }
+
+    // Outside the lock, unlike everything above it. This writes a file, and the lock
+    // it would otherwise be holding is the one every status read takes twenty times a
+    // second - so a slow disk would stall the page rather than the picker.
+    this.settings?.Save(new AudioSettings(deviceId));
 
     return true;
   }
@@ -360,9 +392,13 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples, IAudi
     lock(this.statusGate) {
       this.devices = present;
 
+      // The remembered device outranks the configured one, on the same footing the
+      // persisted latency offset has with Hue:LatencyOffsetMs: the key is the starting
+      // preference for a machine nobody has chosen on yet, and the page owns it after
+      // that. Both fall through to the name preference when absent.
       this.wanted = this.requestedDeviceId is { Length: > 0 } requested
         ? present.FirstOrDefault(device => device.Id == requested)
-        : AudioDeviceCatalog.Select(present, this.options.DeviceId, this.options.PreferDeviceNamed);
+        : AudioDeviceCatalog.Select(present, this.remembered ?? this.options.DeviceId, this.options.PreferDeviceNamed);
 
       return this.wanted;
     }
@@ -424,6 +460,10 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples, IAudi
 
     if(requested is { Length: > 0 }) {
       return $"the selected device ({requested})";
+    }
+
+    if(this.remembered is { Length: > 0 } saved) {
+      return $"the device last chosen on the page ({saved}) or Audio:PreferDeviceNamed '{this.options.PreferDeviceNamed}'";
     }
 
     if(this.options.DeviceId is { Length: > 0 } configured) {

@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Hosting;
+﻿using Flux.Beat;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
@@ -55,11 +56,13 @@ public sealed class HueBridgeService: BackgroundService {
     ICredentialStore credentials,
     IHueSettingsStore settings,
     IOptions<HueOptions> options,
+    IMonotonicClock clock,
     ILogger<HueBridgeService> logger) {
     ArgumentNullException.ThrowIfNull(client);
     ArgumentNullException.ThrowIfNull(credentials);
     ArgumentNullException.ThrowIfNull(settings);
     ArgumentNullException.ThrowIfNull(options);
+    ArgumentNullException.ThrowIfNull(clock);
     ArgumentNullException.ThrowIfNull(logger);
 
     _client = client;
@@ -67,6 +70,7 @@ public sealed class HueBridgeService: BackgroundService {
     _settings = settings;
     _options = options;
     _logger = logger;
+    Strobe = new StrobeHolds(clock);
 
     HueSettings stored = settings.Load();
 
@@ -88,6 +92,18 @@ public sealed class HueBridgeService: BackgroundService {
 
   /// <summary>The current picture. Complete on every read, never a delta.</summary>
   public HueConnection Connection => Volatile.Read(ref _connection);
+
+  /// <summary>
+  /// Who is holding the strobe button.
+  ///
+  /// Here rather than on <see cref="Connection"/>, because a hold is not part of the
+  /// picture anybody is shown or anything that survives a restart: it is a finger on a
+  /// button, renewed twice a second, and announcing it would push a <c>hue</c> frame to
+  /// every page on every renewal. It lives on this service because this is what the
+  /// engine and the web layer already share, and a hold has to be pressed by one and
+  /// read by the other.
+  /// </summary>
+  public StrobeHolds Strobe { get; }
 
   /// <summary>Raised whenever <see cref="Connection"/> changes, with the new value.</summary>
   public event Action<HueConnection>? Changed;

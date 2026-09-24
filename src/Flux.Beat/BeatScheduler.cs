@@ -9,12 +9,14 @@ namespace Flux.Beat;
 /// <param name="IsBarAligned">Whether the bar position has been anchored by a cue press or a tap.</param>
 /// <param name="Bpm">Tempo at the moment of the beat.</param>
 /// <param name="ScheduledMicros">The local timestamp the beat was aimed at, not the one it fired at.</param>
+/// <param name="Bar">Which bar the beat is in, counted from the anchor - see <see cref="BarPosition.Bar"/>.</param>
 public readonly record struct BeatEvent(
   long Index,
   int PositionInBar,
   bool IsBarAligned,
   double Bpm,
-  double ScheduledMicros);
+  double ScheduledMicros,
+  long Bar);
 
 /// <summary>
 /// Turns the beat grid into beat events on a dedicated thread.
@@ -83,6 +85,16 @@ public sealed class BeatScheduler: IHostedService, IDisposable {
   /// promptly - anything slow here delays the next beat.
   /// </summary>
   public event Action<BeatEvent>? Beat;
+
+  /// <summary>
+  /// The grid's <see cref="BeatGrid.BarAligned"/>, passed through so that a beat subscriber
+  /// hears about an alignment from the same object it hears the beats from. Raised on
+  /// whichever thread aligned the bar, not the scheduler thread.
+  /// </summary>
+  public event Action<double>? BarAligned {
+    add => this.grid.BarAligned += value;
+    remove => this.grid.BarAligned -= value;
+  }
 
   public Task StartAsync(CancellationToken cancellationToken) {
     this.thread = new Thread(this.Run) {
@@ -170,7 +182,8 @@ public sealed class BeatScheduler: IHostedService, IDisposable {
       bar.PositionInBar,
       bar.IsAligned,
       timeline.Bpm,
-      timeline.MicrosOfBeat(beat));
+      timeline.MicrosOfBeat(beat),
+      bar.Bar);
 
     try {
       handler(occurred);

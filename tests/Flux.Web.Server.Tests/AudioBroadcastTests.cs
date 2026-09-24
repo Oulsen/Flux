@@ -1,4 +1,4 @@
-﻿using Flux.Audio;
+using Flux.Audio;
 using Flux.Beat;
 using Flux.Web.Server.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -198,6 +198,7 @@ public sealed class AudioBroadcastTests {
     SyncSourceManager sources = new SyncSourceManager(
       new BeatGrid(clock, beat.Quantum, beat.StaleAfter),
       Options.Create(beat),
+      settings: null,
       NullLogger<SyncSourceManager>.Instance);
 
     return new SocketHub(
@@ -208,6 +209,7 @@ public sealed class AudioBroadcastTests {
       audio,
       hue: null,
       stream: null,
+      new StageService(new MemoryStageSettingsStore()),
       new FakeHostLifetime(),
       NullLogger<SocketHub>.Instance);
   }
@@ -227,7 +229,7 @@ public sealed class AudioBroadcastTests {
     SocketHub hub = NewHub(audio);
 
     Task serving = hub.ServeAsync(socket, CancellationToken.None);
-    await socket.NextAsync();
+    await SkipOpeningAsync(socket);
 
     socket.Client(
       $"{{\"type\":\"subscribe\",\"data\":{{\"spectrum\":{Json(spectrum)},\"deviceLevels\":{Json(deviceLevels)}}}}}");
@@ -289,5 +291,24 @@ public sealed class AudioBroadcastTests {
     public SpectrumSnapshot? Spectrum() {
       return this.Latest;
     }
+
+    public SpectrumLevels? Levels() {
+      return this.Latest is { } frame ? new SpectrumLevels(frame.Kick, frame.Mids, frame.Highs) : null;
+    }
   }
+
+  /// <summary>
+  /// Reads past the frames every connection opens with, so a test can assert on the
+  /// first one it actually asked for.
+  ///
+  /// Named rather than counted inline, because the count changes whenever a
+  /// push-on-change message is added - the stage's look was the second - and a test
+  /// that skipped the wrong number of frames fails somewhere unrelated to whatever it
+  /// was testing.
+  /// </summary>
+  private static async Task SkipOpeningAsync(FakeWebSocket socket) {
+    await socket.NextAsync();
+    await socket.NextAsync();
+  }
+
 }

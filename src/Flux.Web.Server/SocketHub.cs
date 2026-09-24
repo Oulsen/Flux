@@ -58,6 +58,14 @@ public sealed class SocketHub {
   private readonly HueBridgeService? hue;
 
   /// <summary>
+  /// How the stage looks, which every page is told on arrival and on every change.
+  ///
+  /// Not nullable, unlike the two above it: a build without a bridge still has a stage,
+  /// and a build without audio still has one somebody can restyle.
+  /// </summary>
+  private readonly StageService stage;
+
+  /// <summary>
   /// Null in a build with no Hue support. Starting answers <c>rejected</c> and
   /// stopping does nothing, which is the same pair of answers a build with a bridge
   /// and no chosen area gives.
@@ -98,6 +106,7 @@ public sealed class SocketHub {
     IAudioDevices? audio,
     HueBridgeService? hue,
     HueStreamService? stream,
+    StageService stage,
     IHostApplicationLifetime lifetime,
     ILogger<SocketHub> log) {
     ArgumentNullException.ThrowIfNull(options);
@@ -110,6 +119,7 @@ public sealed class SocketHub {
     this.audio = audio;
     this.hue = hue;
     this.stream = stream;
+    this.stage = stage ?? throw new ArgumentNullException(nameof(stage));
     this.stopping = lifetime.ApplicationStopping;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
 
@@ -195,6 +205,11 @@ public sealed class SocketHub {
       client.Enqueue(HueFrames.Snapshot(this.hue.Connection));
     }
 
+    // And the stage's look, for exactly the same reason: it is pushed on change, so a
+    // page that waited for the next one would draw the defaults over somebody's chosen
+    // look until the next time anybody touched a control.
+    client.Enqueue(StageFrames.Snapshot(this.stage.Settings));
+
     this.clients[id] = client;
     this.log.LogInformation("Web client connected. {Count} now watching.", this.clients.Count);
 
@@ -229,6 +244,10 @@ public sealed class SocketHub {
       // A browser tab closed mid-frame is the ordinary way for this to end.
       this.log.LogDebug(ex, "A web client's connection ended abruptly ({Error}).", ex.WebSocketErrorCode);
     } finally {
+      // A connection ending is a finger leaving the button, whatever the last thing it
+      // said was. The lease would end the hold on its own within a second and a half;
+      // this ends it now, because a closed socket is certain and a lease is a timeout.
+      this.hue?.Strobe.Release(client);
       this.clients.TryRemove(id, out _);
       this.log.LogInformation("Web client disconnected. {Count} still watching.", this.clients.Count);
     }
@@ -388,6 +407,16 @@ public sealed class SocketHub {
         this.manual.Tap();
         break;
 
+      case "anchor":
+        // The downbeat without the tempo, which is what a tap cannot say under the
+        // manual source: a tap there is also a tempo press, so two of them in quick
+        // succession retune the grid to however fast somebody pressed. Routed straight
+        // to the grid's owner rather than through ManualSource, because a downbeat is
+        // a statement about the music in the room and not one source's opinion about
+        // tempo - the same argument that lets a tap align the bar while Link plays.
+        this.sources.AlignBar(BarAlignmentMethod.Tap);
+        break;
+
       case "setBpm":
         this.SetBpm(client, envelope.Data);
         break;
@@ -422,6 +451,14 @@ public sealed class SocketHub {
 
       case "setLightSettings":
         this.SetLightSettings(client, envelope.Data);
+        break;
+
+      case "setStageSettings":
+        this.SetStageSettings(client, envelope.Data);
+        break;
+
+      case "strobe":
+        this.HoldStrobe(client, envelope.Data);
         break;
 
       default:
@@ -698,7 +735,7 @@ public sealed class SocketHub {
     if(!Frames.TryReadLightSettings(data, out HueEngineData engine)) {
       client.Enqueue(Frames.Error(
         "invalid_data",
-        "Setting the light engine needs a string 'data.palette' and integers 'data.colorChangeBars', 'data.pulseMs', 'data.brightness' and 'data.pulseDepth'."));
+        "Setting the light engine needs strings 'data.palette' and 'data.colorLayout', a boolean 'data.strobe' and integers 'data.colorChangeBars', 'data.pulseMs', 'data.brightness', 'data.pulseDepth', 'data.colorCount' and 'data.strobeCycle'."));
       return;
     }
 
@@ -707,12 +744,93 @@ public sealed class SocketHub {
       return;
     }
 
-    LightSettings settings = new LightSettings(palette, engine.ColorChangeBars, engine.PulseMs, engine.Brightness, engine.PulseDepth);
+    if(!HueFrames.TryParseColorLayout(engine.ColorLayout, out LightColorLayout layout)) {
+      client.Enqueue(Frames.Error("rejected", $"No colour layout named '{Frames.Quote(engine.ColorLayout)}'."));
+      return;
+    }
+
+    LightSettings settings = new LightSettings(
+      palette,
+      engine.ColorChangeBars,
+      engine.PulseMs,
+      engine.Brightness,
+      engine.PulseDepth,
+      engine.ColorCount,
+      layout,
+      engine.Strobe,
+      engine.StrobeCycle);
 
     if(this.hue is null || !this.hue.TrySetLightSettings(settings)) {
       client.Enqueue(Frames.Error(
         "rejected",
-        $"Colour changes must be between 0 and {LightSettings.MaxColorChangeBars} bars, a pulse between 0 and {LightSettings.MaxPulseMs} ms, and brightness and depth between 0 and {LightSettings.MaxPercent} per cent."));
+        $"Colour changes must be between 0 and {LightSettings.MaxColorChangeBars} bars, a pulse between 0 and {LightSettings.MaxPulseMs} ms, brightness and depth between 0 and {LightSettings.MaxPercent} per cent, between 1 and {LightSettings.MaxColorCount} colours, and a strobe cycle between {LightSettings.MinStrobeCycle} and {LightSettings.MaxStrobeCycle} per cent of a beat."));
+    }
+  }
+
+  /// <summary>
+  /// Presses, renews or releases this connection's hold on the strobe.
+  ///
+  /// The connection itself is the holder, so a page holding from two fingers is one
+  /// hold and two pages holding at once are two. No acknowledgement either way: the
+  /// room is the confirmation, and a reply on every renewal would be two frames a
+  /// second saying nothing. Not gated on a running stream, for the reason the light
+  /// settings are not - a hold with no stream open lights nothing, and becomes a strobe
+  /// the moment one opens.
+  /// </summary>
+  private void HoldStrobe(Client client, JsonElement data) {
+    if(!Frames.TryReadStrobe(data, out bool held)) {
+      client.Enqueue(Frames.Error("invalid_data", "A strobe needs a boolean 'data.held'."));
+      return;
+    }
+
+    if(this.hue is null) {
+      client.Enqueue(Frames.Error("rejected", "This build has no Hue support."));
+      return;
+    }
+
+    if(held) {
+      this.hue.Strobe.Press(client);
+    } else {
+      this.hue.Strobe.Release(client);
+    }
+  }
+
+  /// <summary>
+  /// Applies a complete stage look, or says why it did not.
+  ///
+  /// No acknowledgement on success: the <c>stage</c> frame that follows carries what was
+  /// applied, and it goes to every page rather than to this one. That is the whole point
+  /// of the setting having moved to the server - a shape chosen on a phone has to move
+  /// the laptop's chips too, and a reply addressed to the phone would leave the laptop
+  /// showing a look nobody is running.
+  /// </summary>
+  private void SetStageSettings(Client client, JsonElement data) {
+    if(!Frames.TryReadStage(data, out StageData requested)) {
+      client.Enqueue(Frames.Error(
+        "invalid_data",
+        "Setting the stage needs strings 'data.layout', 'data.shape' and 'data.color' and integers 'data.bands' and 'data.trailMs'."));
+      return;
+    }
+
+    if(!StageFrames.TryParse(requested.Layout, out StageLayout layout)) {
+      client.Enqueue(Frames.Error("rejected", $"No layout named '{Frames.Quote(requested.Layout)}'."));
+      return;
+    }
+
+    if(!StageFrames.TryParse(requested.Shape, out StageShape shape)) {
+      client.Enqueue(Frames.Error("rejected", $"No shape named '{Frames.Quote(requested.Shape)}'."));
+      return;
+    }
+
+    if(!StageFrames.TryParse(requested.Color, out StageColor color)) {
+      client.Enqueue(Frames.Error("rejected", $"No colour style named '{Frames.Quote(requested.Color)}'."));
+      return;
+    }
+
+    if(!this.stage.TrySet(new StageSettings(layout, shape, color, requested.Bands, requested.TrailMs))) {
+      client.Enqueue(Frames.Error(
+        "rejected",
+        $"The band count must be between {SpectrumBands.Min} and {SpectrumBands.Max}, and a trail between 0 and {StageSettings.MaxTrailMs} ms."));
     }
   }
 

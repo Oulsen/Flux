@@ -1,4 +1,4 @@
-﻿import type { HueAreaData, HueData, HuePalette, HueState } from './protocol.ts';
+﻿import type { HueAreaData, HueColorLayout, HueData, HuePalette, HueState } from './protocol.ts';
 
 /**
  * The largest latency offset the server accepts, either way.
@@ -37,6 +37,24 @@ export const PALETTES: readonly HuePalette[] = [
 export const COLOR_CHANGE_BARS: readonly number[] = [0, 1, 2, 4, 8, 16];
 
 /**
+ * How many colours the room can be in at once.
+ *
+ * Mirrored from `LightSettings.MaxColorCount`. Three, because every hue added takes
+ * lights away from the others and past three a group stops reading as a part of the room
+ * and starts reading as individual bulbs disagreeing.
+ */
+export const COLOR_COUNTS: readonly number[] = [1, 2, 3];
+
+/**
+ * How the room can be divided between those colours, in the order they are offered.
+ *
+ * `radial` leads because it is the default and the one with an argument behind it. The
+ * other two are here to be tried against the room, which is the only way a look gets
+ * settled. Mirrored from `LightColorLayout`.
+ */
+export const COLOR_LAYOUTS: readonly HueColorLayout[] = ['radial', 'alternating', 'random'];
+
+/**
  * The slowest pulse the server accepts.
  *
  * Mirrored from `LightSettings.MaxPulseMs`. Two seconds is four beats at 120 BPM, past
@@ -53,6 +71,15 @@ export const PULSE_LIMIT_MS = 2000;
  * server accepts is a rejection nobody deserves.
  */
 export const PERCENT_LIMIT = 100;
+
+/**
+ * The shortest and longest strobe cycle, as a percentage of a beat.
+ *
+ * Mirrored from `LightSettings.MinStrobeCycle` and `MaxStrobeCycle`, which carry the
+ * reference scene's range across unchanged.
+ */
+export const STROBE_CYCLE_MIN = 10;
+export const STROBE_CYCLE_MAX = 100;
 
 /**
  * The shortest pulse a bulb can actually render, in milliseconds.
@@ -156,6 +183,23 @@ export function showsPairing(state: HueState | null): boolean {
  */
 export function showsRooms(hue: HueData | null): boolean {
   return hue !== null && hue.state !== 'disabled' && !showsPairing(hue.state) && hue.areas.length > 0;
+}
+
+/**
+ * Whether the bridge needs somebody to do something before the lights can work.
+ *
+ * Narrower than "the room controls are not showing", and the difference decides
+ * whether the settings drawer opens itself over the stage. A build with the lights
+ * switched off, or one with no Hue support at all, shows no rooms and needs nothing
+ * done about it - that is the beat lab running as intended, and a drawer that opened
+ * itself every launch to say so would be a fault rather than a prompt.
+ */
+export function bridgeNeedsSetup(hue: HueData | null): boolean {
+  if (hue === null || hue.state === 'disabled') {
+    return false;
+  }
+
+  return showsPairing(hue.state) || hue.selectedAreaId === null;
 }
 
 /**
@@ -299,6 +343,45 @@ export function colorChangeLabel(bars: number): string {
   const rounded = Math.round(bars);
 
   return rounded === 1 ? 'every bar' : `every ${rounded} bars`;
+}
+
+/**
+ * How many colours the room is in, in words.
+ *
+ * "one colour" rather than "1", because the row beside it reads "every 4 bars" and a
+ * bare numeral in a row of phrases reads as a quantity of something unnamed.
+ */
+export function colorCountLabel(count: number): string {
+  const rounded = Math.max(1, Math.round(count));
+
+  return rounded === 1 ? 'one colour' : `${rounded} colours`;
+}
+
+/**
+ * How often the strobe flashes, in words.
+ *
+ * Flashes per beat rather than the percentage the wire carries, because the percentage
+ * reads backwards - a smaller number is faster - and "twice a beat" is what somebody
+ * standing in the room would say.
+ */
+export function strobeCycleLabel(cycle: number): string {
+  const rounded = Math.round(cycle);
+
+  if (!Number.isFinite(rounded) || rounded <= 0) {
+    return 'off';
+  }
+
+  const perBeat = 100 / rounded;
+
+  if (perBeat === 1) {
+    return 'once a beat';
+  }
+
+  if (perBeat === 2) {
+    return 'twice a beat';
+  }
+
+  return `${Number.isInteger(perBeat) ? perBeat : perBeat.toFixed(1)} a beat`;
 }
 
 /**

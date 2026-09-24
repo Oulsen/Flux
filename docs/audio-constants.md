@@ -264,7 +264,7 @@ between the two programs rather than a disagreement about music.
 | Flux | Value | Why |
 |---|---|---|
 | `WarmUpFrames` | 20 frames | The scene's host handed it a spectrum that was already running. Ours starts at silence and climbs to the signal over several frames as the smoothing fills, and that climb is a rising flux with no music behind it. A third of a second is enough for the carry-over to fall under a twentieth, and far cheaper than one phantom onset inside the tempo estimate |
-| `DisplayBins`, `DisplayLowHz`, `DisplayHighHz` | 64 columns, 30 Hz to 16 kHz | The 64 log-spaced columns the protocol sends. The scene's visible width is a user setting defaulting to its first 2.5 kHz; a visualizer being read as a test instrument wants the whole picture |
+| `DisplayBins`, `DisplayLowHz`, `DisplayHighHz` | 128 columns, 30 Hz to 16 kHz | The log-spaced columns the protocol sends. The scene's visible width is a user setting defaulting to its first 2.5 kHz; a visualizer being read as a test instrument wants the whole picture. 64 until the visualizer became the whole page - see the derivation below |
 | `ConfidenceLockedFloor`, `ConfidenceLockedSpan` | 0.6 + up to 0.4 | The scene never reported confidence; Flux has a source selector that needs one. These define the protocol's `confidence` field for a locked tempo. The floor sits above the unlocked ceiling so the bands cannot overlap: a lock is a qualitative claim about twelve consistent beats, and no amount of unlocked consistency should outrank it. The span is the remainder of the scale, filled in by interval consistency |
 | `ConfidenceUnlockedCeiling` | 0.5 | The most an unlocked tempo can claim, a tenth below the locked floor so the two bands stay visibly apart rather than merely disjoint |
 | `ConfidenceSpreadRange` | 2 | Interval spread is mapped to a 0 to 1 consistency by dividing by this multiple of `LockMaxRelativeStdDev`. Two puts the lock bar itself at the middle of the scale: intervals exactly at the bar read 0.5, and only a spread twice as loose as anything lockable reads zero |
@@ -272,6 +272,36 @@ between the two programs rather than a disagreement about music.
 `FrameRateHz` is 60, which is the scene's rate because it ran on
 `requestAnimationFrame`. It is not free to change: the history windows above are
 sized in frames, and 280 ms is only 17 frames at this rate.
+
+`DisplayBins` was 64 and is 128, raised when the visualizer stopped being a panel
+and became the whole page: across a monitor, 64 columns read as blocks rather than
+as a spectrum. What the doubling actually buys is bounded by the transform and not
+by this number, and the bound is the part worth writing down.
+
+At 48 kHz, `FftSize` of 2048 resolves 48000 / 2048 = 23.4 Hz per bin. The columns
+are log-spaced, so column *c* of *N* spans from
+`DisplayLowHz * (DisplayHighHz / DisplayLowHz)^(c/N)` to the same at *c+1*, and its
+width in hertz grows with *c*. Setting that width equal to one bin gives the column
+below which the picture is asking for detail the transform does not have:
+
+| `DisplayBins` | Column where a column first exceeds one bin | Frequency there | Columns that resolve |
+|---|---|---|---|
+| 64 | 21 | 235 Hz | 43 of 64 |
+| 128 | 56 | 468 Hz | 72 of 128 |
+
+So the bottom 56 columns of 128 share about 20 bins and repeat each other, where
+64 columns had 21 doing the same. The count that resolves real detail rises from
+43 to 72, which is what makes the picture finer; the bass end is no worse than it
+was, it is only drawn in more columns.
+
+Fixing the bass end properly means a longer transform, and that is deliberately not
+done here. `FftSize` is a tuned number with a beat detector downstream: doubling it
+doubles the window a kick's onset is smeared over, and the effect of that on the
+onset timing is not something to change in a commit about how the picture looks.
+
+None of this touches detection. The detector reads `BandEnergy` over the full
+transform, never the display columns, which is why this is a change to one number
+and a doc table rather than a re-calibration.
 
 ### Changed from the scene
 

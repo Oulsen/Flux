@@ -245,6 +245,7 @@ public sealed class AudioSyncSourceTests {
       SyncSourceManager sources = new SyncSourceManager(
         this.Grid,
         Options.Create(beat),
+        settings: null,
         NullLogger<SyncSourceManager>.Instance);
 
       // Never started: the analyzer is here for its frame-rate reading and as the
@@ -253,7 +254,8 @@ public sealed class AudioSyncSourceTests {
       SpectrumAnalyzer analyzer = new SpectrumAnalyzer(
         new NoSamples(),
         this.Clock,
-        NullLogger<SpectrumAnalyzer>.Instance);
+        NullLogger<SpectrumAnalyzer>.Instance,
+        bands: null);
 
       this.source = new AudioSyncSource(
         analyzer,

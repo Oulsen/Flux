@@ -1,3 +1,5 @@
+using Flux.Audio;
+using Flux.Beat;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -53,7 +55,19 @@ public static class ServiceCollectionExtensions {
     // the pulse across frames, so a second one would render a second envelope and the
     // page would see whichever answered. It is a hosted service only to subscribe to
     // the beat scheduler at start and come off it at stop - it opens nothing.
-    services.AddSingleton<LightEngine>();
+    //
+    // Constructed by hand rather than by the container so the audio dependency is
+    // visibly optional: GetService and not GetRequiredService, because a build with no
+    // audio project registers no IAudioSpectrum and the engine is expected to light
+    // every channel alike in that case. The constructor takes it as nullable but not
+    // optional, which is what makes this line fail to compile rather than silently skip
+    // it - the trap step 3 hit with the analyzer's band count.
+    services.AddSingleton<LightEngine>(provider => new LightEngine(
+      provider.GetRequiredService<BeatScheduler>(),
+      provider.GetRequiredService<HueBridgeService>(),
+      provider.GetRequiredService<IMonotonicClock>(),
+      provider.GetService<IAudioSpectrum>(),
+      provider.GetRequiredService<ILogger<LightEngine>>()));
     services.AddSingleton<ILightSource>(provider => provider.GetRequiredService<LightEngine>());
     services.AddHostedService(provider => provider.GetRequiredService<LightEngine>());
 
@@ -62,6 +76,17 @@ public static class ServiceCollectionExtensions {
     // at launch would mean a beat-lab session nobody asked for was holding the show's
     // only slot.
     services.AddSingleton<HueStreamService>();
+
+    // The engine for the page while nothing is streaming. Registered as itself so the web
+    // layer can read its frames, and as a hosted service so its loop runs from startup:
+    // unlike the stream it opens nothing, so there is no reason to wait to be asked.
+    services.AddSingleton(provider => new LightPreview(
+      provider.GetRequiredService<ILightSource>(),
+      provider.GetRequiredService<HueStreamService>(),
+      provider.GetRequiredService<HueBridgeService>(),
+      provider.GetRequiredService<IOptions<HueOptions>>(),
+      provider.GetRequiredService<ILogger<LightPreview>>()));
+    services.AddHostedService(provider => provider.GetRequiredService<LightPreview>());
 
     // Registered as itself and as the hosted service, because the web layer calls it
     // by name: a second instance would hold a second, disagreeing picture of the same

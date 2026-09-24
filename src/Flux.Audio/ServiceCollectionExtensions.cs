@@ -40,6 +40,17 @@ public static class ServiceCollectionExtensions {
 
     services.AddSingleton<IAudioDeviceCatalog, AudioDeviceCatalog>();
 
+    // The same per-user folder the Hue settings and the bridge key live in, resolved
+    // the same way, because "where Flux remembers things" should be one place on disk
+    // rather than one place per project.
+    string directory = System.IO.Path.Combine(
+      Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+      "Flux");
+
+    services.AddSingleton<IAudioSettingsStore>(provider => new JsonAudioSettingsStore(
+      directory,
+      provider.GetRequiredService<ILogger<JsonAudioSettingsStore>>()));
+
     // The recorder is registered here rather than beside the frame recorder in
     // AddAudioAnalysis, because it records what capture produces and not what the
     // analyzer makes of it. A host with a level meter and no FFT thread can still
@@ -56,7 +67,8 @@ public static class ServiceCollectionExtensions {
       provider.GetRequiredService<IMonotonicClock>(),
       provider.GetRequiredService<IOptions<AudioOptions>>(),
       provider.GetRequiredService<IMonoTap>(),
-      provider.GetRequiredService<ILogger<AudioCaptureService>>()));
+      provider.GetRequiredService<ILogger<AudioCaptureService>>(),
+      provider.GetRequiredService<IAudioSettingsStore>()));
     services.AddSingleton<IAudioDevices>(provider => provider.GetRequiredService<AudioCaptureService>());
     services.AddHostedService(provider => provider.GetRequiredService<AudioCaptureService>());
 
@@ -86,10 +98,18 @@ public static class ServiceCollectionExtensions {
   public static IServiceCollection AddAudioAnalysis(this IServiceCollection services) {
     ArgumentNullException.ThrowIfNull(services);
 
+    // GetService rather than GetRequiredService for the band count, because a host with
+    // no web layer has nobody to ask: the analyzer then produces the ceiling, which is
+    // what a recorder or a console build wants anyway. It is passed explicitly and not
+    // left to the constructor's default, which is the whole trap this line exists to
+    // avoid - a factory lambda silently skips an optional parameter, so the setting
+    // reached the server, was stored, was echoed to every page and moved every control,
+    // and changed nothing about the picture.
     services.AddSingleton<SpectrumAnalyzer>(provider => new SpectrumAnalyzer(
       provider.GetRequiredService<AudioCaptureService>(),
       provider.GetRequiredService<IMonotonicClock>(),
-      provider.GetRequiredService<ILogger<SpectrumAnalyzer>>()));
+      provider.GetRequiredService<ILogger<SpectrumAnalyzer>>(),
+      provider.GetService<ISpectrumBands>()));
     services.AddHostedService(provider => provider.GetRequiredService<SpectrumAnalyzer>());
     services.AddHostedService<FrameRecorder>();
 

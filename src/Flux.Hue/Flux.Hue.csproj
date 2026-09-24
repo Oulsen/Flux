@@ -19,7 +19,14 @@
     <InternalsVisibleTo Include="Flux.Hue.Tests" />
   </ItemGroup>
 
+  <!-- The contract assembly and never Flux.Audio itself, which is the arrangement that
+       project was split out for: the light engine needs three band energies to decide
+       which lights lead, and taking them from the capture project would drag a
+       net10.0-windows target and WASAPI into a project that is HTTP and UDP. A build
+       with no audio at all registers no IAudioSpectrum and the engine falls back to
+       lighting every channel alike. -->
   <ItemGroup>
+    <ProjectReference Include="..\Flux.Audio.Contract\Flux.Audio.Contract.csproj" />
     <ProjectReference Include="..\Flux.Beat\Flux.Beat.csproj" />
   </ItemGroup>
 

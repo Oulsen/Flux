@@ -28,6 +28,32 @@ public sealed class WireFormatTests {
     Assert.Equal(10, data.GetProperty("devicesHz").GetInt32());
   }
 
+  /// <summary>
+  /// The preview is the engine's picture while nothing streams: the same two readings as
+  /// <c>light</c> without a frame rate, and sent as null rather than left out when there
+  /// is none, on the rule every other absent reading on this frame follows.
+  /// </summary>
+  [Fact]
+  public void StateCarriesThePreviewAndSaysNullWhenThereIsNone() {
+    StateData previewing = new StateData(
+      "audio",
+      "live",
+      [],
+      Grid: null,
+      new AlignmentData(Aligned: false, Method: null),
+      Light: null,
+      new DiagnosticsData(0.0),
+      new PreviewData(new LightColorData(0.8, 0.2, 0.4), [new LightChannelData(0.5, 0.1, 0.6, 0.3)]));
+
+    JsonElement preview = Payload(Frames.State(previewing), "state").GetProperty("preview");
+    Assert.Equal(0.8, preview.GetProperty("color").GetProperty("r").GetDouble());
+    Assert.Equal(0.5, preview.GetProperty("channels")[0].GetProperty("at").GetDouble());
+    Assert.Equal(0.6, preview.GetProperty("channels")[0].GetProperty("g").GetDouble());
+
+    StateData streaming = previewing with { Preview = null };
+    Assert.Equal(JsonValueKind.Null, Payload(Frames.State(streaming), "state").GetProperty("preview").ValueKind);
+  }
+
   [Fact]
   public void StateNamesEveryFieldTheDocumentPromises() {
     StateData state = new StateData(
@@ -124,6 +150,81 @@ public sealed class WireFormatTests {
     JsonElement data = Payload(Frames.State(state), "state");
 
     Assert.Equal(49.7, data.GetProperty("light").GetProperty("fps").GetDouble());
+  }
+
+  /// <summary>
+  /// The colour goes out linear and unrounded, because the page is drawing the room
+  /// from it rather than reading it. Rounding for the wire would be a conversion nobody
+  /// asked for in the one place where both ends agree what the numbers mean.
+  /// </summary>
+  [Fact]
+  public void StateCarriesTheColourTheLightsWereSent() {
+    StateData state = new StateData(
+      "audio",
+      "live",
+      [],
+      new GridData(128.0, 4.0, 4, 1, BarAligned: true),
+      new AlignmentData(Aligned: true, Method: "tap"),
+      new LightData(49.7, new LightColorData(0.8, 0.25, 0.55)),
+      new DiagnosticsData(0));
+
+    JsonElement color = Payload(Frames.State(state), "state").GetProperty("light").GetProperty("color");
+
+    Assert.Equal(0.8, color.GetProperty("r").GetDouble());
+    Assert.Equal(0.25, color.GetProperty("g").GetDouble());
+    Assert.Equal(0.55, color.GetProperty("b").GetDouble());
+  }
+
+  /// <summary>
+  /// Each light carries where it listens as well as what it was sent, because a page
+  /// that had to work out which light owns which part of the spectrum would be a second
+  /// implementation of a rule the server tunes.
+  /// </summary>
+  [Fact]
+  public void StateCarriesWhereEachLightListensBesideWhatItWasSent() {
+    StateData state = new StateData(
+      "audio",
+      "live",
+      [],
+      new GridData(128.0, 4.0, 4, 1, BarAligned: true),
+      new AlignmentData(Aligned: true, Method: "tap"),
+      new LightData(49.7, new LightColorData(0.8, 0.25, 0.55), [
+        new LightChannelData(0, 0.8, 0.25, 0.55),
+        new LightChannelData(1, 0.2, 0.06, 0.14),
+      ]),
+      new DiagnosticsData(0));
+
+    JsonElement channels = Payload(Frames.State(state), "state").GetProperty("light").GetProperty("channels");
+
+    Assert.Equal(2, channels.GetArrayLength());
+    Assert.Equal(0, channels[0].GetProperty("at").GetDouble());
+    Assert.Equal(0.8, channels[0].GetProperty("r").GetDouble());
+    Assert.Equal(1, channels[1].GetProperty("at").GetDouble());
+    Assert.Equal(0.14, channels[1].GetProperty("b").GetDouble());
+  }
+
+  /// <summary>
+  /// Omitted rather than sent as null, and the distinction is the one this file already
+  /// pins for <c>grid</c> from the other direction: a documented value survives as a
+  /// null, while something that does not apply yet is left out. A page can then tell
+  /// "no frame has gone out" from a colour, which matters because black is a colour the
+  /// engine can legitimately send.
+  /// </summary>
+  [Fact]
+  public void StateOmitsTheColourUntilAFrameHasGoneOut() {
+    StateData state = new StateData(
+      "audio",
+      "live",
+      [],
+      new GridData(128.0, 4.0, 4, 1, BarAligned: true),
+      new AlignmentData(Aligned: true, Method: "tap"),
+      new LightData(0),
+      new DiagnosticsData(0));
+
+    JsonElement light = Payload(Frames.State(state), "state").GetProperty("light");
+
+    Assert.False(light.TryGetProperty("color", out _));
+    Assert.True(light.TryGetProperty("fps", out _));
   }
 
   /// <summary>

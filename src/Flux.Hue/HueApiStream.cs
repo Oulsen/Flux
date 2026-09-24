@@ -72,29 +72,67 @@ internal sealed class HueApiStream: IHueStream {
   private readonly StreamingGroup group;
   private readonly EntertainmentLayer layer;
 
+  /// <summary>
+  /// The layer's lights in a fixed order, so an index means the same channel on every
+  /// frame.
+  ///
+  /// Materialised once rather than enumerated per frame, because <see cref="Set"/>
+  /// addresses lights by index and the layer is a collection whose order is the
+  /// library's business rather than a promise to us.
+  /// </summary>
+  private readonly EntertainmentLight[] ordered;
+
   private bool disposed;
 
   internal HueApiStream(StreamingHueClient client, StreamingGroup group, EntertainmentLayer layer) {
     this.client = client;
     this.group = group;
     this.layer = layer;
+    this.ordered = [.. layer];
+
+    // The one place the bridge's geometry crosses into Flux. HuePosition's own IsLeft
+    // and IsTop are deliberately not used: they are sign tests rather than thresholds,
+    // so a light at the origin reports left, front, top and centre all at once, and a
+    // mapping built on them would be confidently wrong. The coordinates are taken raw
+    // and ranked in LightPlacements.
+    this.Channels = [.. this.ordered.Select(light => new HueChannel(
+      light.Id,
+      light.LightLocation is { } at ? new LightPosition(at.X, at.Y, at.Z) : LightPosition.Centre))];
   }
 
   public int ChannelCount => this.layer.Count;
+
+  public IReadOnlyList<HueChannel> Channels { get; }
 
   public void SetAll(HueColor color) {
     HueColor safe = color.Clamped();
     RGBColor rgb = new RGBColor(safe.R, safe.G, safe.B);
 
     foreach(EntertainmentLight light in this.layer) {
-      light.State.SetRGBColor(rgb);
-
-      // Brightness is pinned at full and the colour carries the intensity, which is
-      // one decision rather than two multiplying each other. A dim red is RGB(0.3,0,0)
-      // here, not full red at 30% - the second form gives the same result two ways and
-      // makes the light engine's output impossible to reason about from a log line.
-      light.State.SetBrightness(1.0);
+      Paint(light, rgb);
     }
+  }
+
+  public void Set(ReadOnlySpan<HueColor> colors) {
+    if(colors.Length < this.ordered.Length) {
+      throw new ArgumentException($"This session drives {this.ordered.Length} channel(s) and {colors.Length} colour(s) were offered.", nameof(colors));
+    }
+
+    for(int index = 0; index < this.ordered.Length; index++) {
+      HueColor safe = colors[index].Clamped();
+
+      Paint(this.ordered[index], new RGBColor(safe.R, safe.G, safe.B));
+    }
+  }
+
+  private static void Paint(EntertainmentLight light, RGBColor rgb) {
+    light.State.SetRGBColor(rgb);
+
+    // Brightness is pinned at full and the colour carries the intensity, which is
+    // one decision rather than two multiplying each other. A dim red is RGB(0.3,0,0)
+    // here, not full red at 30% - the second form gives the same result two ways and
+    // makes the light engine's output impossible to reason about from a log line.
+    light.State.SetBrightness(1.0);
   }
 
   public void Send() {

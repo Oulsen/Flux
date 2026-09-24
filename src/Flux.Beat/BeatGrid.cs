@@ -54,7 +54,13 @@ public readonly record struct BeatGridSnapshot(
 /// </summary>
 /// <param name="PositionInBar">1-based position within the quantum.</param>
 /// <param name="IsAligned">False while the count has an arbitrary starting point.</param>
-public readonly record struct BarPosition(int PositionInBar, bool IsAligned);
+/// <param name="Bar">
+/// Which bar the beat is in, counted from the anchor so the anchored bar is bar 0, or from
+/// beat 0 while unaligned. Carried so that anything counting bars - the light engine's
+/// colour changes - counts from the same downbeat the readout shows, rather than working
+/// out for itself whether the anchor moved.
+/// </param>
+public readonly record struct BarPosition(int PositionInBar, bool IsAligned, long Bar);
 
 /// <summary>
 /// A newly published tempo, and what adopting it did to the beat numbering.
@@ -62,8 +68,8 @@ public readonly record struct BarPosition(int PositionInBar, bool IsAligned);
 /// The shift is worth carrying rather than discarding, because it is large and
 /// surprising: rekordbox does not preserve beat continuity across a tempo
 /// change, so the absolute Link beat number is not a stable identity. Anything
-/// anchored to a beat index - bar alignment above all - has to re-arm when this
-/// fires.
+/// anchored to a beat index has to be moved by the shift when this fires, as the
+/// grid does with its own bar anchor, or it points at a different moment in the music.
 /// </summary>
 /// <param name="Timeline">The timeline now in force.</param>
 /// <param name="BeatNumberingShift">How far the beat number moved at the instant of the change; zero for the first timeline.</param>
@@ -90,18 +96,11 @@ public readonly record struct TempoChange(BeatTimeline Timeline, double BeatNumb
 /// reacted to.
 /// </summary>
 public sealed class BeatGrid {
-  /// <summary>
-  /// How far the beat numbering may move while keeping the bar anchor.
-  ///
-  /// The two cases this separates are far apart in practice, which is what makes
-  /// a single threshold workable: a Link tempo change renumbers by thousands of
-  /// beats and a session switch by hundreds, while a source re-publishing a
-  /// smoothed tempo moves it by a rounding error. Below half a beat the anchor is
-  /// worth keeping even though it may now be marginally off, because the
-  /// alternative is throwing away an alignment the user had to perform by hand
-  /// and asking them to do it again over a wobble they cannot hear.
-  /// </summary>
-  private const double MaxShiftKeepingBarAnchor = 0.5;
+  // There was a MaxShiftKeepingBarAnchor here, the distance the beat numbering could move
+  // while the bar anchor survived it. It is gone rather than raised, because the anchor no
+  // longer depends on the size of the shift at all: Apply carries it across by the shift
+  // instead of discarding it past a threshold, and a threshold guarding a branch that has
+  // been deleted is a number somebody will later try to tune.
 
   private readonly IMonotonicClock clock;
   private readonly int quantum;
@@ -130,6 +129,21 @@ public sealed class BeatGrid {
 
   /// <summary>Raised on the first accepted packet, and again after every tempo change.</summary>
   public event Action<TempoChange>? TempoChanged;
+
+  /// <summary>
+  /// Raised when an alignment moves the downbeat, with the local timestamp of the beat
+  /// that is now position 1.
+  ///
+  /// The bar number on each beat event is not enough on its own, because an alignment is
+  /// usually late for its own beat: a press rounds to the nearest beat, and a press a hair
+  /// after the kick names a beat that has already fired carrying the old bar. Whoever
+  /// wants to answer the press on the beat it meant needs to hear about it directly.
+  ///
+  /// Not raised when nothing moved - a press on the beat already anchored, or a drop that
+  /// only confirmed the bar - since a restart answering a no-op would be a visible change
+  /// with no cause.
+  /// </summary>
+  public event Action<double>? BarAligned;
 
   /// <summary>
   /// Adopts a freshly received timeline.
@@ -170,14 +184,24 @@ public sealed class BeatGrid {
           announcement = new TempoChange(received, shift);
         }
 
-        // The bar anchor is a beat index, so a renumbering leaves it pointing at
-        // a different moment in the music. Clearing it re-arms the alignment,
-        // which is why a cue press or a tap has to be repeated after a tempo
-        // change: the position was real, and the number that recorded it is not
-        // any more.
-        if(Math.Abs(shift) >= MaxShiftKeepingBarAnchor) {
-          this.barAnchorBeat = null;
-          this.alignmentMethod = BarAlignmentMethod.None;
+        // The bar anchor is a beat index, so a renumbering leaves the number pointing at
+        // a different moment in the music. Until 2026-09-11 that was answered by throwing
+        // the anchor away, and the reasoning had a hole in it: the number is wrong, but
+        // the shift that made it wrong is right here and known, so the number can be
+        // corrected instead of forgotten.
+        //
+        // <b>An anchor is the user's statement and outranks a renumbering.</b> The
+        // discarded version was visible on any audio source: a tap or a cue press held
+        // until the detector next rebased the timeline - which it does on drops and on
+        // strong beats, so within a bar or two - and the page went back to "counting
+        // beats, bar not anchored yet" with nothing the user did to explain it.
+        //
+        // Rounded, because a fractional shift means the new timeline puts its beats at
+        // different moments and no integer index lands on the old one exactly. Nearest is
+        // then the honest answer and it is off by at most half a beat, against an
+        // alignment that had to be performed by hand and would otherwise be gone.
+        if(this.barAnchorBeat is { } anchored && double.IsFinite(shift)) {
+          this.barAnchorBeat = anchored + (long)Math.Round(shift);
         }
       } else {
         announcement = new TempoChange(received, BeatNumberingShift: 0);
@@ -225,18 +249,64 @@ public sealed class BeatGrid {
   /// rounds instead of using <see cref="IndexOf"/>.
   /// </summary>
   /// <param name="method">What supplied the downbeat, for the UI to show.</param>
+  /// <param name="snapToBar">
+  /// Whether this is a guess that should defer to a bar already known.
+  ///
+  /// <b>For the drop detector and for nothing else so far.</b> A cue press and a tap are
+  /// somebody saying "this is bar one" and are taken at their word. A drop is the one
+  /// downbeat audio analysis can find without being told, it is labelled as a guess where
+  /// it is raised, and until 2026-09-11 the grid nonetheless treated it as authoritative:
+  /// it declared whatever beat it landed on to be position one and rotated the bar out
+  /// from under a tap that was already correct. Two things make that likely rather than
+  /// rare - detection fires on an energy jump a frame or two after the transient, and a
+  /// drop is not reliably on a downbeat in the first place.
+  ///
+  /// With this set and an anchor already in place, the anchor moves to the nearest
+  /// downbeat of the existing grid instead. That is **phase-preserving by construction**,
+  /// since every such downbeat is a whole number of bars from the current anchor, so the
+  /// visible consequence is that a drop can no longer rotate the bar once one is known.
+  /// It can still move bar one by whole bars, which leaves every position where it was
+  /// but restarts the bar count, and with it the light engine's colour cycle, from the
+  /// drop. That is the intended reading of "a guess should not overrule a measurement",
+  /// and the cost is stated rather than hidden: an anchor that is genuinely wrong stays
+  /// wrong until somebody taps again. Where no anchor exists a drop still
+  /// sets one outright, which is the job it was added for.
+  /// </param>
   /// <returns>False when no timeline is known yet, so there is no beat to anchor to.</returns>
-  public bool TryAlignBar(BarAlignmentMethod method) {
+  public bool TryAlignBar(BarAlignmentMethod method, bool snapToBar = false) {
+    double? movedTo;
+
     lock(this.gate) {
       if(this.timeline is not BeatTimeline known) {
         return false;
       }
 
-      this.barAnchorBeat = (long)Math.Round(known.BeatAt(this.clock.NowMicros));
-      this.alignmentMethod = method;
+      long beat = (long)Math.Round(known.BeatAt(this.clock.NowMicros));
+      long? previous = this.barAnchorBeat;
 
-      return true;
+      if(snapToBar && previous is { } anchor) {
+        // Rounded rather than floored, so a drop landing late in a bar belongs to the bar
+        // it is closer to rather than always to the one it is inside.
+        long bars = (long)Math.Round((beat - anchor) / (double)this.quantum);
+
+        this.barAnchorBeat = anchor + (bars * this.quantum);
+
+        // The method is left alone on purpose. Nothing about where the bar falls has
+        // changed, so the downbeat still came from whatever supplied it, and relabelling
+        // a cue press as a drop would put a wrong answer on screen to describe a no-op.
+      } else {
+        this.barAnchorBeat = beat;
+        this.alignmentMethod = method;
+      }
+
+      movedTo = this.barAnchorBeat == previous ? null : known.MicrosOfBeat(this.barAnchorBeat.Value);
     }
+
+    if(movedTo is { } micros) {
+      this.BarAligned?.Invoke(micros);
+    }
+
+    return true;
   }
 
   /// <summary>
@@ -307,9 +377,19 @@ public sealed class BeatGrid {
   /// tap or not at all.
   /// </summary>
   private BarPosition PositionWhileLocked(long beatIndex) {
+    long fromAnchor = beatIndex - (this.barAnchorBeat ?? 0);
+
+    // Floored, for the same reason the position is normalised: beats before the anchor
+    // belong to bar -1 and not to a second bar 0.
+    long bar = fromAnchor / this.quantum;
+    if(fromAnchor % this.quantum < 0) {
+      bar--;
+    }
+
     return new BarPosition(
-      PositionInBar(beatIndex - (this.barAnchorBeat ?? 0), this.quantum),
-      this.barAnchorBeat is not null);
+      PositionInBar(fromAnchor, this.quantum),
+      this.barAnchorBeat is not null,
+      bar);
   }
 
   /// <summary>

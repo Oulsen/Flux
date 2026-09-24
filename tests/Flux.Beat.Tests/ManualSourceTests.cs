@@ -137,17 +137,19 @@ public class ManualSourceTests {
   }
 
   /// <summary>
-  /// A typed number says how fast, never where. It sets no downbeat, and it does
-  /// not preserve one either: anchoring the new tempo at the moment of typing
-  /// rebases the numbering, so the beat index the old anchor named now points
-  /// somewhere else in the music and has to be re-armed.
+  /// A typed number says how fast, never where - and it no longer retires the downbeat
+  /// somebody already set.
   ///
-  /// A known trade rather than an oversight. Carrying the phase across a tempo
-  /// edit would mean anchoring the new tempo to the beat currently sounding
-  /// instead of to beat 0, which is worth doing and is not what this does today.
+  /// The comment that used to sit here recorded this as a known trade: typing a tempo
+  /// rebases the numbering, the old anchor's beat index then names a different moment,
+  /// and carrying the phase across "is worth doing and is not what this does today". It
+  /// is what it does now. The grid translates the anchor by the shift it has just
+  /// measured instead of discarding it, so the downbeat goes on naming the moment the
+  /// user tapped and the typed number changes only the tempo - which is all a typed
+  /// number was ever claiming to change.
   /// </summary>
   [Fact]
-  public void ATypedTempoSetsNoDownbeatAndRetiresTheOldOne() {
+  public void ATypedTempoSetsNoDownbeatAndKeepsTheOneAlreadySet() {
     (ManualSource manual, BeatGrid grid, FakeClock clock) = NewSource();
 
     manual.Tap();
@@ -161,8 +163,8 @@ public class ManualSourceTests {
 
     Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot afterTyping));
     Assert.Equal(128, afterTyping.Bpm, precision: 6);
-    Assert.False(afterTyping.IsBarAligned);
-    Assert.Equal(BarAlignmentMethod.None, afterTyping.AlignmentMethod);
+    Assert.True(afterTyping.IsBarAligned);
+    Assert.Equal(BarAlignmentMethod.Tap, afterTyping.AlignmentMethod);
   }
 
   /// <summary>
@@ -328,6 +330,7 @@ public class ManualSourceTests {
     SyncSourceManager manager = new SyncSourceManager(
       grid,
       Options.Create(new BeatOptions { DefaultSource = ManualSource.SourceName }),
+      settings: null,
       NullLogger<SyncSourceManager>.Instance);
 
     return (new ManualSource(clock, manager), grid, clock);

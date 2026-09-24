@@ -11,12 +11,15 @@ import {
   type HueData,
   type HueEngineData,
   type LightData,
+  type PreviewData,
   type RawMessage,
   type SourceReportData,
   type SourceState,
   type SpectrumData,
+  type StageData,
   type StateData,
 } from './protocol.ts';
+import { BAND_DEFAULT, COLOR_DEFAULT, LAYOUT_DEFAULT, SHAPE_DEFAULT } from './scene.ts';
 import type { ConnectionState } from './socket.ts';
 import {
   clearsPendingSelection,
@@ -118,6 +121,37 @@ export class FluxStore {
   /** Non-null exactly while Flux is streaming to a bridge. */
   light = $state<LightData | null>(null);
 
+  /** The engine's picture while nothing streams. Never non-null alongside `light`. */
+  preview = $state<PreviewData | null>(null);
+
+  /**
+   * How the stage draws, as the server has it.
+   *
+   * Seeded with the same defaults the server starts from rather than left null, on the
+   * argument `quantum` and `stateHz` already run on: the real frame arrives within a
+   * handshake, and a canvas that waited for it would flash an empty window on every
+   * load. The server is still the authority - this is only what to draw for the frame
+   * or two before it says so.
+   */
+  stage = $state<StageData>({
+    layout: LAYOUT_DEFAULT,
+    shape: SHAPE_DEFAULT,
+    color: COLOR_DEFAULT,
+    bands: BAND_DEFAULT,
+    trailMs: 0,
+  });
+
+  /**
+   * The stage settings this page has asked for and not yet seen come back.
+   *
+   * The same arrangement as `pendingEngine`, for the same reason: every control sends
+   * all four fields because that is what the message is, but composed from the server's
+   * picture with this on top. Built from the server's picture alone, tapping a shape
+   * would carry the band count this page last heard about and undo one chosen on another
+   * phone half a second ago.
+   */
+  pendingStage = $state<Partial<StageData>>({});
+
   beat = $state<BeatData | null>(null);
 
   /** Bumped once per beat, so a flash can be retriggered even on a repeat position. */
@@ -172,6 +206,7 @@ export class FluxStore {
         this.alignment = state.alignment;
         this.grid = state.grid;
         this.light = state.light;
+        this.preview = state.preview ?? null;
         this.diagnostics = state.diagnostics;
         this.pendingSource = resolvePending(this.pendingSource, state.source);
 
@@ -196,6 +231,16 @@ export class FluxStore {
           this.pendingDevice = resolvePending(this.pendingDevice, selected);
         }
 
+        break;
+      }
+
+      case 'stage': {
+        // Replaced wholesale rather than merged: the frame is a complete statement of
+        // the look, which is exactly what the message that set it was.
+        const stage = message.data as StageData;
+
+        this.stage = stage;
+        this.pendingStage = resolvePendingFields(this.pendingStage, stage);
         break;
       }
 
@@ -238,6 +283,7 @@ export class FluxStore {
           this.pendingSource = null;
           this.pendingDevice = null;
           this.pendingEngine = {};
+          this.pendingStage = {};
         }
 
         console.warn('Flux rejected a message:', error);
@@ -261,6 +307,7 @@ export class FluxStore {
     this.pendingSource = null;
     this.pendingDevice = null;
     this.pendingEngine = {};
+    this.pendingStage = {};
 
     // A subscription is a preference held by the connection that is now gone, so
     // the list it filled is gone with it. Keeping the rows would show meters
@@ -275,6 +322,7 @@ export class FluxStore {
     // A stream Flux may or may not still be running is not a measured frame rate,
     // and this field's whole contract is that a number in it was measured.
     this.light = null;
+    this.preview = null;
 
     // `hue` is deliberately kept, unlike everything above it. A reconnect brings a
     // fresh frame within a second, the connection badge already marks the whole page

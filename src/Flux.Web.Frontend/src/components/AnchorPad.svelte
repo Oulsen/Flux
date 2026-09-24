@@ -1,24 +1,18 @@
 <script lang="ts">
+  import AnchorButton from './AnchorButton.svelte';
+
   interface Props {
     /** Whether the manual source is active, which is what makes a typed tempo mean anything. */
     manual: boolean;
     /** The tempo on the grid right now, shown as the box's placeholder. */
     bpm: number | null;
     tap: () => void;
+    /** Sets the downbeat and nothing else - see the button below for why tap cannot. */
+    anchor: () => void;
     setBpm: (bpm: number | null) => void;
   }
 
-  const { manual, bpm, tap, setBpm }: Props = $props();
-
-  /*
-   * The label follows the mode because the gesture does. Under manual the button
-   * is hit repeatedly to give a tempo, and "anchor" invites exactly one press -
-   * a label that hides the feature the mode exists for. Everywhere else the
-   * tempo comes from the source and the only thing a press can say is where the
-   * bar starts. It changes only when the selector directly above it is used, and
-   * the pad's size, shape and position never move with it.
-   */
-  const label = $derived(manual ? 'tap' : 'anchor');
+  const { manual, bpm, tap, anchor, setBpm }: Props = $props();
 
   /* The bounds ManualSource enforces. Repeated rather than derived because there
      is no shared definition to derive from: the server rejects out of range, and
@@ -51,26 +45,6 @@
       typed = null;
     }
   }
-
-  /*
-   * A tap fires on the press and not on the click, because a click lands on
-   * release and hands the server however long the finger stayed down. The server
-   * timestamps on arrival, so every millisecond before that is phase error in a
-   * gesture whose only job is to say "now".
-   */
-  function pressed(event: PointerEvent): void {
-    event.preventDefault();
-    tap();
-  }
-
-  // Pointer events skip the keyboard entirely, and preventDefault here stops the
-  // synthesised click that would otherwise tap a second time.
-  function keyed(event: KeyboardEvent): void {
-    if (event.key === ' ' || event.key === 'Enter') {
-      event.preventDefault();
-      tap();
-    }
-  }
 </script>
 
 <!--
@@ -82,15 +56,7 @@
 -->
 <div class="anchor-pad">
   <div class="row">
-    <!--
-      Labelled for what it does rather than for the gesture, and deliberately
-      using the word the badge below it uses: a press here reads back as "bar
-      anchored by a tap", so the button and its own feedback name one thing.
-      "Sync" was the other candidate and is wrong twice over - the selector
-      above picks a sync source, and on DJ gear the word means tempo, which this
-      only touches on the manual source.
-    -->
-    <button type="button" class="tap" onpointerdown={pressed} onkeydown={keyed}>{label}</button>
+    <AnchorButton {manual} {tap} />
 
     <div class="detail">
       <p class="caption">
@@ -139,6 +105,23 @@
     </form>
 
     <p class="caption">a typed tempo leaves the downbeat where it is; empty clears it</p>
+
+    <!--
+      The downbeat without the tempo, which under manual the big pad cannot say:
+      a tap there is also a tempo press, so two quick presses retune the grid to
+      however fast somebody pressed. This is the press for when the tempo is
+      already right - typed, usually - and only the bar is wrong.
+
+      The same component as the pad and not a copy, because the rule worth not
+      duplicating is that the press fires on pointerdown rather than on click.
+      `manual` is false on purpose: presses here never feed the tempo, whatever
+      the source, and false is the prop's way of saying so - it also keeps the
+      label reading "anchor".
+    -->
+    <div class="anchor-only">
+      <AnchorButton manual={false} tap={anchor} />
+      <p class="caption">anchor sets the downbeat and leaves the tempo alone</p>
+    </div>
   </div>
 </div>
 
@@ -154,43 +137,6 @@
     display: flex;
     align-items: center;
     gap: var(--gap);
-  }
-
-  .tap {
-    /* Sized for a thumb on a phone in a dark booth, which is the only place this
-       button is ever pressed in a hurry. */
-    width: 5rem;
-    height: 5rem;
-    flex: none;
-    border: 1px solid var(--accent);
-    border-radius: 50%;
-    background: var(--panel);
-    color: var(--accent);
-    font: inherit;
-    font-size: 0.9rem;
-
-    /* box-sizing is border-box page-wide, so the browser's own button padding
-       comes out of the 5rem rather than adding to it. Six letters and the
-       default padding do not both fit, and the wide tracking is what makes a
-       three-letter word look deliberate, so the padding goes instead. */
-    padding: 0;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    cursor: pointer;
-
-    /* Scoped here rather than left to the page: manipulation drops the
-       double-tap zoom delay, and a fast second tap is the normal way this
-       button is used. app.css already suppresses selection page-wide, and this
-       repeats it because a press-and-hold on the one control meant to be
-       hammered must never start a selection. */
-    touch-action: manipulation;
-    -webkit-user-select: none;
-    user-select: none;
-  }
-
-  .tap:active {
-    background: var(--accent);
-    color: var(--surface);
   }
 
   .detail {
@@ -220,6 +166,16 @@
   .tempo {
     display: flex;
     gap: 0.5rem;
+  }
+
+  .anchor-only {
+    /* A third of the pad above it: still a comfortable thumb target, visibly
+       subordinate to the pad that does more. The size variable is the contract
+       AnchorButton documents for exactly this kind of caller. */
+    --anchor-size: 3rem;
+    display: flex;
+    align-items: center;
+    gap: var(--gap);
   }
 
   .field {

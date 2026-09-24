@@ -117,7 +117,7 @@ internal static class SpectrumProbe {
     return new SpectrumFrame(
       seconds * 1_000_000.0,
       rate,
-      SpectrumScale.DisplayColumns(spectrum, rate),
+      SpectrumScale.DisplayColumns(spectrum, rate, AudioConstants.DisplayBins),
       SpectrumScale.BandEnergy(spectrum, kickLow, kickHigh),
       SpectrumScale.BandEnergy(spectrum, midLow, midHigh),
       SpectrumScale.BandEnergy(spectrum, highLow, highHigh));

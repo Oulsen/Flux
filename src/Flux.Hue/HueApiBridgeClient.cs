@@ -143,7 +143,12 @@ internal sealed class HueApiBridgeClient: IHueBridgeClient {
         // The bridge allows one entertainment session, so this is the whole of the
         // busy pre-flight: read before opening anything, because the failure it
         // prevents arrives as a DTLS timeout that blames the network instead.
-        configuration.Status == EntertainmentConfigurationStatus.active))];
+        configuration.Status == EntertainmentConfigurationStatus.active,
+        // Raw coordinates, for the reason the stream takes them raw: the library's own
+        // side tests are sign tests, and LightPlacements does the ranking.
+        [.. (configuration.Channels ?? []).Select(channel => new HueChannel(
+          channel.ChannelId,
+          channel.Position is { } at ? new LightPosition(at.X, at.Y, at.Z) : LightPosition.Centre))]))];
     } catch(HueException e) {
       throw new HueBridgeException($"The bridge at {bridge.Address} would not list its entertainment areas: {e.Message}", e);
     } catch(HttpRequestException e) {

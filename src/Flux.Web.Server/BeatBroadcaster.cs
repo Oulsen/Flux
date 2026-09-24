@@ -52,6 +52,9 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
   /// </summary>
   private readonly HueStreamService? stream;
 
+  /// <summary>Null in a build with no Hue support, which has no engine to preview either.</summary>
+  private readonly LightPreview? preview;
+
   private readonly Channel<BeatEvent> beats = Channel.CreateBounded<BeatEvent>(
     new BoundedChannelOptions(BeatQueueCapacity) {
       FullMode = BoundedChannelFullMode.DropOldest,
@@ -69,6 +72,7 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
     BeatGrid grid,
     SyncSourceManager sources,
     HueStreamService? stream,
+    LightPreview? preview,
     IOptions<WebOptions> options) {
     ArgumentNullException.ThrowIfNull(options);
 
@@ -77,6 +81,7 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
     this.grid = grid ?? throw new ArgumentNullException(nameof(grid));
     this.sources = sources ?? throw new ArgumentNullException(nameof(sources));
     this.stream = stream;
+    this.preview = preview;
     this.options = options.Value;
   }
 
@@ -202,6 +207,8 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
         snapshot.IsBarAligned)
       : null;
 
+    LightData? light = Reading();
+
     return new StateData(
       activeName,
       state,
@@ -212,8 +219,26 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
       reading,
       new AlignmentData(snapshot.IsBarAligned, MethodName(snapshot.AlignmentMethod)),
 
-      Reading(),
-      Counters(active.Diagnostics, snapshot.MaxReanchorJumpBeats));
+      light,
+      Counters(active.Diagnostics, snapshot.MaxReanchorJumpBeats),
+      light is null ? this.Previewing() : null);
+  }
+
+  /// <summary>
+  /// What the engine would be sending, or null while it is sending for real.
+  ///
+  /// Asked only when <c>light</c> is null, so the two can never both be present: a page
+  /// branches on <c>light</c> to know whether the room is lit, and this is only ever the
+  /// picture for when it is not.
+  /// </summary>
+  private PreviewData? Previewing() {
+    if(this.preview?.Latest is not { } frame) {
+      return null;
+    }
+
+    return new PreviewData(
+      new LightColorData(frame.Color.R, frame.Color.G, frame.Color.B),
+      [.. frame.Channels.Select(light => new LightChannelData(light.At, light.Color.R, light.Color.G, light.Color.B))]);
   }
 
   /// <summary>
@@ -222,13 +247,21 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
   /// Null rather than a zeroed object on the same rule that makes <c>grid</c> null
   /// while waiting: there is no honest frame rate for a stream that is not open, and
   /// a zero would read as one that is open and failing.
+  ///
+  /// The colour follows the same rule one level down. A stream that has opened but not
+  /// yet sent its first frame has a running light object and no colour in it, which
+  /// lasts a single frame and is still worth saying rather than filling with black -
+  /// black is a colour the engine can legitimately send.
   /// </summary>
   private LightData? Reading() {
     if(this.stream?.Status() is not { Running: true } status) {
       return null;
     }
 
-    return new LightData(status.Fps);
+    return new LightData(
+      status.Fps,
+      status.Color is { } color ? new LightColorData(color.R, color.G, color.B) : null,
+      [.. (status.Channels ?? []).Select(light => new LightChannelData(light.At, light.Color.R, light.Color.G, light.Color.B))]);
   }
 
   /// <summary>
