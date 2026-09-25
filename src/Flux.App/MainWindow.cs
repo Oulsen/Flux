@@ -9,8 +9,8 @@ namespace Flux.App;
 /// <summary>
 /// The desktop window: the same page the phone opens, in a WebView2, and nothing else.
 ///
-/// No bridge between the window and the host, which is the one way this departs from
-/// the shell it is modelled on. The page already talks to the host over the WebSocket,
+/// No bridge between the window and the host, though a WebView2 shell usually has one.
+/// The page already talks to the host over the WebSocket,
 /// and a second channel only the desktop had would be a second protocol with one
 /// client. So the window cannot do anything the phone cannot, which is the point. What
 /// the window does add is its own: a frame in the page's colours, the place it was
@@ -27,6 +27,7 @@ internal sealed class MainWindow: Form {
   private readonly ILogger log;
   private readonly WebView2 view;
   private readonly Icon icon;
+  private readonly ReloadBudget reloads = new ReloadBudget();
 
   private bool leaving;
   private bool fullscreen;
@@ -34,6 +35,7 @@ internal sealed class MainWindow: Form {
   private bool fullscreenByPage;
   private FormWindowState stateBeforeFullscreen;
   private Rectangle boundsBeforeFullscreen;
+  private FormWindowState stateBeforeMinimize;
 
   /// <param name="page">The address to load, which is the host's own.</param>
   /// <param name="profileFolder">Where WebView2 keeps its browser profile.</param>
@@ -87,6 +89,12 @@ internal sealed class MainWindow: Form {
   /// <summary>WebView2 could not be started, so this window has nothing to show.</summary>
   internal event Action<Exception>? Unavailable;
 
+  /// <summary>
+  /// What a minimized window should come back as: maximized if that is what it was
+  /// minimized from. Setting Normal instead would un-maximize a window on the way back.
+  /// </summary>
+  internal FormWindowState RestoredState => this.stateBeforeMinimize;
+
   /// <summary>Closes the window for real, rather than hiding it.</summary>
   internal void CloseForGood() {
     this.leaving = true;
@@ -108,6 +116,17 @@ internal sealed class MainWindow: Form {
     this.Place();
 
     await this.ShowPageAsync().ConfigureAwait(true);
+  }
+
+  protected override void OnResize(EventArgs e) {
+    base.OnResize(e);
+
+    // Minimized is never remembered as a state of its own: the window reports it
+    // instead of the state it will come back to, and forgetting that is how a window
+    // minimized from maximized and then quit from the tray reopens un-maximized.
+    if(this.WindowState != FormWindowState.Minimized) {
+      this.stateBeforeMinimize = this.WindowState;
+    }
   }
 
   protected override void OnFormClosing(FormClosingEventArgs e) {
@@ -183,7 +202,7 @@ internal sealed class MainWindow: Form {
       maximized = this.stateBeforeFullscreen == FormWindowState.Maximized;
     } else {
       bounds = this.WindowState == FormWindowState.Normal ? this.Bounds : this.RestoreBounds;
-      maximized = this.WindowState == FormWindowState.Maximized;
+      maximized = this.RestoredState == FormWindowState.Maximized;
     }
 
     return new WindowPlacement(bounds.X, bounds.Y, bounds.Width, bounds.Height, maximized);
@@ -306,6 +325,18 @@ internal sealed class MainWindow: Form {
     switch(args.ProcessFailedKind) {
       case CoreWebView2ProcessFailedKind.RenderProcessExited:
       case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
+        // A page that dies as soon as it loads, a GPU driver taking it down every time,
+        // would otherwise be loaded again all night. Past the budget the window is
+        // treated as broken, and the browser gets its turn.
+        if(!this.reloads.TrySpend(Environment.TickCount64)) {
+          this.log.LogWarning(
+            "The window's page stopped ({Kind}, exit code {ExitCode}) too often to keep loading it, so Flux falls back to the default browser.",
+            args.ProcessFailedKind,
+            args.ExitCode);
+          this.FallBackLater(new InvalidOperationException("The window's page kept stopping."));
+          break;
+        }
+
         this.log.LogWarning(
           "The window's page stopped ({Kind}, exit code {ExitCode}), so it is being loaded again.",
           args.ProcessFailedKind,
@@ -317,15 +348,7 @@ internal sealed class MainWindow: Form {
         this.log.LogWarning(
           "The window's browser process exited (exit code {ExitCode}), so Flux falls back to the default browser.",
           args.ExitCode);
-
-        // Posted rather than raised here: the fallback disposes this window, and this is
-        // the view's own event, still on its way out of the view. Skipped if Flux is
-        // quitting by the time it runs, where opening a browser would be a surprise.
-        this.BeginInvoke(() => {
-          if(!this.leaving && !this.IsDisposed) {
-            this.Unavailable?.Invoke(new InvalidOperationException("The WebView2 browser process exited."));
-          }
-        });
+        this.FallBackLater(new InvalidOperationException("The WebView2 browser process exited."));
         break;
 
       default:
@@ -334,6 +357,20 @@ internal sealed class MainWindow: Form {
         this.log.LogInformation("A WebView2 helper process failed ({Kind}).", args.ProcessFailedKind);
         break;
     }
+  }
+
+  /// <summary>
+  /// Hands the window over to the browser fallback from the loop. Posted rather than
+  /// raised where the failure is heard: the fallback disposes this window, and that is
+  /// the view's own event, still on its way out of the view. Skipped if Flux is
+  /// quitting by the time it runs, where opening a browser would be a surprise.
+  /// </summary>
+  private void FallBackLater(Exception reason) {
+    this.BeginInvoke(() => {
+      if(!this.leaving && !this.IsDisposed) {
+        this.Unavailable?.Invoke(reason);
+      }
+    });
   }
 
   protected override void Dispose(bool disposing) {

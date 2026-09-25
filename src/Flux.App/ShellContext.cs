@@ -40,7 +40,10 @@ internal sealed class ShellContext: ApplicationContext {
   /// <param name="page">The host's own page, for the window and for the browser fallback.</param>
   /// <param name="profileFolder">Where the window's browser profile lives.</param>
   /// <param name="lifetime">The host's, which is what quitting stops and what ends the loop.</param>
-  /// <param name="stopHost">Stops the host and returns once it has, for a session that is ending.</param>
+  /// <param name="stopHost">
+  /// Stops the host and returns once it has, for a session that is ending. Called on
+  /// the loop's thread, and blocks it until the host has stopped.
+  /// </param>
   /// <param name="log">Where the shell reports what it could not do.</param>
   internal ShellContext(Uri page, string profileFolder, IHostApplicationLifetime lifetime, Action stopHost, ILogger log) {
     this.page = page;
@@ -52,38 +55,46 @@ internal sealed class ShellContext: ApplicationContext {
     // from the host's threads lands where the controls live.
     this.ui = new WindowsFormsSynchronizationContext();
 
-    ToolStripMenuItem open = new ToolStripMenuItem("Open Flux", image: null, (_, _) => this.Open());
-    open.Font = new Font(open.Font, FontStyle.Bold);
+    // Everything from here on is undone if any of it fails. A constructor that throws
+    // hands nobody an object to dispose, and a tray icon that is never disposed stays
+    // in the tray after the process has gone, until the pointer passes over it.
+    try {
+      ToolStripMenuItem open = new ToolStripMenuItem("Open Flux", image: null, (_, _) => this.Open());
+      open.Font = new Font(open.Font, FontStyle.Bold);
 
-    this.menu = new ContextMenuStrip();
-    this.menu.Items.Add(open);
-    this.menu.Items.Add(new ToolStripSeparator());
-    this.menu.Items.Add(new ToolStripMenuItem("Quit", image: null, (_, _) => this.Quit()));
+      this.menu = new ContextMenuStrip();
+      this.menu.Items.Add(open);
+      this.menu.Items.Add(new ToolStripSeparator());
+      this.menu.Items.Add(new ToolStripMenuItem("Quit", image: null, (_, _) => this.Quit()));
 
-    // The small cut, which the icon file carries drawn for 16 px. Left to scale the
-    // window's icon down, the tray would show a blur of four bars.
-    this.trayIcon = FluxIcon.Load(SystemInformation.SmallIconSize);
+      // The small cut, which the icon file carries drawn for 16 px. Left to scale the
+      // window's icon down, the tray would show a blur of four bars.
+      this.trayIcon = FluxIcon.Load(SystemInformation.SmallIconSize);
 
-    this.tray = new NotifyIcon {
-      Icon = this.trayIcon,
-      Text = "Flux",
-      ContextMenuStrip = this.menu,
-      Visible = true,
-    };
+      this.tray = new NotifyIcon {
+        Icon = this.trayIcon,
+        Text = "Flux",
+        ContextMenuStrip = this.menu,
+        Visible = true,
+      };
 
-    this.tray.DoubleClick += (_, _) => this.Open();
+      this.tray.DoubleClick += (_, _) => this.Open();
 
-    this.window = new MainWindow(page, profileFolder, new WindowPlacementStore(FluxPaths.Root, log), log);
-    this.window.HiddenByClose += this.OnHiddenByClose;
+      this.window = new MainWindow(page, profileFolder, new WindowPlacementStore(FluxPaths.Root, log), log);
+      this.window.HiddenByClose += this.OnHiddenByClose;
 
-    // Only the host is stopped here: the window is already closing, and the loop's
-    // exit closes anything that is left. Waited for, because what closes a window for
-    // good is usually Windows ending the session.
-    this.window.ClosingForGood += stopHost;
-    this.window.Unavailable += this.OnWindowUnavailable;
-    this.window.Show();
+      // Only the host is stopped here: the window is already closing, and the loop's
+      // exit closes anything that is left. Waited for, because what closes a window for
+      // good is usually Windows ending the session.
+      this.window.ClosingForGood += stopHost;
+      this.window.Unavailable += this.OnWindowUnavailable;
+      this.window.Show();
 
-    this.stopping = lifetime.ApplicationStopping.Register(() => this.ui.Post(_ => this.ExitThread(), null));
+      this.stopping = lifetime.ApplicationStopping.Register(() => this.ui.Post(_ => this.ExitThread(), null));
+    } catch {
+      this.Dispose();
+      throw;
+    }
   }
 
   /// <summary>Shows the window from any thread, for a second copy of Flux asking for it.</summary>
@@ -105,10 +116,11 @@ internal sealed class ShellContext: ApplicationContext {
         SystemEvents.SessionEnding -= this.OnSessionEnding;
       }
 
+      // Null-checked for a constructor that failed partway and disposed what it had.
       this.stopping.Dispose();
-      this.tray.Dispose();
-      this.trayIcon.Dispose();
-      this.menu.Dispose();
+      this.tray?.Dispose();
+      this.trayIcon?.Dispose();
+      this.menu?.Dispose();
       this.window?.Dispose();
       this.ui.Dispose();
     }
@@ -125,7 +137,7 @@ internal sealed class ShellContext: ApplicationContext {
     shown.Show();
 
     if(shown.WindowState == FormWindowState.Minimized) {
-      shown.WindowState = FormWindowState.Normal;
+      shown.WindowState = shown.RestoredState;
     }
 
     shown.Activate();

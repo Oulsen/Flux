@@ -86,10 +86,6 @@ internal static class Program {
       return 1;
     }
 
-    IHostApplicationLifetime lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
-    Uri page = app.Services.GetRequiredService<IOptions<WebOptions>>().Value.LocalPageUri();
-    ILogger shellLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Flux.App.Shell");
-
     // Once, whoever asks first: the shell when the session ends, which has to wait for
     // it there, or this method when the loop has ended. Off this thread for the reason
     // the start was: the shell's synchronization context is installed here, and a
@@ -108,25 +104,57 @@ internal static class Program {
       }
     }));
 
-    // In a finally, so a shell that fails to build or throws out of its loop still
-    // stops the host properly rather than leaving the process to end with the stream
-    // to the bridge cut mid-frame.
-    try {
-      using ShellContext shell = new ShellContext(
-        page, FluxPaths.WebView2, lifetime, () => stopped.Value.GetAwaiter().GetResult(), shellLog);
+    // The session is left before the stop, not after, for the reason the loop's own exit
+    // leaves it first: a launch while the host stops has to be a real start. Here it
+    // matters more, since this stop blocks the shell's thread, and a later copy that
+    // found the session held would ask that thread to show a window it never gets to
+    // and then leave, so End task followed by a relaunch would give no Flux at all.
+    // Both callers are on this thread, which is the one that holds the session.
+    void StopHost() {
+      instance.Leave();
+      stopped.Value.GetAwaiter().GetResult();
+    }
 
-      try {
-        instance.OnShowRequested(shell.OpenFromAnyThread);
-        Application.Run(shell);
-      } finally {
-        // Before the shell is disposed, so no request from a later copy can reach it,
-        // and before the host stops, so a launch while it does is a real start.
-        instance.Leave();
+    ShellContext shell;
+
+    // The host is running by now, so a failure here is still a failed start and is
+    // reported as one: stopped and disposed before the message, as above, rather than
+    // left to escape Main as a crash that only the log explains.
+    try {
+      IHostApplicationLifetime lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+      Uri page = app.Services.GetRequiredService<IOptions<WebOptions>>().Value.LocalPageUri();
+      ILogger shellLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Flux.App.Shell");
+
+      shell = new ShellContext(page, FluxPaths.WebView2, lifetime, StopHost, shellLog);
+    } catch(Exception ex) {
+      startup.LogCritical(ex, "Flux could not open its window.");
+
+      Task.Run(async () => {
+        await stopped.Value.ConfigureAwait(false);
+        await app.DisposeAsync().ConfigureAwait(false);
+      }).GetAwaiter().GetResult();
+
+      instance.Leave();
+      ReportStartupFailure(ex, fileLog.Path, launch.Console);
+
+      return 1;
+    }
+
+    // In a finally, so a shell that throws out of its loop still stops the host
+    // properly rather than leaving the process to end with the stream to the bridge
+    // cut mid-frame.
+    try {
+      using(shell) {
+        try {
+          instance.OnShowRequested(shell.OpenFromAnyThread);
+          Application.Run(shell);
+        } finally {
+          // Before the shell is disposed, so no request from a later copy can reach it,
+          // and before the host stops, so a launch while it does is a real start.
+          instance.Leave();
+        }
       }
     } finally {
-      // Again, for a shell that failed before its loop began. Leaving twice is nothing.
-      instance.Leave();
-
       Task.Run(async () => {
         await stopped.Value.ConfigureAwait(false);
         await app.DisposeAsync().ConfigureAwait(false);

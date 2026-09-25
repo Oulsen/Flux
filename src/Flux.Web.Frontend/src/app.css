@@ -63,7 +63,7 @@ body {
 }
 
 /*
- * Slim scrollbars without a track, as in Clowder: the thumb is the ink at a low
+ * Slim scrollbars without a track: the thumb is the ink at a low
  * strength and firms up under the pointer. A default scrollbar is a light grey bar the
  * height of the drawer, which on a page built dark for a dark room is the brightest
  * thing beside the stage.

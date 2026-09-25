@@ -13,9 +13,8 @@ namespace Flux.App;
 internal sealed record WindowPlacement(int X, int Y, int Width, int Height, bool Maximized) {
   /// <summary>
   /// The smallest size worth restoring, and how much of the title bar has to be on a
-  /// screen to count. Carried from Clowder, where the same check guards the same
-  /// failure: a window restored onto a monitor that has since been unplugged, off
-  /// every screen and out of reach.
+  /// screen to count. The failure they guard against is a window restored onto a
+  /// monitor that has since been unplugged, off every screen and out of reach.
   /// </summary>
   private const int MinWidth = 320;
 
