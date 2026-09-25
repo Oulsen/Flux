@@ -4,7 +4,7 @@ using System.Text;
 namespace Flux.Rekordbox.ChainFinder.Tests;
 
 /// <summary>
-/// ANLZ files on disk for the tests, in the layout <see cref="AnlzTempo"/> reads: a
+/// ANLZ files on disk for the tests, in the layout <see cref="AnlzBeatGrid"/> reads: a
 /// <c>PMAI</c> file header, a <c>PPTH</c> section, and a <c>PQTZ</c> beatgrid at one
 /// tempo, all big-endian. Paths use forward slashes, as rekordbox keeps them in memory.
 /// </summary>

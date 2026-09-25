@@ -8,7 +8,9 @@ detection runs on, and a constant in `AudioConstants` without a derivation
 there is not checkable by anyone. `docs/rekordbox-chains.md` is the same for
 `src/Flux.Rekordbox/chains.json`: an entry is keyed to one exact rekordbox
 version, is never reused for a nearby one, and goes in only after the checks
-listed there.
+listed there. `docs/rekordbox-anlz.md` is where the analysis-file layout was held
+against a real library; what it found there beyond the published notes (signed
+beat times, phrases unmasked on disk) is what the readers rely on.
 
 That audit trail is scoped to audio beat detection and does not cover the light
 engine, which is deliberate rather than an omission: the light engine's tuned
