@@ -52,7 +52,8 @@ numbers nobody has ever heard.
   `dotnet run --project tests/Flux.Audio.Tests`,
   `dotnet run --project tests/Flux.Midi.Tests`,
   `dotnet run --project tests/Flux.Web.Server.Tests`,
-  `dotnet run --project tests/Flux.Hue.Tests` and
+  `dotnet run --project tests/Flux.Hue.Tests`,
+  `dotnet run --project tests/Flux.Rekordbox.Tests` and
   `dotnet run --project tests/Flux.App.Tests`.
 - Frontend checks, from `src/Flux.Web.Frontend`: `npm run check`
   (svelte-check) and `npm test` (node --test). Both must pass; `npm run check`

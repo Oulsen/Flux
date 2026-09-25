@@ -100,6 +100,11 @@ jobs:
       - name: Test Flux.Hue
         run: dotnet run --no-build --project tests/Flux.Hue.Tests
 
+      # Nothing here reads rekordbox: the chain walker is tested against memory the
+      # tests lay out, and the one test that attaches to a real rekordbox skips here.
+      - name: Test Flux.Rekordbox
+        run: dotnet run --no-build --project tests/Flux.Rekordbox.Tests
+
       # Nothing here opens a window, a WebView2 or a console: the launch flag and the
       # log's retention are what the shell decides, and the rest is verified by use.
       - name: Test Flux.App

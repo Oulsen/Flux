@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Plain -windows rather than a WinRT version: everything here is Win32 through
+       kernel32, advapi32 and ntdll, which needs no projection and no package. The
+       platform in the target framework is still the point, because the only thing
+       this project reads is a Windows process. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+  </PropertyGroup>
+
+  <!-- The chain walker and the typed reads are internal and tested through an
+       in-memory stand-in for the process. Reading rekordbox itself needs rekordbox
+       running at the desk, and the logic that decides what a read means must not. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Flux.Rekordbox.Tests" />
+  </ItemGroup>
+
+</Project>

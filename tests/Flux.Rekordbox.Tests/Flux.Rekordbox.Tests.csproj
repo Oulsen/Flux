@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The same target as the project under test. Nothing here needs rekordbox: the
+       chain walker is tested against memory laid out by the test, and the one test
+       that attaches to a real rekordbox skips when none is running, as it will in CI. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Flux.Rekordbox\Flux.Rekordbox.csproj" />
+  </ItemGroup>
+
+</Project>

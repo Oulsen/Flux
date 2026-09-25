@@ -214,6 +214,7 @@ dotnet run --project tests/Flux.Audio.Tests
 dotnet run --project tests/Flux.Midi.Tests
 dotnet run --project tests/Flux.Web.Server.Tests
 dotnet run --project tests/Flux.Hue.Tests
+dotnet run --project tests/Flux.Rekordbox.Tests
 dotnet run --project tests/Flux.App.Tests
 ```
 
@@ -232,6 +233,7 @@ npm test
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, a spectrum frame, the band energies the light engine follows, and how many columns the visualizer wants it in |
 | `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
+| `src/Flux.Rekordbox` | Read-only access to a running rekordbox: finds the process, opens it for reading only, and follows pointer chains to values. Not a sync source yet |
 | `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, the light engine that turns beats into a colour per light, the preview that runs it while nothing streams, the room-to-frequency mapping behind it, and the encrypted store the bridge keys live in |
 | `src/Flux.Web.Server` | WebSocket hub, beat, spectrum, device, bridge and stage broadcasters, the stage's own settings and their store, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
