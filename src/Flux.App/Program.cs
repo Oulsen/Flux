@@ -90,22 +90,36 @@ internal static class Program {
     Uri page = app.Services.GetRequiredService<IOptions<WebOptions>>().Value.LocalPageUri();
     ILogger shellLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Flux.App.Shell");
 
-    using(ShellContext shell = new ShellContext(page, FluxPaths.WebView2, lifetime, shellLog)) {
-      instance.OnShowRequested(shell.OpenFromAnyThread);
-      Application.Run(shell);
+    // Once, whoever asks first: the shell when the session ends, which has to wait for
+    // it there, or this method when the loop has ended. Off this thread for the reason
+    // the start was: the shell's synchronization context is installed here, and a
+    // continuation posted to a loop that is blocked or has ended would never run.
+    Lazy<Task> stopped = new Lazy<Task>(() => Task.Run(() => app.StopAsync()));
 
-      // Before the shell is disposed, so no request from a later copy can reach it, and
-      // before the host stops, so a launch while it does is a real start.
+    // In a finally, so a shell that fails to build or throws out of its loop still
+    // stops the host properly rather than leaving the process to end with the stream
+    // to the bridge cut mid-frame.
+    try {
+      using ShellContext shell = new ShellContext(
+        page, FluxPaths.WebView2, lifetime, () => stopped.Value.GetAwaiter().GetResult(), shellLog);
+
+      try {
+        instance.OnShowRequested(shell.OpenFromAnyThread);
+        Application.Run(shell);
+      } finally {
+        // Before the shell is disposed, so no request from a later copy can reach it,
+        // and before the host stops, so a launch while it does is a real start.
+        instance.Leave();
+      }
+    } finally {
+      // Again, for a shell that failed before its loop began. Leaving twice is nothing.
       instance.Leave();
-    }
 
-    // Off this thread for the reason the start was: the shell's synchronization
-    // context is still installed here, and a continuation posted to a loop that has
-    // ended would never run.
-    Task.Run(async () => {
-      await app.StopAsync().ConfigureAwait(false);
-      await app.DisposeAsync().ConfigureAwait(false);
-    }).GetAwaiter().GetResult();
+      Task.Run(async () => {
+        await stopped.Value.ConfigureAwait(false);
+        await app.DisposeAsync().ConfigureAwait(false);
+      }).GetAwaiter().GetResult();
+    }
 
     startup.LogInformation("Flux stopped.");
 

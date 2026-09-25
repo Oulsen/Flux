@@ -87,7 +87,7 @@ the tray icon stops Flux. Launching it again while it runs brings the window bac
 rather than starting a second copy, it opens where it was left, and F11 puts the
 stage on the whole screen. The window shows Flux's own page and nothing else: a
 link that leads anywhere else opens in the default browser. The QR code that
-gets a phone onto the page without typing an address is still to come.
+gets a phone onto the page without typing an address has moved to Phase 7.
 
 ## Requirements
 

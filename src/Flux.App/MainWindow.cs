@@ -212,6 +212,12 @@ internal sealed class MainWindow: Form {
   }
 
   private async Task ShowPageAsync() {
+    // Out of OnLoad before anything can fail. Without WebView2 the environment fails
+    // before it ever yields, and the fallback would then close and dispose this window
+    // from inside the Show() that is still opening it, in the shell's constructor.
+    // Yielded, the fallback runs from the loop, once Show() has returned.
+    await Task.Yield();
+
     try {
       // Wheel scrolling animated rather than stepped, asked for explicitly: an embedded
       // Chromium does not always inherit the browser's default, and a list that jumps
@@ -248,11 +254,19 @@ internal sealed class MainWindow: Form {
     // The window shows Flux's page and nothing else. A link, a redirect or a script
     // that would take it anywhere else is sent to the default browser instead: this
     // window has no address bar and no back button, so a page from somewhere else
-    // could only be left by quitting.
+    // could only be left by quitting. Frames too, which raise their own event: a frame
+    // from somewhere else would be the same page from somewhere else, only smaller.
     core.NavigationStarting += (_, args) => {
       if(!IsSameOrigin(this.page, args.Uri)) {
         args.Cancel = true;
         OpenInBrowser(args.Uri, this.log);
+      }
+    };
+
+    core.FrameNavigationStarting += (_, args) => {
+      if(!IsSameOrigin(this.page, args.Uri)) {
+        args.Cancel = true;
+        this.log.LogWarning("Refused to load {Address} in a frame: not Flux's own page.", args.Uri);
       }
     };
 

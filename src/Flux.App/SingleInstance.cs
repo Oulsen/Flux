@@ -15,10 +15,14 @@ namespace Flux.App;
 /// A named event rather than a pipe, because the only thing ever said is "show
 /// yourself". An auto-reset event holds that until the first copy is listening, so a
 /// second launch during the first one's startup is not lost.
+///
+/// The copy that runs is the one that owns the mutex, not the one that created it. A
+/// copy on its way out keeps its handle open until it has stopped, so the mutex still
+/// exists for a launch in that window: asking who created it would call that launch a
+/// second copy, and it would leave without starting.
 /// </summary>
 internal sealed class SingleInstance: IDisposable {
-  private const string MutexName = @"Local\Flux.Running";
-  private const string SignalName = @"Local\Flux.Show";
+  private const string SessionPrefix = @"Local\Flux";
 
   /// <summary><c>ASFW_ANY</c>: any process may take the foreground next.</summary>
   private const int AnyProcess = -1;
@@ -28,11 +32,25 @@ internal sealed class SingleInstance: IDisposable {
   private RegisteredWaitHandle? listening;
   private bool held;
 
-  internal SingleInstance() {
-    this.running = new Mutex(initiallyOwned: true, MutexName, out bool created);
-    this.IsFirst = created;
-    this.held = created;
-    this.signal = new EventWaitHandle(initialState: false, EventResetMode.AutoReset, SignalName);
+  internal SingleInstance()
+    : this(SessionPrefix) {
+  }
+
+  /// <param name="prefix">What the named objects are called, which tests vary so they
+  /// cannot meet a Flux that is running.</param>
+  internal SingleInstance(string prefix) {
+    this.running = new Mutex(initiallyOwned: false, $"{prefix}.Running");
+
+    try {
+      this.held = this.running.WaitOne(TimeSpan.Zero);
+    } catch(AbandonedMutexException) {
+      // A copy that ended without releasing it, which is a copy that crashed. The
+      // mutex is this one's now, and there is nobody left to show.
+      this.held = true;
+    }
+
+    this.IsFirst = this.held;
+    this.signal = new EventWaitHandle(initialState: false, EventResetMode.AutoReset, $"{prefix}.Show");
   }
 
   /// <summary>Whether this is the copy that gets to run.</summary>

@@ -15,11 +15,17 @@ namespace Flux.App;
 /// Windows ending the session all ask the host to stop, and the loop follows it. One
 /// way out means there is no path that quits the window and leaves the lights running,
 /// or the other way round.
+///
+/// Windows ending the session is the one way out that waits for the host rather than
+/// asking it. Once Windows is told the session may end it can end the process at any
+/// point, and a stop still running on the thread pool then would cut the stream to the
+/// bridge mid-frame. So the stop happens while Windows is still waiting for the answer.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class ShellContext: ApplicationContext {
   private readonly Uri page;
   private readonly IHostApplicationLifetime lifetime;
+  private readonly Action stopHost;
   private readonly ILogger log;
   private readonly WindowsFormsSynchronizationContext ui;
   private readonly ContextMenuStrip menu;
@@ -34,10 +40,12 @@ internal sealed class ShellContext: ApplicationContext {
   /// <param name="page">The host's own page, for the window and for the browser fallback.</param>
   /// <param name="profileFolder">Where the window's browser profile lives.</param>
   /// <param name="lifetime">The host's, which is what quitting stops and what ends the loop.</param>
+  /// <param name="stopHost">Stops the host and returns once it has, for a session that is ending.</param>
   /// <param name="log">Where the shell reports what it could not do.</param>
-  internal ShellContext(Uri page, string profileFolder, IHostApplicationLifetime lifetime, ILogger log) {
+  internal ShellContext(Uri page, string profileFolder, IHostApplicationLifetime lifetime, Action stopHost, ILogger log) {
     this.page = page;
     this.lifetime = lifetime;
+    this.stopHost = stopHost;
     this.log = log;
 
     // Created on this thread, which is the one the loop will run on, so work posted
@@ -69,8 +77,9 @@ internal sealed class ShellContext: ApplicationContext {
     this.window.HiddenByClose += this.OnHiddenByClose;
 
     // Only the host is stopped here: the window is already closing, and the loop's
-    // exit closes anything that is left.
-    this.window.ClosingForGood += lifetime.StopApplication;
+    // exit closes anything that is left. Waited for, because what closes a window for
+    // good is usually Windows ending the session.
+    this.window.ClosingForGood += stopHost;
     this.window.Unavailable += this.OnWindowUnavailable;
     this.window.Show();
 
@@ -179,6 +188,6 @@ internal sealed class ShellContext: ApplicationContext {
 
   private void OnSessionEnding(object? sender, SessionEndingEventArgs e) {
     this.log.LogInformation("Windows is ending the session ({Reason}), so Flux is stopping.", e.Reason);
-    this.lifetime.StopApplication();
+    this.stopHost();
   }
 }
