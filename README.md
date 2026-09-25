@@ -233,11 +233,12 @@ npm test
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, a spectrum frame, the band energies the light engine follows, and how many columns the visualizer wants it in |
 | `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
-| `src/Flux.Rekordbox` | Read-only access to a running rekordbox: finds the process, opens it for reading only, and follows pointer chains to values. Not a sync source yet |
+| `src/Flux.Rekordbox` | Read-only access to a running rekordbox: finds the process, opens it for reading only, and reads each deck's tempo, playhead, analysis file and the master deck through a table of pointer chains per rekordbox version (7.2.19 so far). Not a sync source yet |
 | `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, the light engine that turns beats into a colour per light, the preview that runs it while nothing streams, the room-to-frequency mapping behind it, and the encrypted store the bridge keys live in |
 | `src/Flux.Web.Server` | WebSocket hub, beat, spectrum, device, bridge and stage broadcasters, the stage's own settings and their store, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable and its desktop shell: the window, the tray icon, one running copy, and the log file |
 | `assets/branding` | The Flux mark as SVG, one cut per size band, and the script that builds `flux.ico` from them |
 | `docs/protocol.md` | The WebSocket wire contract; where it and anything else disagree, it wins |
+| `docs/rekordbox-chains.md` | The rekordbox chain table's rules, format and evidence per version, and the checks a new version's entry has to pass |
 | `docs/audio-constants.md` | Every number audio beat detection runs on, where it came from, and how the frequency bands are derived |

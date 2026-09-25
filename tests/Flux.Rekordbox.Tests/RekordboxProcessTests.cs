@@ -27,4 +27,27 @@ public class RekordboxProcessTests {
     Assert.Equal(windows.MainModule.FileName, rekordbox.ExecutablePath, ignoreCase: true);
     Assert.False(rekordbox.HasExited);
   }
+
+  [Fact]
+  public void ReadsARunningRekordboxThroughItsTableEntry() {
+    // The table entry against the real process rather than against memory laid out
+    // from the same entry. What a deck holds depends on the desk, so this asserts
+    // only what holds with any tracks: every chain resolves, and the master names a
+    // deck. Skips without a rekordbox, and for a version the table has no entry for.
+    RekordboxAttachResult attach = RekordboxProcess.Attach();
+    if(attach.State != RekordboxAttachState.Attached) {
+      Assert.Skip($"No readable rekordbox ({attach.State}).");
+    }
+
+    using RekordboxProcess rekordbox = attach.Process!;
+    if(!RekordboxChains.TryGet(rekordbox.Version, out RekordboxChains chains)) {
+      Assert.Skip($"rekordbox {rekordbox.Version} has no chain table entry.");
+    }
+
+    RekordboxReading reading = chains.Read(rekordbox, rekordbox.ModuleBase);
+
+    Assert.All(reading.Decks, deck => Assert.NotNull(deck.Bpm));
+    Assert.All(reading.Decks, deck => Assert.NotNull(deck.SamplePosition));
+    Assert.NotNull(reading.MasterDeck);
+  }
 }

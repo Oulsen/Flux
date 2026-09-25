@@ -5,7 +5,10 @@ right now; `docs/protocol.md` is the WebSocket wire contract and wins over any
 other description of a message, including code comments;
 `docs/audio-constants.md` is the audit trail for every number audio beat
 detection runs on, and a constant in `AudioConstants` without a derivation
-there is not checkable by anyone.
+there is not checkable by anyone. `docs/rekordbox-chains.md` is the same for
+`src/Flux.Rekordbox/chains.json`: an entry is keyed to one exact rekordbox
+version, is never reused for a nearby one, and goes in only after the checks
+listed there.
 
 That audit trail is scoped to audio beat detection and does not cover the light
 engine, which is deliberate rather than an omission: the light engine's tuned

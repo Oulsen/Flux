@@ -15,4 +15,12 @@
     <InternalsVisibleTo Include="Flux.Rekordbox.Tests" />
   </ItemGroup>
 
+  <!-- The chain table ships inside the assembly rather than next to it: the entries
+       are facts about specific rekordbox builds, not settings, and a copy somebody
+       edited beside the executable would be read as if it were one of them. The
+       name is fixed so it does not follow the folder layout. -->
+  <ItemGroup>
+    <EmbeddedResource Include="chains.json" LogicalName="Flux.Rekordbox.chains.json" />
+  </ItemGroup>
+
 </Project>
