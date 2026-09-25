@@ -120,6 +120,16 @@ internal sealed class RekordboxChains {
     return new RekordboxReading(decks, master);
   }
 
+  /// <summary>
+  /// The master byte as rekordbox keeps it, before <see cref="Read"/> turns anything
+  /// that is not a deck into null. Seen at the desk: 255 while LINK is on, when Link is
+  /// rekordbox's master and no deck is. For checking the chain rather than for reading.
+  /// </summary>
+  internal bool TryReadMasterByte(IProcessMemory memory, long moduleBase, out byte value) {
+    ArgumentNullException.ThrowIfNull(memory);
+    return this.masterDeck.TryReadByte(memory, moduleBase, out value);
+  }
+
   private static IReadOnlyDictionary<Version, RekordboxChains> LoadBuiltIn() {
     using Stream json = typeof(RekordboxChains).Assembly.GetManifestResourceStream(ResourceName)
       ?? throw new InvalidOperationException($"The rekordbox chain table '{ResourceName}' is not in the assembly.");

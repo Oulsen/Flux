@@ -17,9 +17,15 @@
     shift: (beats: number) => void;
     /** Whether to say what the buttons do. The drawer does; the stage has no room. */
     captions?: boolean;
+    /**
+     * What rekordbox is doing, in the source's own words, shown with the captions. Without
+     * it a rekordbox that is connected and stopped reads as "waiting" in the selector,
+     * which looks exactly like one that is not connected at all.
+     */
+    status?: string | null;
   }
 
-  const { shift, captions = false }: Props = $props();
+  const { shift, captions = false, status = null }: Props = $props();
 </script>
 
 <div class="bar-shift">
@@ -29,6 +35,9 @@
   </div>
 
   {#if captions}
+    {#if status}
+      <p class="status">rekordbox: {status}</p>
+    {/if}
     <p class="caption">bar one comes from the rekordbox beatgrid</p>
     <p class="caption">if the grid's downbeat is off, move it a beat; it holds until the next track</p>
   {/if}
@@ -72,6 +81,12 @@
   button:active {
     background: var(--accent);
     color: var(--surface);
+  }
+
+  .status {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--ink-dim);
   }
 
   .caption {

@@ -1,6 +1,6 @@
 # Flux WebSocket protocol
 
-**Protocol version 1.**
+**Protocol version 2.**
 
 Flux keeps all state on the server. Browsers are dumb terminals: they render what
 arrives and send control messages back. This document is the contract between
@@ -316,15 +316,22 @@ These are not equally trustworthy and only the user can judge which applies, so 
 method travels with the alignment: showing what aligned the bar is what lets a wrong
 one be recognised as wrong.
 
+With LINK on, Link is rekordbox's master and no deck is, so the deck that is playing
+stands in for the master deck: the one on air while the next is started, and the next
+once the first stops.
+
 rekordbox sets the bar when there is a new reason to read it - a new track on the
 master deck, a different master, playback starting, a jump in the track - and not in
 between, so a tap holds until the next of those. A grid whose downbeat is a beat off
 is corrected with `shiftBar`, which rekordbox keeps for the rest of the track.
 
-An alignment is a beat index, so anything that renumbers the beat - a tempo
-change, a session change, a source switch, a tap - clears it and it has to be
-made again. That is a property of the beat numbering rather than a shortcoming
-of the anchor: see `beat` below.
+An alignment is a beat index, and the beat number is not a stable identity: a
+tempo change, a session change or a source switch renumbers it wholesale. The
+anchor survives that. The grid knows how far the numbering moved and moves the
+anchor with it, rounded to the nearest beat, so bar 1 stays where it was in the
+music rather than at the number it had. What does clear it is the grid having no
+timeline at all - switching to a source with nothing to show yet, or the active
+source withdrawing its tempo - since then there is no beat for an anchor to be.
 
 ### `state.light`
 
@@ -552,8 +559,8 @@ nothing rather than a number that means nothing.
 | `lastBeatAgoMs` | number | audio | Milliseconds since the last accepted beat |
 | `taps` | int | manual | Taps in the current sequence, up to the eight the estimate uses |
 | `lastTapAgoMs` | number | manual | Milliseconds since the last tap |
-| `deck` | int | rekordbox | The master deck, counted from 1 as rekordbox shows it. Absent until rekordbox has been read |
-| `detail` | string | rekordbox | Why it is not following a playing deck, in words: rekordbox not running, running as administrator, a version Flux has no chains for, a track with no beatgrid, the deck stopped. **Absent while it is following one**, so its absence is the good state |
+| `deck` | int | rekordbox | The deck being followed, counted from 1 as rekordbox shows it: the master deck, or with LINK on, when Link is rekordbox's master, the deck that is playing. Absent until rekordbox has been read |
+| `detail` | string | rekordbox | Why it is not following a playing deck, in words: rekordbox not running, running as administrator, a version Flux has no chains for, a track with no beatgrid, the deck stopped, no deck playing while Link is the master. **Absent while it is following one**, so its absence is the good state |
 
 `reanchorMaxBeats` is the grid's own metric rather than any source's, which is
 why it is always present: it measures whether extrapolating the current timeline
@@ -1022,7 +1029,9 @@ that lights its own button on click will keep lying about it after a rejection.
 Switching adopts that source's last known timeline immediately, so a manual
 tempo set two minutes ago is still there when Manual is selected. The beat
 numbering is rebased by the switch, exactly as a Link session change rebases it,
-so the bar alignment clears and has to be made again.
+and the bar alignment is carried across the rebase, so the downbeat stays where it
+was in the music. Switching to a source that has not published yet leaves the grid
+with nothing, and the alignment goes with it.
 
 ### `selectAudioDevice`
 

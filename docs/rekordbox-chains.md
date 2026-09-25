@@ -99,12 +99,23 @@ Found 2026-09-25 on Windows 11, rekordbox 7.2.19.0, in Performance mode.
 | `bpm` | `5E09790 d*8 2C0 1A0` | Distinct tempos on four decks (87, 87, 174, 172), read correctly after a restart with new tracks |
 | `samplePosition` | `5E09790 d*8 2C0 130` | Moves only on the playing deck, resets on cue, matches the screen in seconds (see Units) |
 | `anlzPath` | `5F53DA8 8+d*8 3F0 0` | Three sessions with different tracks, four decks; each file's `PPTH` names the track on that deck |
-| `masterDeck` | `61A82C0 3A0 378 254` | Followed four master changes with the playing deck varied separately, then two after a restart, then values 2 and 3 in 4-deck mode |
+| `masterDeck` | `61A82C0 3A0 378 254` | Followed four master changes with the playing deck varied separately, then two after a restart, then values 2 and 3 in 4-deck mode. Reads 255 while LINK is on, when Link is rekordbox's master and no deck is |
 
 Compared with the 7.2.2 chains published by the rkbx_link project (used as facts, not
 code): the tempo and playhead chains kept their shape with one offset moved (`2B0` to
 `2C0`), the ANLZ chain kept its shape with only the base moved, and the master deck
 chain changed completely. So expect a new search with every update, not a shift.
+
+**The `masterDeck` chain is not stable.** On 2026-09-25 it failed after a third
+rekordbox restart: the static and its first pointer still resolved, but the object
+they lead to held data rather than a pointer at `+3A0`, so the chain landed nowhere.
+The same session read `bpm`, `samplePosition` and `anlzPath` correctly. It passed two
+restarts during the search, which is the check it was held to, and that was not
+enough. Until a better chain is found with the chain finder, Flux treats a master that
+cannot be read like one that names no deck: it follows the deck that is playing. That
+is right with one deck playing and a reasoned guess with two, which is why this
+entry's `masterDeck` needs a new search rather than a note. The live test in
+`RekordboxProcessTests` fails while it does not resolve, and should.
 
 Not yet checked: a reboot, which maps `rekordbox.exe` at a new base. The chains are
 relative to that base, so it should not matter.

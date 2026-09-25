@@ -48,6 +48,10 @@ public class RekordboxProcessTests {
 
     Assert.All(reading.Decks, deck => Assert.NotNull(deck.Bpm));
     Assert.All(reading.Decks, deck => Assert.NotNull(deck.SamplePosition));
-    Assert.NotNull(reading.MasterDeck);
+
+    // A deck, or 255 with LINK on, when Link is the master and no deck is. Either way the
+    // chain has to land on the byte; a value outside both is a chain gone wrong.
+    Assert.True(chains.TryReadMasterByte(rekordbox, rekordbox.ModuleBase, out byte master));
+    Assert.True(master < chains.Decks || master == 255, $"master byte {master}");
   }
 }

@@ -18,7 +18,7 @@
   import BarShift from './components/BarShift.svelte';
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
-  import type { HueEngineData, StageData } from './lib/protocol.ts';
+  import type { DiagnosticsData, HueEngineData, StageData } from './lib/protocol.ts';
   import { bridgeNeedsSetup, colorChangeLabel, showsRooms } from './lib/hue.ts';
   import {
     DRAWER_TABS,
@@ -211,6 +211,17 @@
 
   function anchor(): void {
     socket?.send({ type: 'anchor', data: {} });
+  }
+
+  /* The source's reason in words while it has one, and which deck it follows while it
+     does not - diagnostics carry only the active source's fields, which is rekordbox
+     whenever this is shown. */
+  function rekordboxStatus(diagnostics: DiagnosticsData): string | null {
+    if (diagnostics.detail !== undefined) {
+      return diagnostics.detail;
+    }
+
+    return diagnostics.deck !== undefined ? `following deck ${diagnostics.deck}` : null;
   }
 
   function shiftBar(beats: number): void {
@@ -489,7 +500,7 @@
       <!-- rekordbox reads bar one from the track, so a tap there is a second opinion it
            overrules at the next seek; what it offers instead is a correction to its grid. -->
       {#if store.source === 'rekordbox'}
-        <BarShift shift={shiftBar} captions />
+        <BarShift shift={shiftBar} captions status={rekordboxStatus(store.diagnostics)} />
       {:else}
         <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {anchor} {setBpm} />
       {/if}

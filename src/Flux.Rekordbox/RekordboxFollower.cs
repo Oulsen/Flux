@@ -30,6 +30,11 @@ namespace Flux.Rekordbox;
 /// from the grid again; the correction for a grid that is a beat off is
 /// <see cref="Shift"/>, which lasts until the track changes.
 ///
+/// <b>With LINK on there is no master deck</b>: Link is rekordbox's master, and the byte
+/// that names the deck reads 255. The deck playing is then followed instead - the one
+/// already followed while it plays, else the one playing longest, which is the one on
+/// air while the next is started.
+///
 /// <b>Nothing playing means nothing published.</b> A stopped master withdraws its tempo
 /// rather than letting it run on, so while rekordbox is the source the lights settle at
 /// their floor instead of pulsing to a track that is not playing.
@@ -50,6 +55,17 @@ internal sealed class RekordboxFollower {
   /// against music starts to look early or late.
   /// </summary>
   internal static readonly double DriftToleranceMicros = 15_000;
+
+  /// <summary>
+  /// How far the tempo read may move from the one in force before it is published as a
+  /// change, as a fraction: 0.05 per cent, 0.09 BPM at 175. Flux's own number, reasoned
+  /// after watching a deck under LINK read 176.00, 176.02 and back from one read to the
+  /// next, each published as a tempo change and re-anchored on a read up to 10 ms old -
+  /// beats that wandered by milliseconds, and once by 124, which the room showed as
+  /// restless flashing. A pitch fader moving at all passes this within a few reads, and
+  /// what a smaller difference does to the phase the drift tolerance catches.
+  /// </summary>
+  internal static readonly double TempoToleranceFraction = 0.0005;
 
   /// <summary>
   /// How far out, in beats, a read has to be for the playhead to have been moved rather
@@ -90,6 +106,9 @@ internal sealed class RekordboxFollower {
   private double lastPublishedMicros;
   private bool everPublished;
   private bool alignPending;
+
+  /// <summary>How each deck's playhead has been moving, for choosing one when rekordbox names no master.</summary>
+  private DeckMotion[] decks = [];
   private string? detail = "rekordbox has not been read yet";
 
   internal RekordboxFollower(ITimelineSink sink, Func<string, IReadOnlyList<AnlzBeat>?> loadGrid) {
@@ -144,9 +163,19 @@ internal sealed class RekordboxFollower {
   }
 
   private void FollowWhileLocked(RekordboxReading reading, double now) {
+    this.Watch(reading, now);
+
+    // With LINK on, Link is rekordbox's master and no deck is: the master byte reads 255.
+    // That is a normal way to play rather than a fault, so the deck playing stands in for
+    // the master. Silenced rather than lost when there is none, so a paused track keeps
+    // its shift for when it plays again.
     if(reading.MasterDeck is not { } deck) {
-      this.Lose("rekordbox's master deck could not be read");
-      return;
+      if(this.PlayingDeck(reading.Decks.Count, now) is not { } playing) {
+        this.Silence("no deck is playing (with LINK on, Link is rekordbox's master and no deck is)");
+        return;
+      }
+
+      deck = playing;
     }
 
     DeckReading read = reading.Decks[deck];
@@ -214,8 +243,13 @@ internal sealed class RekordboxFollower {
       if(Math.Abs(off) > JumpBeats) {
         this.Publish(observed, now, newSession: true);
         this.alignPending = true;
-      } else if(observed.MicrosPerBeat != current.MicrosPerBeat || Math.Abs(off) * current.MicrosPerBeat > DriftToleranceMicros) {
+      } else if(Math.Abs(observed.MicrosPerBeat - current.MicrosPerBeat) > current.MicrosPerBeat * TempoToleranceFraction) {
         this.Publish(observed, now, newSession: false);
+      } else if(Math.Abs(off) * current.MicrosPerBeat > DriftToleranceMicros) {
+        // The tempo in force is still right, so the re-anchor keeps it: a drift is a
+        // phase correction, and publishing the read's own hair-different tempo with it
+        // would be announced as a tempo change it is not.
+        this.Publish(new BeatTimeline(current.MicrosPerBeat, beat, (long)Math.Round(now)), now, newSession: false);
       } else if(now - this.lastPublishedMicros > HeartbeatMicros) {
         this.Publish(current, now, newSession: false);
       }
@@ -226,6 +260,50 @@ internal sealed class RekordboxFollower {
       long downbeat = BeatgridPosition.NearestDownbeat(beats, beat) + this.shift;
       this.alignPending = !this.sink.AlignBarAt(BarAlignmentMethod.Rekordbox, observed.MicrosOfBeat(downbeat));
     }
+  }
+
+  /// <summary>
+  /// Notes which decks moved in this read, for when there is no master to follow. Every
+  /// deck, every read, because which one is playing is only knowable from the one before.
+  /// </summary>
+  private void Watch(RekordboxReading reading, double now) {
+    if(this.decks.Length != reading.Decks.Count) {
+      this.decks = new DeckMotion[reading.Decks.Count];
+    }
+
+    for(int i = 0; i < this.decks.Length; i++) {
+      long? position = reading.Decks[i].SamplePosition;
+      ref DeckMotion motion = ref this.decks[i];
+      if(position is { } at && motion.Position is { } before && at != before) {
+        if(!motion.IsPlaying(now)) {
+          motion.PlayingSince = now;
+        }
+
+        motion.MovedAt = now;
+      }
+
+      motion.Position = position;
+    }
+  }
+
+  /// <summary>
+  /// The deck to follow without a master: the one already followed while it plays, and
+  /// otherwise the one that has played longest, which is the one on air while the next
+  /// is started. Null when none is playing.
+  /// </summary>
+  private int? PlayingDeck(int count, double now) {
+    if(this.master is { } current && current < count && this.decks[current].IsPlaying(now)) {
+      return current;
+    }
+
+    int? longest = null;
+    for(int i = 0; i < count; i++) {
+      if(this.decks[i].IsPlaying(now) && (longest is not { } l || this.decks[i].PlayingSince < this.decks[l].PlayingSince)) {
+        longest = i;
+      }
+    }
+
+    return longest;
   }
 
   private void Publish(BeatTimeline timeline, double now, bool newSession) {
@@ -251,5 +329,20 @@ internal sealed class RekordboxFollower {
       this.held = null;
       this.sink.Withdraw();
     }
+  }
+
+  /// <summary>One deck's playhead over the last reads: where it was, and since when it has been moving.</summary>
+  private struct DeckMotion {
+    public DeckMotion() {
+    }
+
+    public long? Position { get; set; }
+
+    public double MovedAt { get; set; } = double.NegativeInfinity;
+
+    public double PlayingSince { get; set; }
+
+    /// <summary>Moving recently enough to count as playing, by the same test the followed deck is held to.</summary>
+    public readonly bool IsPlaying(double now) => now - this.MovedAt <= StoppedAfterMicros;
   }
 }

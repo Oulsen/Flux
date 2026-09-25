@@ -120,6 +120,26 @@ public class RekordboxFollowerTests {
     Assert.Equal(before, rig.Grid.Timeline!.Value.BeatAt(rig.Clock.NowMicros - 20_000), precision: 1);
   }
 
+  /// <summary>
+  /// A deck under LINK reads its tempo a hair either side of the session's from one read
+  /// to the next. Each of those published as a change re-anchored the beat on a stale
+  /// read, and the room showed the wander as restless flashing.
+  /// </summary>
+  [Fact]
+  public void DoesNotPublishATempoThatOnlyWavers() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+    int tempoChanges = rig.TempoChanges;
+
+    for(int i = 0; i < 40; i++) {
+      rig.Play(deck: 0, fromMs: 105 + (i * 10), forMs: 5, bpm: i % 2 == 0 ? 120.02f : 119.98f);
+    }
+
+    Assert.Equal(tempoChanges, rig.TempoChanges);
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(120, snapshot.Bpm, precision: 3);
+  }
+
   [Fact]
   public void SaysSoWhenTheTrackHasNoBeatgrid() {
     using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, withGrid: false);
@@ -188,6 +208,61 @@ public class RekordboxFollowerTests {
     Assert.Equal(1, rig.Grid.PositionOf(2).PositionInBar);
   }
 
+  /// <summary>
+  /// With LINK on, Link is rekordbox's master and the master byte names no deck. The deck
+  /// that is playing is then the only music there is, and it is followed as the master.
+  /// </summary>
+  [Fact]
+  public void FollowsThePlayingDeckWhenLinkIsTheMaster() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+
+    rig.Steps(forMs: 50, deck1FromMs: null, deck2FromMs: 1_000);
+
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(BarAlignmentMethod.Rekordbox, snapshot.AlignmentMethod);
+    Assert.Equal(2, rig.Follower.Describe().Deck);
+    Assert.Null(rig.Follower.Describe().Detail);
+  }
+
+  [Fact]
+  public void StaysOnTheFollowedDeckWhenASecondStartsWithoutAMaster() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Steps(forMs: 100, deck1FromMs: 0, deck2FromMs: null);
+
+    // The next track started under it: the one on air stays followed.
+    rig.Steps(forMs: 100, deck1FromMs: 105, deck2FromMs: 3_000);
+    Assert.Equal(1, rig.Follower.Describe().Deck);
+
+    // The first stops; the second is the music now.
+    rig.Steps(forMs: 400, deck1FromMs: null, deck2FromMs: 3_105, deck1HeldAtMs: 210);
+    Assert.Equal(2, rig.Follower.Describe().Deck);
+    Assert.True(rig.Grid.TryGetSnapshot(out _));
+  }
+
+  [Fact]
+  public void SaysWhyWhenThereIsNoMasterAndNothingPlays() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+
+    rig.Steps(forMs: 50, deck1FromMs: null, deck2FromMs: null, deck1HeldAtMs: 0, deck2HeldAtMs: 0);
+
+    Assert.False(rig.Grid.TryGetSnapshot(out _));
+    Assert.Contains("no deck is playing", rig.Follower.Describe().Detail);
+    Assert.Contains("LINK", rig.Follower.Describe().Detail);
+  }
+
+  [Fact]
+  public void KeepsTheShiftThroughAPauseWithoutAMaster() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Steps(forMs: 100, deck1FromMs: 0, deck2FromMs: null);
+    Assert.True(rig.Manager.ShiftBar(1));
+
+    rig.Steps(forMs: 400, deck1FromMs: null, deck2FromMs: null, deck1HeldAtMs: 105);
+    Assert.False(rig.Grid.TryGetSnapshot(out _));
+
+    rig.Steps(forMs: 50, deck1FromMs: 4_000, deck2FromMs: null);
+    Assert.Equal(1, rig.Grid.PositionOf(9).PositionInBar);
+  }
+
   [Fact]
   public void WithdrawsAndSaysWhyWhenRekordboxIsLost() {
     using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
@@ -248,6 +323,24 @@ public class RekordboxFollowerTests {
         this.Read(deck, atMs);
         this.Clock.Advance(5_000);
       }
+    }
+
+    /// <summary>
+    /// Both decks at once with no master named, as rekordbox reads with LINK on: a deck
+    /// given a start plays from there, one given a hold stands still, and one given
+    /// neither has no track.
+    /// </summary>
+    internal void Steps(double forMs, double? deck1FromMs, double? deck2FromMs, double? deck1HeldAtMs = null, double? deck2HeldAtMs = null) {
+      for(double ms = 0; ms <= forMs; ms += 5) {
+        var decks = new DeckReading[2];
+        decks[0] = Deck(deck1FromMs is { } a ? a + ms : deck1HeldAtMs, TrackA);
+        decks[1] = Deck(deck2FromMs is { } b ? b + ms : deck2HeldAtMs, TrackB);
+        this.Follower.Follow(new RekordboxReading(decks, MasterDeck: null), this.Clock.NowMicros);
+        this.Clock.Advance(5_000);
+      }
+
+      static DeckReading Deck(double? atMs, string path) =>
+        atMs is { } at ? new DeckReading(120f, (long)Math.Round(at * 44.1), path) : new DeckReading(0, 0, null);
     }
 
     internal void Read(int deck, double positionMs, float bpm = 120f, string path = TrackA) {
