@@ -146,7 +146,7 @@ backend.
 | Key | Default | Meaning |
 |---|---|---|
 | `Web:Port` | `5050` | HTTP and WebSocket port for the UI |
-| `Beat:DefaultSource` | `link` | Which sync source is selected at startup: `link`, `audio` or `manual`. Only where a source has never been chosen on the page: one chosen there is remembered and outranks this from then on. A name this build does not have falls back to the first source registered |
+| `Beat:DefaultSource` | `link` | Which sync source is selected at startup: `link`, `audio`, `manual` or `rekordbox`. Only where a source has never been chosen on the page: one chosen there is remembered and outranks this from then on. A name this build does not have falls back to the first source registered |
 | `Beat:Quantum` | `4` | Beats in a bar: what the 1-2-3-4 readout counts against, and how long a bar is when the light engine changes colour every few bars. Neither source transmits a meter, so nothing confirms or contradicts it; an anchor moves where the bar starts, never how long it is |
 | `Link:InterfaceAddress` | `null` | IP address of the network adapter to listen for Link on; `null` picks one automatically |
 | `Audio:DeviceId` | `null` | Exact endpoint id of the audio device to capture; `null` goes by name instead. Only where a device has never been picked on the page: a device chosen there is remembered and outranks this from then on |
@@ -156,6 +156,7 @@ backend.
 | `Audio:RecordAudioPath` | `null` | File to write the captured audio to as a mono WAVE recording, for questions about the analyzer itself rather than the detector; about 11 MB a minute, off unless set |
 | `Midi:Enabled` | `true` | Whether to watch a MIDI controller, so a cue press on an audible deck can anchor the bar; observation is read-only and does not disturb rekordbox |
 | `Midi:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the MIDI input to watch; empty watches nothing, because the notes Flux reads were measured on one controller |
+| `Rekordbox:Enabled` | `true` | Whether to read rekordbox's memory and analysis files for the master deck's tempo, beat and bar. Read-only, and on whichever source is selected: with Link selected, rekordbox still sets bar 1. A rekordbox that is not running, or is a version Flux has no chains for, is a source that says why on the page |
 | `Hue:Enabled` | `true` | Whether Flux contacts a Hue bridge at all. Off gives the beat lab back unchanged, for the sessions where the question is the grid rather than the show |
 | `Hue:BridgeAddress` | `null` | The bridge's address, when discovery should not be asked; `null` discovers it. Discovery tries mDNS and SSDP together, then a local network scan, then the rate-limited cloud lookup, and remembers where the bridge last answered - so this is for the network none of that can cross, never a shortcut, since DHCP moves a bridge |
 | `Hue:StreamHz` | `50` | Frames a second sent to the bridge while streaming, 10 to 60. 50 is the official guidance; a bulb renders roughly 25 updates a second over Zigbee regardless, so raising this cannot make the lights smoother |
@@ -234,7 +235,7 @@ npm test
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, a spectrum frame, the band energies the light engine follows, and how many columns the visualizer wants it in |
 | `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
-| `src/Flux.Rekordbox` | Read-only access to a running rekordbox: finds the process, opens it for reading only, and reads each deck's tempo, playhead, analysis file and the master deck through a table of pointer chains per rekordbox version (7.2.19 so far), and each track's beatgrid and phrases from its analysis files. Not a sync source yet |
+| `src/Flux.Rekordbox` | Read-only access to a running rekordbox: finds the process, opens it for reading only, and reads each deck's tempo, playhead, analysis file and the master deck through a table of pointer chains per rekordbox version (7.2.19 so far), and each track's beatgrid and phrases from its analysis files; and the `rekordbox` sync source built on them, which follows the master deck and sets bar 1 from its grid |
 | `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, the light engine that turns beats into a colour per light, the preview that runs it while nothing streams, the room-to-frequency mapping behind it, and the encrypted store the bridge keys live in |
 | `src/Flux.Web.Server` | WebSocket hub, beat, spectrum, device, bridge and stage broadcasters, the stage's own settings and their store, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |

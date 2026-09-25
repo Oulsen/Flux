@@ -4,11 +4,11 @@ namespace Flux.Beat;
 /// What put the bar where it is.
 ///
 /// Worth carrying beside the alignment itself rather than just a boolean, because
-/// the three sources of a downbeat are not equally trustworthy and the user is
-/// the only one who can judge which applies: a cue press is the DJ's own
-/// statement about a deck, a tap is a human ear, and a drop is a guess made by
-/// the detector. Showing which one aligned the bar is what lets a wrong one be
-/// recognised as wrong.
+/// the sources of a downbeat are not equally trustworthy and the user is the only
+/// one who can judge which applies: a cue press is the DJ's own statement about a
+/// deck, a tap is a human ear, a drop is a guess made by the detector, and
+/// rekordbox is the track's own analysis. Showing which one aligned the bar is what
+/// lets a wrong one be recognised as wrong.
 /// </summary>
 public enum BarAlignmentMethod {
   /// <summary>The bar position is a correct count from an arbitrary starting point.</summary>
@@ -22,6 +22,9 @@ public enum BarAlignmentMethod {
 
   /// <summary>Audio detection deciding a drop landed here.</summary>
   Drop,
+
+  /// <summary>The beatgrid rekordbox analysed for the track on its master deck.</summary>
+  Rekordbox,
 }
 
 /// <summary>
@@ -274,6 +277,54 @@ public sealed class BeatGrid {
   /// </param>
   /// <returns>False when no timeline is known yet, so there is no beat to anchor to.</returns>
   public bool TryAlignBar(BarAlignmentMethod method, bool snapToBar = false) {
+    return this.Align(method, atMicros: null, snapToBar);
+  }
+
+  /// <summary>
+  /// Marks the beat nearest to <paramref name="atMicros"/> as position 1 in the bar.
+  ///
+  /// For a source that knows where a downbeat falls without anyone pressing anything
+  /// at it: rekordbox reads the bar from the track's beatgrid, and the moment it can
+  /// name is the downbeat nearest the playhead, which is as likely to be a beat ago
+  /// or a beat ahead as now. Rounded to the nearest beat of the timeline in force,
+  /// whichever source that is, so a downbeat read from rekordbox lands on Link's beat
+  /// a few milliseconds away rather than beside it. Always taken at its word: this is
+  /// a statement about the track, not a guess, so there is no snapping form.
+  /// </summary>
+  /// <returns>False when no timeline is known yet, so there is no beat to anchor to.</returns>
+  public bool TryAlignBarAt(BarAlignmentMethod method, double atMicros) {
+    return this.Align(method, atMicros, snapToBar: false);
+  }
+
+  /// <summary>
+  /// Moves position 1 by <paramref name="beats"/> whole beats, keeping what supplied it.
+  ///
+  /// The correction for a downbeat that is known but wrong - a track whose beatgrid
+  /// rekordbox put a beat off, which a tap would not fix because the next thing
+  /// rekordbox says would put it back. Relative on purpose: it says "one later than
+  /// that", which stays true whoever set "that".
+  /// </summary>
+  /// <returns>False when the bar has no anchor to move.</returns>
+  public bool TryShiftBar(int beats) {
+    double? movedTo;
+
+    lock(this.gate) {
+      if(this.timeline is not BeatTimeline known || this.barAnchorBeat is not { } anchor) {
+        return false;
+      }
+
+      this.barAnchorBeat = anchor + beats;
+      movedTo = beats == 0 ? null : known.MicrosOfBeat(this.barAnchorBeat.Value);
+    }
+
+    if(movedTo is { } micros) {
+      this.BarAligned?.Invoke(micros);
+    }
+
+    return true;
+  }
+
+  private bool Align(BarAlignmentMethod method, double? atMicros, bool snapToBar) {
     double? movedTo;
 
     lock(this.gate) {
@@ -281,7 +332,7 @@ public sealed class BeatGrid {
         return false;
       }
 
-      long beat = (long)Math.Round(known.BeatAt(this.clock.NowMicros));
+      long beat = (long)Math.Round(known.BeatAt(atMicros ?? this.clock.NowMicros));
       long? previous = this.barAnchorBeat;
 
       if(snapToBar && previous is { } anchor) {

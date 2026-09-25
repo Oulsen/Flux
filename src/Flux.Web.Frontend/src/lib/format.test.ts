@@ -63,6 +63,7 @@ test('an anchored bar says what anchored it', () => {
   assert.equal(alignmentLabel(true, 'cue'), 'bar anchored by a cue press');
   assert.equal(alignmentLabel(true, 'tap'), 'bar anchored by a tap');
   assert.equal(alignmentLabel(true, 'drop'), 'bar anchored by a drop');
+  assert.equal(alignmentLabel(true, 'rekordbox'), 'bar anchored by the rekordbox beatgrid');
 });
 
 test('an unanchored bar never claims a bar number', () => {

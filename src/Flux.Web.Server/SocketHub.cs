@@ -417,6 +417,10 @@ public sealed class SocketHub {
         this.sources.AlignBar(BarAlignmentMethod.Tap);
         break;
 
+      case "shiftBar":
+        this.ShiftBar(client, envelope.Data);
+        break;
+
       case "setBpm":
         this.SetBpm(client, envelope.Data);
         break;
@@ -528,6 +532,21 @@ public sealed class SocketHub {
   /// outside 20..200 are typos, and clamping a typo produces a plausible wrong
   /// answer, which is worse than a rejection the user can see.
   /// </summary>
+  private void ShiftBar(Client client, JsonElement data) {
+    if(!Frames.TryReadShiftBar(data, out int beats)) {
+      client.Enqueue(Frames.Error(
+        "invalid_data",
+        $"Shifting the bar needs 'data.beats' as a whole number from -{Frames.MaxBarShift} to {Frames.MaxBarShift}, not 0."));
+      return;
+    }
+
+    // Refused rather than ignored, unlike an anchor with nothing to anchor to: a press
+    // on a shift button that did nothing and said nothing would look like a broken button.
+    if(!this.sources.ShiftBar(beats)) {
+      client.Enqueue(Frames.Error("rejected", "There is no downbeat to move yet."));
+    }
+  }
+
   private void SetBpm(Client client, JsonElement data) {
     if(!Frames.TryReadSetBpm(data, out double? bpm)) {
       client.Enqueue(Frames.Error("invalid_data", "Setting a tempo needs 'data.bpm' as a number or null."));

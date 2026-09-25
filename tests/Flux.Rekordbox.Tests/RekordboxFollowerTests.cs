@@ -1,0 +1,284 @@
+using Flux.Beat;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Xunit;
+
+namespace Flux.Rekordbox.Tests;
+
+/// <summary>
+/// The follower against a real manager and grid, so each test asserts what the lights
+/// would see rather than what the follower meant to say.
+///
+/// Every desk fact is laid out as measured: a playhead that moves in 5 ms steps, in
+/// 44.1 kHz units of the track's own time, and a tempo that is the pitched one.
+/// </summary>
+public class RekordboxFollowerTests {
+  private const string TrackA = "C:/rb/USBANLZ/a/ANLZ0000.DAT";
+  private const string TrackB = "C:/rb/USBANLZ/b/ANLZ0000.DAT";
+
+  [Fact]
+  public void PublishesThePlayingMastersTimelineWithTheBarFromItsGrid() {
+    // A track that opens on beat 3, which a count from its first beat would get wrong.
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 3);
+
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(120, snapshot.Bpm, precision: 3);
+    Assert.Equal(BarAlignmentMethod.Rekordbox, snapshot.AlignmentMethod);
+    Assert.Equal(1, rig.Grid.PositionOf(2).PositionInBar);
+    Assert.Equal(1, rig.Grid.PositionOf(6).PositionInBar);
+    Assert.Null(rig.Follower.Describe().Detail);
+  }
+
+  [Fact]
+  public void SetsTheDownbeatWhileAnotherSourceKeepsTheTempo() {
+    using var rig = new Rig(active: "link", firstBeatInBar: 1);
+
+    // Link at 120 and numbered from somewhere else entirely, its beats 8 ms after the
+    // track's - the few milliseconds Link and a deck really are apart. rekordbox's own
+    // reading of the tempo is a hair off, and must not reach the grid while Link is selected.
+    rig.Clock.Set(1_000_000);
+    rig.Link.Publish(BeatTimeline.FromBpm(120, beat: 1001, atMicros: rig.Clock.NowMicros + 8_000));
+    rig.Play(deck: 0, fromMs: 500, forMs: 50, bpm: 120.4f);
+
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(120, snapshot.Bpm, precision: 3);
+    Assert.Equal(BarAlignmentMethod.Rekordbox, snapshot.AlignmentMethod);
+
+    // Track beat 0, a downbeat, played at 0.5 s on the clock: Link's beat 1000, 8 ms on.
+    Assert.Equal(1, rig.Grid.PositionOf(1000).PositionInBar);
+    Assert.Equal(1, rig.Grid.PositionOf(1004).PositionInBar);
+    Assert.Equal(2, rig.Grid.PositionOf(1001).PositionInBar);
+  }
+
+  [Fact]
+  public void RepeatsASteadyTimelineRatherThanCorrectingItOnEveryRead() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+
+    rig.Play(deck: 0, fromMs: 0, forMs: 1000);
+
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(0, snapshot.MaxReanchorJumpBeats);
+    Assert.InRange(snapshot.Packets, 4, 6);
+  }
+
+  [Fact]
+  public void ReanchorsWhenTheTimelineInForceDriftsPastTheTolerance() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+    int tempoChanges = rig.TempoChanges;
+
+    // 20 ms ahead of where the timeline says: more than a read can explain, less than a jump.
+    rig.Play(deck: 0, fromMs: 120, forMs: 10);
+
+    Assert.Equal(tempoChanges, rig.TempoChanges);
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.InRange(snapshot.MaxReanchorJumpBeats, 0.03, 0.05);
+  }
+
+  [Fact]
+  public void StartsANewSessionAndReadsTheBarAgainAfterASeek() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 2);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+    int tempoChanges = rig.TempoChanges;
+
+    rig.Play(deck: 0, fromMs: 7_250, forMs: 50);
+
+    Assert.Equal(tempoChanges + 1, rig.TempoChanges);
+    double beat = rig.Grid.Timeline!.Value.BeatAt(rig.Clock.NowMicros);
+    Assert.Equal(14.6, beat, precision: 1);
+    Assert.Equal(1, rig.Grid.PositionOf(15).PositionInBar);
+  }
+
+  [Fact]
+  public void WithdrawsWhenTheMasterStopsAndComesBackWhenItPlays() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+
+    rig.Hold(deck: 0, atMs: 100, forMs: 300);
+
+    Assert.False(rig.Grid.TryGetSnapshot(out _));
+    Assert.Equal("deck 1 is stopped", rig.Follower.Describe().Detail);
+
+    rig.Play(deck: 0, fromMs: 100, forMs: 50);
+
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(BarAlignmentMethod.Rekordbox, snapshot.AlignmentMethod);
+  }
+
+  [Fact]
+  public void FollowsThePitchedTempoWithoutRenumberingTheBeat() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+    double before = rig.Grid.Timeline!.Value.BeatAt(rig.Clock.NowMicros);
+
+    rig.Play(deck: 0, fromMs: 100, forMs: 20, bpm: 124.8f);
+
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(124.8, snapshot.Bpm, precision: 1);
+    Assert.Equal(before, rig.Grid.Timeline!.Value.BeatAt(rig.Clock.NowMicros - 20_000), precision: 1);
+  }
+
+  [Fact]
+  public void SaysSoWhenTheTrackHasNoBeatgrid() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, withGrid: false);
+
+    rig.Play(deck: 0, fromMs: 0, forMs: 50);
+
+    Assert.False(rig.Grid.TryGetSnapshot(out _));
+    Assert.Contains("no beatgrid", rig.Follower.Describe().Detail);
+  }
+
+  [Fact]
+  public void KeepsTheUsersShiftWhenTheBarIsReadAgainAfterASeek() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+
+    Assert.True(rig.Manager.ShiftBar(1));
+    Assert.Equal(1, rig.Grid.PositionOf(1).PositionInBar);
+
+    rig.Play(deck: 0, fromMs: 4_000, forMs: 50);
+
+    Assert.Equal(1, rig.Grid.PositionOf(9).PositionInBar);
+  }
+
+  [Fact]
+  public void ForgetsTheShiftWithTheTrack() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+    Assert.True(rig.Manager.ShiftBar(1));
+
+    rig.Play(deck: 0, fromMs: 4_000, forMs: 50, path: TrackB);
+
+    Assert.Equal(1, rig.Grid.PositionOf(8).PositionInBar);
+  }
+
+  [Fact]
+  public void HandsOverToANewMasterWithoutGoingDarkInBetween() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+
+    rig.Read(deck: 1, positionMs: 2_000);
+    Assert.True(rig.Grid.TryGetSnapshot(out _));
+
+    rig.Play(deck: 1, fromMs: 2_005, forMs: 50);
+    Assert.Equal(2, rig.Follower.Describe().Deck);
+    Assert.Equal(4.1, rig.Grid.Timeline!.Value.BeatAt(rig.Clock.NowMicros), precision: 1);
+  }
+
+  /// <summary>
+  /// A new master whose playhead happens to sit where the old timeline predicted is not
+  /// a jump, and without being told the track changed the follower would keep the old
+  /// track's bar. Its grid opens on beat 3, so its downbeats are two beats from the old ones.
+  /// </summary>
+  [Fact]
+  public void ReadsTheBarAgainForANewMasterEvenWhenItsPlayheadLinesUp() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, trackBFirstBeatInBar: 3);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+    double predictedMs = rig.Grid.Timeline!.Value.BeatAt(rig.Clock.NowMicros) * 500;
+
+    rig.Read(deck: 1, positionMs: predictedMs, path: TrackB);
+    rig.Clock.Advance(5_000);
+    rig.Play(deck: 1, fromMs: predictedMs + 5, forMs: 20, path: TrackB);
+
+    // Track B's beat 0 is on 3 of its bar and beat 2 is its downbeat. Kept from track A,
+    // the bar would still start on beat 0.
+    Assert.Equal(3, rig.Grid.PositionOf(0).PositionInBar);
+    Assert.Equal(1, rig.Grid.PositionOf(2).PositionInBar);
+  }
+
+  [Fact]
+  public void WithdrawsAndSaysWhyWhenRekordboxIsLost() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+
+    rig.Follower.Lose("rekordbox closed");
+
+    Assert.False(rig.Grid.TryGetSnapshot(out _));
+    Assert.Equal("rekordbox closed", rig.Follower.Describe().Detail);
+    Assert.True(rig.Follower.Published().Ever);
+  }
+
+  /// <summary>A manager with a Link stand-in and the follower registered, a clock, and a 120 BPM grid per track.</summary>
+  private sealed class Rig: IDisposable {
+    private readonly int firstBeatInBar;
+    private readonly int trackBFirstBeatInBar;
+    private readonly bool withGrid;
+
+    internal Rig(string active, int firstBeatInBar, bool withGrid = true, int? trackBFirstBeatInBar = null) {
+      this.firstBeatInBar = firstBeatInBar;
+      this.trackBFirstBeatInBar = trackBFirstBeatInBar ?? firstBeatInBar;
+      this.withGrid = withGrid;
+      this.Grid = new BeatGrid(this.Clock, quantum: 4, TimeSpan.FromSeconds(2.5));
+      this.Grid.TempoChanged += _ => this.TempoChanges++;
+      this.Manager = new SyncSourceManager(
+        this.Grid,
+        Options.Create(new BeatOptions { DefaultSource = active }),
+        settings: null,
+        NullLogger<SyncSourceManager>.Instance);
+      this.Link = this.Manager.Register(new NamedSource("link"));
+      this.Follower = new RekordboxFollower(this.Manager.Register(new NamedSource("rekordbox")), this.Load);
+      this.Manager.BarShifted += this.Follower.Shift;
+    }
+
+    internal FakeClock Clock { get; } = new FakeClock();
+
+    internal BeatGrid Grid { get; }
+
+    internal SyncSourceManager Manager { get; }
+
+    internal ITimelineSink Link { get; }
+
+    internal RekordboxFollower Follower { get; }
+
+    internal int TempoChanges { get; private set; }
+
+    /// <summary>The deck playing: a read every 5 ms, the playhead moving with the clock.</summary>
+    internal void Play(int deck, double fromMs, double forMs, float bpm = 120f, string path = TrackA) {
+      for(double ms = 0; ms <= forMs; ms += 5) {
+        this.Read(deck, fromMs + ms, bpm, path);
+        this.Clock.Advance(5_000);
+      }
+    }
+
+    /// <summary>The deck standing still at one place.</summary>
+    internal void Hold(int deck, double atMs, double forMs) {
+      for(double ms = 0; ms <= forMs; ms += 5) {
+        this.Read(deck, atMs);
+        this.Clock.Advance(5_000);
+      }
+    }
+
+    internal void Read(int deck, double positionMs, float bpm = 120f, string path = TrackA) {
+      var decks = new DeckReading[2];
+      decks[deck] = new DeckReading(bpm, (long)Math.Round(positionMs * 44.1), path);
+      decks[1 - deck] = new DeckReading(0, 0, null);
+      this.Follower.Follow(new RekordboxReading(decks, deck), this.Clock.NowMicros);
+    }
+
+    public void Dispose() => this.Manager.BarShifted -= this.Follower.Shift;
+
+    /// <summary>A long steady 120 BPM grid from 0 ms: beat n at n * 500 ms, the first on the track's own first beat in bar.</summary>
+    private IReadOnlyList<AnlzBeat>? Load(string path) {
+      int first = path == TrackB ? this.trackBFirstBeatInBar : this.firstBeatInBar;
+      return this.withGrid
+        ? [.. Enumerable.Range(0, 400).Select(n => new AnlzBeat(((first - 1 + n) % 4) + 1, 120f, n * 500))]
+        : null;
+    }
+  }
+
+  private sealed class NamedSource(string name): ISyncSource {
+    public string Name => name;
+
+    public SyncSourceStatus Status() => new(SyncSourceState.Waiting, Confidence: 0);
+  }
+
+  internal sealed class FakeClock: IMonotonicClock {
+    public double NowMicros { get; private set; } = 10_000_000;
+
+    public void Advance(double micros) => this.NowMicros += micros;
+
+    public void Set(double micros) => this.NowMicros = micros;
+  }
+}

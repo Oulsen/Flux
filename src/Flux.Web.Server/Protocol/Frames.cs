@@ -138,6 +138,24 @@ public static class Frames {
     return TryReadString(data, "source", out source);
   }
 
+  /// <summary>
+  /// The furthest a single <c>shiftBar</c> may move the downbeat. A bar is four beats,
+  /// so every distinct correction is within three of where it is; four would restart
+  /// the bar count and change nothing that can be seen in a position.
+  /// </summary>
+  public const int MaxBarShift = 3;
+
+  /// <summary>Reads a <c>shiftBar</c> payload: a whole, non-zero number of beats within <see cref="MaxBarShift"/>.</summary>
+  public static bool TryReadShiftBar(JsonElement data, out int beats) {
+    beats = 0;
+    return data.ValueKind == JsonValueKind.Object
+      && data.TryGetProperty("beats", out JsonElement value)
+      && value.ValueKind == JsonValueKind.Number
+      && value.TryGetInt32(out beats)
+      && beats != 0
+      && Math.Abs(beats) <= MaxBarShift;
+  }
+
   /// <summary>Reads the device id out of a <c>selectAudioDevice</c> payload.</summary>
   public static bool TryReadDeviceId(JsonElement data, out string deviceId) {
     return TryReadString(data, "deviceId", out deviceId);

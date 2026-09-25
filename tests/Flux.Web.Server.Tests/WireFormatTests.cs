@@ -260,6 +260,26 @@ public sealed class WireFormatTests {
   }
 
   [Fact]
+  public void RekordboxDiagnosticsCarryTheMasterDeckAndWhyItIsSilent() {
+    StateData state = new StateData(
+      "rekordbox",
+      "quiet",
+      [new SourceReportData("rekordbox", "quiet", 0.0)],
+      new GridData(174.0, 4.0, 4, 1, BarAligned: true),
+      new AlignmentData(Aligned: true, Method: "rekordbox"),
+      Light: null,
+      new DiagnosticsData(0.0, Deck: 2, Detail: "deck 2 is stopped"));
+
+    JsonElement data = Payload(Frames.State(state), "state");
+    JsonElement diagnostics = data.GetProperty("diagnostics");
+
+    Assert.Equal(2, diagnostics.GetProperty("deck").GetInt32());
+    Assert.Equal("deck 2 is stopped", diagnostics.GetProperty("detail").GetString());
+    Assert.False(diagnostics.TryGetProperty("taps", out _));
+    Assert.Equal("rekordbox", data.GetProperty("alignment").GetProperty("method").GetString());
+  }
+
+  [Fact]
   public void SpectrumCarriesTheBandsAndWhatTheDetectorMadeOfThem() {
     SpectrumData spectrum = new SpectrumData([214, 198, 120], 0.62, 0.24, 0.11, 0.031, "strong");
 

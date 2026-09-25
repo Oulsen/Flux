@@ -12,7 +12,7 @@ export const PROTOCOL_VERSION = 2;
 export type SourceState = 'waiting' | 'live' | 'quiet';
 
 /** What put the bar where it is, or null while the bar is only a count. */
-export type AlignmentMethod = 'cue' | 'tap' | 'drop';
+export type AlignmentMethod = 'cue' | 'tap' | 'drop' | 'rekordbox';
 
 /** What the detector made of one analyzer frame. */
 export type SpectrumBeat = 'none' | 'beat' | 'strong';
@@ -208,6 +208,10 @@ export interface DiagnosticsData {
   lastBeatAgoMs?: number;
   taps?: number;
   lastTapAgoMs?: number;
+  /** rekordbox: the master deck, from 1. */
+  deck?: number;
+  /** rekordbox: why it is not following a playing deck, in words; absent while it is. */
+  detail?: string;
 }
 
 /**
@@ -404,6 +408,11 @@ export interface SetBpmData {
   bpm: number | null;
 }
 
+export interface ShiftBarData {
+  /** Whole beats to move the downbeat by, -3 to 3 and never 0. Positive is later. */
+  beats: number;
+}
+
 export interface PairBridgeData {
   bridgeId: string;
 }
@@ -459,6 +468,9 @@ export type ClientMessage =
   // The downbeat without the tempo: a tap under the manual source is also a tempo
   // press, and this is the press for when the tempo is already right.
   | { type: 'anchor'; data: Record<string, never> }
+  // Moves the downbeat by whole beats and keeps what put it there: the correction for a
+  // rekordbox grid a beat off, which a tap would not fix for longer than the next seek.
+  | { type: 'shiftBar'; data: ShiftBarData }
   | { type: 'setBpm'; data: SetBpmData }
   | { type: 'discoverBridges'; data: Record<string, never> }
   | { type: 'pairBridge'; data: PairBridgeData }

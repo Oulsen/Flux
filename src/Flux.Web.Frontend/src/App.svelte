@@ -15,6 +15,7 @@
   import StrobeButton from './components/StrobeButton.svelte';
   import StagePanel from './components/StagePanel.svelte';
   import AnchorPad from './components/AnchorPad.svelte';
+  import BarShift from './components/BarShift.svelte';
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
   import type { HueEngineData, StageData } from './lib/protocol.ts';
@@ -210,6 +211,10 @@
 
   function anchor(): void {
     socket?.send({ type: 'anchor', data: {} });
+  }
+
+  function shiftBar(beats: number): void {
+    socket?.send({ type: 'shiftBar', data: { beats } });
   }
 
   function setBpm(bpm: number | null): void {
@@ -409,7 +414,11 @@
         painting of a button - no hover, no press, and no tap on a phone.
       -->
       <div class="control">
-        <AnchorButton manual={store.source === 'manual'} {tap} />
+        {#if store.source === 'rekordbox'}
+          <BarShift shift={shiftBar} />
+        {:else}
+          <AnchorButton manual={store.source === 'manual'} {tap} />
+        {/if}
 
         <!-- Only where there is a room to strobe. Offered without one, the press would
              be refused by a build with no bridge and would light nothing in one with. -->
@@ -477,7 +486,13 @@
         pending={store.pendingSource}
         select={selectSource}
       />
-      <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {anchor} {setBpm} />
+      <!-- rekordbox reads bar one from the track, so a tap there is a second opinion it
+           overrules at the next seek; what it offers instead is a correction to its grid. -->
+      {#if store.source === 'rekordbox'}
+        <BarShift shift={shiftBar} captions />
+      {:else}
+        <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {anchor} {setBpm} />
+      {/if}
     </section>
 
     <!--

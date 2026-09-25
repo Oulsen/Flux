@@ -330,8 +330,8 @@
       "flux.audio": {
         "type": "Project",
         "dependencies": {
-          "Flux.Audio.Contract": "[0.4.0, )",
-          "Flux.Beat": "[0.4.0, )",
+          "Flux.Audio.Contract": "[0.5.0, )",
+          "Flux.Beat": "[0.5.0, )",
           "NAudio.Wasapi": "[2.2.1, )"
         }
       },
@@ -349,8 +349,8 @@
       "flux.hue": {
         "type": "Project",
         "dependencies": {
-          "Flux.Audio.Contract": "[0.4.0, )",
-          "Flux.Beat": "[0.4.0, )",
+          "Flux.Audio.Contract": "[0.5.0, )",
+          "Flux.Beat": "[0.5.0, )",
           "HueApi": "[3.3.0, )",
           "HueApi.ColorConverters": "[3.3.0, )",
           "HueApi.Entertainment": "[3.3.0, )"
@@ -359,15 +359,21 @@
       "flux.midi": {
         "type": "Project",
         "dependencies": {
-          "Flux.Beat": "[0.4.0, )"
+          "Flux.Beat": "[0.5.0, )"
+        }
+      },
+      "flux.rekordbox": {
+        "type": "Project",
+        "dependencies": {
+          "Flux.Beat": "[0.5.0, )"
         }
       },
       "flux.web.server": {
         "type": "Project",
         "dependencies": {
-          "Flux.Audio.Contract": "[0.4.0, )",
-          "Flux.Beat": "[0.4.0, )",
-          "Flux.Hue": "[0.4.0, )"
+          "Flux.Audio.Contract": "[0.5.0, )",
+          "Flux.Beat": "[0.5.0, )",
+          "Flux.Hue": "[0.5.0, )"
         }
       }
     }

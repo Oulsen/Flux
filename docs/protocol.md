@@ -131,6 +131,16 @@ refusal and the misreading the version exists to prevent. Making the fields opti
 instead would have broken the rule that message stands on: that it is one complete
 statement of the look, never a patch.
 
+Version 2 grew again in Phase 6 without breaking. rekordbox arrived as a fourth
+source, `"rekordbox"`, and as a fourth way of anchoring the bar, also `"rekordbox"`;
+`diagnostics` gained its `deck` and `detail`; and `shiftBar` is a new inbound type.
+The two new values in existing fields are the part to argue. This document has always
+told a client to expect a source it does not know and to degrade rather than fail,
+and an older page does exactly that: it names the source as the server does, shows
+no diagnostics rows under it, and reads the alignment as a bar anchored by something
+it cannot name. The bar position it draws is still right, which is the difference
+between a degradation and a misreading.
+
 Phase 2's lesson about `devices` is worth repeating rather than filing, because
 this document is once again describing messages before anything produces them.
 Where that left a field's honesty uncertain the field is nullable rather than
@@ -232,7 +242,7 @@ changed. It is a snapshot and is never a delta.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `source` | string | The sync source driving the grid: `"link"`, `"audio"` or `"manual"`. `"none"` when a build has no sources at all, which is also the only case where `sources` is empty |
+| `source` | string | The sync source driving the grid: `"link"`, `"audio"`, `"manual"` or `"rekordbox"`. `"none"` when a build has no sources at all, which is also the only case where `sources` is empty |
 | `sourceState` | string | `"waiting"`, `"live"` or `"quiet"`, for `source` |
 | `sources` | array | Every source this build has, whether or not it is the active one |
 | `grid` | object or **null** | Null exactly when `sourceState` is `"waiting"` |
@@ -273,7 +283,7 @@ to ask.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `name` | string | `"link"`, `"audio"` or `"manual"` |
+| `name` | string | `"link"`, `"audio"`, `"manual"` or `"rekordbox"` |
 | `state` | string | `"waiting"`, `"live"` or `"quiet"`, as above |
 | `confidence` | number | 0 to 1, how much the source trusts its own tempo |
 
@@ -296,13 +306,20 @@ nobody has changed their mind.
 | Field | Type | Meaning |
 |---|---|---|
 | `aligned` | bool | Whether `positionInBar` means anything musically. Same value as `grid.barAligned` |
-| `method` | string or **null** | `"cue"`, `"tap"` or `"drop"`; null exactly when `aligned` is false |
+| `method` | string or **null** | `"cue"`, `"tap"`, `"drop"` or `"rekordbox"`; null exactly when `aligned` is false |
 
-No source transmits a downbeat, so bar 1 comes from a cue press on an audible
-deck, a tap in the web UI, or the detector deciding a drop landed. The three are
-not equally trustworthy and only the user can judge which applies, so the method
-travels with the alignment: showing what aligned the bar is what lets a wrong
+Only one source knows where a bar starts: rekordbox, which reads it from the track's
+own beatgrid. It sets the bar whichever source is keeping time, so with Link selected
+the tempo is Link's and bar 1 is rekordbox's. Otherwise bar 1 comes from a cue press
+on an audible deck, a tap in the web UI, or the detector deciding a drop landed.
+These are not equally trustworthy and only the user can judge which applies, so the
+method travels with the alignment: showing what aligned the bar is what lets a wrong
 one be recognised as wrong.
+
+rekordbox sets the bar when there is a new reason to read it - a new track on the
+master deck, a different master, playback starting, a jump in the track - and not in
+between, so a tap holds until the next of those. A grid whose downbeat is a beat off
+is corrected with `shiftBar`, which rekordbox keeps for the rest of the track.
 
 An alignment is a beat index, so anything that renumbers the beat - a tempo
 change, a session change, a source switch, a tap - clears it and it has to be
@@ -535,6 +552,8 @@ nothing rather than a number that means nothing.
 | `lastBeatAgoMs` | number | audio | Milliseconds since the last accepted beat |
 | `taps` | int | manual | Taps in the current sequence, up to the eight the estimate uses |
 | `lastTapAgoMs` | number | manual | Milliseconds since the last tap |
+| `deck` | int | rekordbox | The master deck, counted from 1 as rekordbox shows it. Absent until rekordbox has been read |
+| `detail` | string | rekordbox | Why it is not following a playing deck, in words: rekordbox not running, running as administrator, a version Flux has no chains for, a track with no beatgrid, the deck stopped. **Absent while it is following one**, so its absence is the good state |
 
 `reanchorMaxBeats` is the grid's own metric rather than any source's, which is
 why it is always present: it measures whether extrapolating the current timeline
@@ -1067,6 +1086,28 @@ side that is what it is: a human press saying where bar one starts.
 
 Like `tap`, it works whatever the active source, on the same argument. With no
 timeline on the grid there is no beat to anchor, and the press does nothing.
+
+### `shiftBar`
+
+```json
+{ "type": "shiftBar", "data": { "beats": 1 } }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `beats` | int | Whole beats to move bar 1 by, from -3 to 3 and not 0. Positive is later |
+
+Moves the downbeat and keeps what set it, so a bar anchored by rekordbox and moved a
+beat still reads back as `"rekordbox"`. It exists for a track whose rekordbox
+beatgrid has the downbeat in the wrong place: a tap would fix that only until the next
+seek, when rekordbox reads the bar from the grid again, while a shift is kept as a
+correction and applied every time rekordbox reads the bar for the rest of the track.
+A new track on the master starts from its own grid again.
+
+Works on a bar anchored any way, not only by rekordbox. Past 3 is refused rather than
+wrapped: four beats is a whole bar and moves nothing a position can show. With no
+anchored bar there is nothing to move, and that is `rejected` rather than ignored,
+because a button that does nothing and says nothing looks broken.
 
 ### `setBpm`
 

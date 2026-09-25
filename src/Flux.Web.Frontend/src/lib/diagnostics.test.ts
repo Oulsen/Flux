@@ -19,6 +19,15 @@ test('each source is asked only for the counters it keeps', () => {
   assert.deepEqual(labels('link', GRID), ['packets']);
   assert.deepEqual(labels('audio', GRID), ['fps', 'beats', 'bpm lock', 'last beat']);
   assert.deepEqual(labels('manual', GRID), ['taps', 'last tap']);
+  assert.deepEqual(labels('rekordbox', GRID), ['deck', 'status']);
+});
+
+test('rekordbox says in words why it is not following, and nothing when it is', () => {
+  const stopped: DiagnosticsData = { reanchorMaxBeats: 0, deck: 2, detail: 'deck 2 is stopped' };
+  assert.equal(valueOf('rekordbox', stopped, 'deck'), '2');
+  assert.equal(valueOf('rekordbox', stopped, 'status'), 'deck 2 is stopped');
+  assert.equal(valueOf('rekordbox', { reanchorMaxBeats: 0, deck: 1 }, 'status'), 'following');
+  assert.equal(valueOf('rekordbox', GRID, 'deck'), UNKNOWN);
 });
 
 test('no source is offered another source\'s counter', () => {

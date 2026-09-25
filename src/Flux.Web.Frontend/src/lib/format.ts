@@ -9,7 +9,8 @@ export const UNKNOWN = '--';
  * How it was anchored is worth as much as the fact that it was. A bar anchored
  * by a cue press is a statement about the deck and one anchored by a tap is a
  * statement about the person holding it, so a cue that silently never arrives
- * is invisible unless the two are told apart on screen.
+ * is invisible unless the two are told apart on screen. One anchored by
+ * rekordbox is the track's own analysis, which is right until it is a beat off.
  *
  * An anchored bar with no method is not a state the server produces, and it is
  * still rendered as the plain fact rather than as an error: the position is
@@ -27,6 +28,8 @@ export function alignmentLabel(aligned: boolean, method: AlignmentMethod | null)
       return 'bar anchored by a tap';
     case 'drop':
       return 'bar anchored by a drop';
+    case 'rekordbox':
+      return 'bar anchored by the rekordbox beatgrid';
     default:
       return 'bar anchored';
   }

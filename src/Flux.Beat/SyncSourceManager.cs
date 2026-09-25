@@ -222,6 +222,38 @@ public sealed class SyncSourceManager {
   }
 
   /// <summary>
+  /// Marks the beat nearest to <paramref name="atMicros"/> as the downbeat - see
+  /// <see cref="BeatGrid.TryAlignBarAt"/>.
+  /// </summary>
+  /// <returns>False when no timeline is known yet, so there is no beat to anchor to.</returns>
+  public bool AlignBarAt(BarAlignmentMethod method, double atMicros) {
+    return this.grid.TryAlignBarAt(method, atMicros);
+  }
+
+  /// <summary>
+  /// Raised when somebody moves the downbeat by whole beats, with how many.
+  ///
+  /// For a source that sets the downbeat itself and will set it again: rekordbox
+  /// re-reads the bar on every jump in the track, and without hearing about a
+  /// correction it would put back the downbeat the user just moved off.
+  /// </summary>
+  public event Action<int>? BarShifted;
+
+  /// <summary>
+  /// Moves the downbeat by <paramref name="beats"/> whole beats - see
+  /// <see cref="BeatGrid.TryShiftBar"/>. Called from the web layer.
+  /// </summary>
+  /// <returns>False when the bar has no anchor to move.</returns>
+  public bool ShiftBar(int beats) {
+    if(!this.grid.TryShiftBar(beats)) {
+      return false;
+    }
+
+    this.BarShifted?.Invoke(beats);
+    return true;
+  }
+
+  /// <summary>
   /// Every registered source and its current health, for the source selector.
   /// </summary>
   public IReadOnlyList<SyncSourceReport> Sources() {
@@ -319,6 +351,10 @@ public sealed class SyncSourceManager {
 
     public void AlignBar(BarAlignmentMethod method, bool snapToBar = false) {
       manager.AlignBar(method, snapToBar);
+    }
+
+    public bool AlignBarAt(BarAlignmentMethod method, double atMicros) {
+      return manager.AlignBarAt(method, atMicros);
     }
   }
 }

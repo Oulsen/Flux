@@ -361,6 +361,28 @@ public class SyncSourceManagerTests {
     Assert.Equal(0, store.Writes);
   }
 
+  /// <summary>
+  /// A shift is announced only when it moved something, since the one listener - the
+  /// rekordbox source - keeps it as a correction to reapply, and a correction to a bar
+  /// that had no anchor would be applied to the next one instead.
+  /// </summary>
+  [Fact]
+  public void AnnouncesAShiftOnlyWhenTheBarHadAnAnchorToMove() {
+    BeatGrid grid = NewGrid(new FakeClock());
+    SyncSourceManager manager = NewManager(grid, defaultSource: "link");
+    ITimelineSink link = manager.Register(new FakeSource("link"));
+    List<int> shifted = [];
+    manager.BarShifted += shifted.Add;
+
+    link.Publish(AtOneTwenty);
+    Assert.False(manager.ShiftBar(1));
+
+    Assert.True(link.AlignBarAt(BarAlignmentMethod.Rekordbox, 0));
+    Assert.True(manager.ShiftBar(-1));
+
+    Assert.Equal([-1], shifted);
+  }
+
   private static BeatGrid NewGrid(IMonotonicClock clock) {
     return new BeatGrid(clock, quantum: 4, TimeSpan.FromSeconds(2.5));
   }

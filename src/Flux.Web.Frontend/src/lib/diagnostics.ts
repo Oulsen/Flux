@@ -61,6 +61,15 @@ export function sourceRows(source: string, diagnostics: DiagnosticsData): Diagno
         { label: 'last tap', value: formatAgo(diagnostics.lastTapAgoMs) },
       ];
 
+    case 'rekordbox':
+      // The reason is words rather than a counter, because each way of not reading
+      // rekordbox has a different fix and a number would not say which. Absent means
+      // it is following a playing deck, which is the one state that needs no advice.
+      return [
+        { label: 'deck', value: formatCount(diagnostics.deck) },
+        { label: 'status', value: diagnostics.detail ?? 'following' },
+      ];
+
     default:
       // A source this page has never heard of is the protocol's documented
       // degradation rather than an error. It contributes no rows, and
