@@ -46,7 +46,7 @@ internal readonly record struct RekordboxAttachResult(RekordboxAttachState State
 /// plausible value in the wrong place, so the version has to come from somewhere the
 /// chains are not.
 /// </summary>
-internal sealed class RekordboxProcess: IProcessMemory, IDisposable {
+internal sealed class RekordboxProcess: IScannableMemory, IDisposable {
   private const string ProcessName = "rekordbox";
 
   private const uint VmRead = 0x0010;
@@ -73,7 +73,7 @@ internal sealed class RekordboxProcess: IProcessMemory, IDisposable {
   internal int ProcessId { get; }
 
   /// <summary>Where <c>rekordbox.exe</c> is mapped. Every chain starts here.</summary>
-  internal long ModuleBase { get; }
+  public long ModuleBase { get; }
 
   internal string ExecutablePath { get; }
 
@@ -129,6 +129,32 @@ internal sealed class RekordboxProcess: IProcessMemory, IDisposable {
 
     return ReadProcessMemory(this.handle, (nint)address, ref MemoryMarshal.GetReference(destination), destination.Length, out nint read)
       && read == destination.Length;
+  }
+
+  /// <summary>
+  /// The committed, readable regions of the address space, in address order. For the
+  /// chain finder, which has to sweep all of rekordbox's memory to find a value; Flux
+  /// itself never sweeps, because it only ever walks chains it was given.
+  /// </summary>
+  public IEnumerable<(long Base, long Size)> Regions(bool writableOnly = false) {
+    const uint Committed = 0x1000;
+    const uint Guard = 0x100, NoAccess = 0x01;
+    const uint Writable = 0x04 | 0x08 | 0x40 | 0x80;
+    long address = 0;
+    while(VirtualQueryEx(this.handle, (nint)address, out MemoryInfo info, Marshal.SizeOf<MemoryInfo>()) != 0) {
+      bool readable = info.State == Committed && info.Protect != 0 && (info.Protect & (Guard | NoAccess)) == 0;
+      if(readable && (!writableOnly || (info.Protect & Writable) != 0)) {
+        yield return (info.BaseAddress, info.RegionSize);
+      }
+
+      // Regions come back in address order and do not overlap, so the next query
+      // starts past this one. A region of no size would loop forever.
+      if(info.RegionSize <= 0) {
+        yield break;
+      }
+
+      address = info.BaseAddress + info.RegionSize;
+    }
   }
 
   public void Dispose() => this.handle.Dispose();
@@ -222,6 +248,22 @@ internal sealed class RekordboxProcess: IProcessMemory, IDisposable {
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool ReadProcessMemory(SafeProcessHandle process, nint address, ref byte buffer, nint size, out nint read);
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct MemoryInfo {
+    public long BaseAddress;
+    public long AllocationBase;
+    public uint AllocationProtect;
+    public uint Alignment1;
+    public long RegionSize;
+    public uint State;
+    public uint Protect;
+    public uint Type;
+    public uint Alignment2;
+  }
+
+  [DllImport("kernel32.dll", SetLastError = true)]
+  private static extern nint VirtualQueryEx(SafeProcessHandle process, nint address, out MemoryInfo info, int length);
 
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]

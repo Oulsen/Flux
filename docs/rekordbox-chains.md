@@ -47,6 +47,25 @@ meet the checks below.
   0-based.
 - The table is checked when it loads, and unknown fields are an error.
 
+## Finding a new version's chains
+
+`tools/Flux.Rekordbox.ChainFinder` does the search: `dotnet run --project
+tools/Flux.Rekordbox.ChainFinder`, with the new rekordbox open, every deck's pitch at 0
+(so the BPM on screen is the track's own), and 4-deck mode to cover four decks. It
+reads rekordbox the same read-only way Flux does and prompts for what it cannot set:
+the tempos on screen, which deck plays, the master, and a restart. Every value keeps
+all of its candidates until every check below has run on them, because the candidate
+that looks best in one session is not reliably the one that survives the next.
+
+The ANLZ path is told apart from rekordbox's library, which keeps hundreds of the same
+kind of path behind chains of the same shape, by the file itself: the path a deck's
+chain names has to be a file whose beatgrid (`PQTZ`) carries that deck's tempo.
+
+For a version already in the table the tool compares what it found with the entry and
+writes nothing. For a new version it appends the entry to `chains.json`, but only after
+checking that Flux would load the result. It never replaces an existing version. After
+it writes, build, run the tests, and add the version's evidence here by hand.
+
 ## What an entry has to survive
 
 A chain goes in the table only when it has done all of these. Each check exists

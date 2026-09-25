@@ -215,6 +215,7 @@ dotnet run --project tests/Flux.Midi.Tests
 dotnet run --project tests/Flux.Web.Server.Tests
 dotnet run --project tests/Flux.Hue.Tests
 dotnet run --project tests/Flux.Rekordbox.Tests
+dotnet run --project tests/Flux.Rekordbox.ChainFinder.Tests
 dotnet run --project tests/Flux.App.Tests
 ```
 
@@ -239,6 +240,7 @@ npm test
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable and its desktop shell: the window, the tray icon, one running copy, and the log file |
 | `assets/branding` | The Flux mark as SVG, one cut per size band, and the script that builds `flux.ico` from them |
+| `tools/Flux.Rekordbox.ChainFinder` | A desk tool that finds the pointer chains for a new rekordbox version and appends its entry to `chains.json`; see `docs/rekordbox-chains.md` |
 | `docs/protocol.md` | The WebSocket wire contract; where it and anything else disagree, it wins |
 | `docs/rekordbox-chains.md` | The rekordbox chain table's rules, format and evidence per version, and the checks a new version's entry has to pass |
 | `docs/audio-constants.md` | Every number audio beat detection runs on, where it came from, and how the frequency bands are derived |

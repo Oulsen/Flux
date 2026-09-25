@@ -13,6 +13,8 @@
        running at the desk, and the logic that decides what a read means must not. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Flux.Rekordbox.Tests" />
+    <InternalsVisibleTo Include="Flux.Rekordbox.ChainFinder" />
+    <InternalsVisibleTo Include="Flux.Rekordbox.ChainFinder.Tests" />
   </ItemGroup>
 
   <!-- The chain table ships inside the assembly rather than next to it: the entries

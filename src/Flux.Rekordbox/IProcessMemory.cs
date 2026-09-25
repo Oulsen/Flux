@@ -15,3 +15,17 @@ internal interface IProcessMemory {
   /// </summary>
   bool TryRead(long address, Span<byte> destination);
 }
+
+/// <summary>
+/// Read access plus the two things a memory sweep needs that a single chain does not:
+/// where the module is, and which regions are worth reading. The chain finder sweeps;
+/// Flux itself only walks chains, so it needs no more than <see cref="IProcessMemory"/>.
+/// The seam lets the finder's search run against memory a test lays out.
+/// </summary>
+internal interface IScannableMemory: IProcessMemory {
+  /// <summary>Where <c>rekordbox.exe</c> is mapped; the origin of every chain.</summary>
+  long ModuleBase { get; }
+
+  /// <summary>The committed, readable regions in address order.</summary>
+  IEnumerable<(long Base, long Size)> Regions(bool writableOnly = false);
+}
