@@ -26,6 +26,7 @@ internal sealed class MainWindow: Form {
   private readonly WindowPlacementStore placements;
   private readonly ILogger log;
   private readonly WebView2 view;
+  private readonly Icon icon;
 
   private bool leaving;
   private bool fullscreen;
@@ -52,7 +53,9 @@ internal sealed class MainWindow: Form {
     this.Text = "Flux";
 #endif
 
-    this.Icon = FluxIcon.Load(SystemInformation.IconSize);
+    // Kept to be disposed with the window: a form does not dispose the icon it is given.
+    this.icon = FluxIcon.Load(SystemInformation.IconSize);
+    this.Icon = this.icon;
     this.BackColor = WindowChrome.Surface;
     this.StartPosition = FormStartPosition.CenterScreen;
 
@@ -122,6 +125,12 @@ internal sealed class MainWindow: Form {
       // The X button is UserClosing and never gets here. Anything else - Windows
       // ending the session, End task in Task Manager - is somebody outside Flux
       // deciding it should stop, and the log is where that is worth recording.
+      //
+      // Flux stops here, before it can know whether the session really ends: another
+      // application can still veto a sign-out after this one has answered, and Flux is
+      // then gone while the session carries on. Accepted: rare, visible, and fixed by
+      // starting Flux again, where a session that does end must find the stream to the
+      // bridge already closed properly.
       this.log.LogInformation("The window was closed by {Reason}, so Flux is stopping.", e.CloseReason);
       this.leaving = true;
       this.ClosingForGood?.Invoke();
@@ -284,7 +293,55 @@ internal sealed class MainWindow: Form {
       this.SetFullscreen(this.fullscreenByKey || this.fullscreenByPage);
     };
 
+    // The window is left open for hours while nobody looks at it, so a renderer that
+    // crashes, or a runtime that updates underneath it, would otherwise be found as a
+    // blank page long after the fact. A page that died is loaded again; a browser that
+    // died takes the whole view with it, and the browser fallback is the answer to that.
+    core.ProcessFailed += this.OnProcessFailed;
+
     this.view.Source = this.page;
+  }
+
+  private void OnProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs args) {
+    switch(args.ProcessFailedKind) {
+      case CoreWebView2ProcessFailedKind.RenderProcessExited:
+      case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
+        this.log.LogWarning(
+          "The window's page stopped ({Kind}, exit code {ExitCode}), so it is being loaded again.",
+          args.ProcessFailedKind,
+          args.ExitCode);
+        this.view.CoreWebView2?.Reload();
+        break;
+
+      case CoreWebView2ProcessFailedKind.BrowserProcessExited:
+        this.log.LogWarning(
+          "The window's browser process exited (exit code {ExitCode}), so Flux falls back to the default browser.",
+          args.ExitCode);
+
+        // Posted rather than raised here: the fallback disposes this window, and this is
+        // the view's own event, still on its way out of the view. Skipped if Flux is
+        // quitting by the time it runs, where opening a browser would be a surprise.
+        this.BeginInvoke(() => {
+          if(!this.leaving && !this.IsDisposed) {
+            this.Unavailable?.Invoke(new InvalidOperationException("The WebView2 browser process exited."));
+          }
+        });
+        break;
+
+      default:
+        // A frame's renderer, the GPU or a utility process: the page itself is still
+        // running, so there is nothing to reload.
+        this.log.LogInformation("A WebView2 helper process failed ({Kind}).", args.ProcessFailedKind);
+        break;
+    }
+  }
+
+  protected override void Dispose(bool disposing) {
+    base.Dispose(disposing);
+
+    if(disposing) {
+      this.icon.Dispose();
+    }
   }
 
   /// <summary>

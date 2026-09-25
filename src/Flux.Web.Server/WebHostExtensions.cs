@@ -203,7 +203,8 @@ public static class WebHostExtensions {
     } catch(IOException ex) when(ex.InnerException is AddressInUseException) {
       throw new FluxStartupException(
         $"Port {port} is already in use, so Flux has no web interface and has stopped. "
-          + "Another program may be using it: set Web:Port in appsettings.json to a free port.",
+          + "If Flux was just quit, it may still be stopping: try again in a moment. "
+          + "Otherwise another program is using it: set Web:Port in appsettings.json to a free port.",
         ex);
     }
   }

@@ -94,7 +94,19 @@ internal static class Program {
     // it there, or this method when the loop has ended. Off this thread for the reason
     // the start was: the shell's synchronization context is installed here, and a
     // continuation posted to a loop that is blocked or has ended would never run.
-    Lazy<Task> stopped = new Lazy<Task>(() => Task.Run(() => app.StopAsync()));
+    //
+    // A stop that fails is logged here and not rethrown, because both callers are on
+    // the way out: rethrown, it would escape a window message in the middle of the
+    // session ending, or skip the dispose below and end the process on a crash that
+    // says nothing more than the log already does. A service that threw or overran
+    // the shutdown timeout has stopped as far as it ever will.
+    Lazy<Task> stopped = new Lazy<Task>(() => Task.Run(async () => {
+      try {
+        await app.StopAsync().ConfigureAwait(false);
+      } catch(Exception ex) {
+        startup.LogError(ex, "Flux did not stop cleanly.");
+      }
+    }));
 
     // In a finally, so a shell that fails to build or throws out of its loop still
     // stops the host properly rather than leaving the process to end with the stream

@@ -20,6 +20,11 @@ namespace Flux.App;
 /// copy on its way out keeps its handle open until it has stopped, so the mutex still
 /// exists for a launch in that window: asking who created it would call that launch a
 /// second copy, and it would leave without starting.
+///
+/// Both objects keep the default security, so any process in the same session could
+/// take the mutex first and every Flux launch would then leave at once. Left that way
+/// on purpose: only code already running as this user in this session can do it, and
+/// that code has easier ways to stop Flux than this one.
 /// </summary>
 internal sealed class SingleInstance: IDisposable {
   private const string SessionPrefix = @"Local\Flux";

@@ -17,6 +17,12 @@ namespace Flux.App;
 /// One file per day, named by the day the process started rather than rolled at
 /// midnight: a set that runs past twelve is one night and reads better as one file.
 /// Files older than <see cref="RetainedDays"/> are deleted at startup.
+///
+/// A copy that finds the day's file held by another writes its own, named with its
+/// process id. That is the copy launched while the last one is still stopping, and the
+/// alternative - both appending to one file - has each overwrite the other's lines,
+/// which would be the old copy's shutdown and the new one's reason for failing to
+/// start: the two things anyone opening the log then is looking for.
 /// </summary>
 internal sealed class FileLoggerProvider: ILoggerProvider {
   /// <summary>
@@ -47,8 +53,13 @@ internal sealed class FileLoggerProvider: ILoggerProvider {
   internal FileLoggerProvider(string directory, DateTime now) {
     ArgumentException.ThrowIfNullOrWhiteSpace(directory);
 
-    this.Path = System.IO.Path.Combine(directory, FileName(DateOnly.FromDateTime(now)));
-    this.writing = Task.Run(() => this.WriteAsync(directory, DateOnly.FromDateTime(now)));
+    DateOnly today = DateOnly.FromDateTime(now);
+
+    // Opened here rather than by the writer, so the path is settled before anything
+    // can ask for it: a startup failure names it, and it has to name the file this run
+    // actually wrote.
+    (this.Path, StreamWriter? file) = Open(directory, today);
+    this.writing = Task.Run(() => this.WriteAsync(file, directory, today));
   }
 
   /// <summary>The file this run writes to, for pointing somebody at it.</summary>
@@ -81,6 +92,14 @@ internal sealed class FileLoggerProvider: ILoggerProvider {
     return Prefix + day.ToString(DateFormat, CultureInfo.InvariantCulture) + Extension;
   }
 
+  /// <summary>The name of the file for a day, for a copy that found that day's file taken.</summary>
+  internal static string FileName(DateOnly day, int processId) {
+    return Prefix
+      + day.ToString(DateFormat, CultureInfo.InvariantCulture)
+      + "-" + processId.ToString(CultureInfo.InvariantCulture)
+      + Extension;
+  }
+
   /// <summary>
   /// Which of these file names are logs past their retention.
   ///
@@ -92,13 +111,25 @@ internal sealed class FileLoggerProvider: ILoggerProvider {
     DateOnly oldestKept = today.AddDays(-RetainedDays);
 
     foreach(string name in fileNames) {
-      if(name.Length != Prefix.Length + DateFormat.Length + Extension.Length
-        || !name.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
+      if(!name.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
         || !name.EndsWith(Extension, StringComparison.OrdinalIgnoreCase)) {
         continue;
       }
 
-      string date = name.Substring(Prefix.Length, DateFormat.Length);
+      string stem = name[Prefix.Length..^Extension.Length];
+
+      if(stem.Length < DateFormat.Length) {
+        continue;
+      }
+
+      string date = stem[..DateFormat.Length];
+      string processId = stem[DateFormat.Length..];
+
+      // Nothing after the date, or a dash and a process id: the two names Flux writes.
+      if(processId.Length > 0
+        && (processId.Length < 2 || processId[0] != '-' || !processId[1..].All(char.IsAsciiDigit))) {
+        continue;
+      }
 
       if(DateOnly.TryParseExact(date, DateFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly day)
         && day < oldestKept) {
@@ -111,23 +142,50 @@ internal sealed class FileLoggerProvider: ILoggerProvider {
     this.lines.Writer.TryWrite(line);
   }
 
-  private async Task WriteAsync(string directory, DateOnly today) {
-    StreamWriter? file = null;
+  /// <summary>
+  /// Opens the day's file, or this copy's own when another copy holds it.
+  ///
+  /// Nowhere to write means no file, and the lines are drained and dropped. There is no
+  /// second place to report that to, and a log that cannot be written is not a reason
+  /// for the lights to stop.
+  /// </summary>
+  private static (string Path, StreamWriter? File) Open(string directory, DateOnly today) {
+    string shared = System.IO.Path.Combine(directory, FileName(today));
 
     try {
       Directory.CreateDirectory(directory);
-      DeleteExpired(directory, today);
+      return (shared, OpenForAppend(shared));
+    } catch(UnauthorizedAccessException) {
+      return (shared, null);
+    } catch(IOException) {
+      // Most likely the copy that is still stopping, which has it open for writing.
+    }
 
-      // Shared for reading, so the log can be opened while Flux is running, which is
-      // when somebody wants to read it.
-      file = new StreamWriter(
-        new FileStream(this.Path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite),
-        new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+    string own = System.IO.Path.Combine(directory, FileName(today, Environment.ProcessId));
+
+    try {
+      return (own, OpenForAppend(own));
     } catch(Exception e) when(e is IOException or UnauthorizedAccessException) {
-      // Nowhere to write means the lines are drained and dropped. There is no second
-      // place to report that to, and a log that cannot be written is not a reason for
-      // the lights to stop.
-      file = null;
+      return (shared, null);
+    }
+  }
+
+  /// <summary>
+  /// Shared for reading only, so the log can be opened while Flux is running, which is
+  /// when somebody wants to read it, and a second writer is refused rather than let in
+  /// to write over this one's lines.
+  /// </summary>
+  private static StreamWriter OpenForAppend(string path) {
+    return new StreamWriter(
+      new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read),
+      new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+  }
+
+  private async Task WriteAsync(StreamWriter? file, string directory, DateOnly today) {
+    try {
+      DeleteExpired(directory, today);
+    } catch(Exception e) when(e is IOException or UnauthorizedAccessException) {
+      // A folder that cannot be listed keeps its old logs until a later start.
     }
 
     try {
