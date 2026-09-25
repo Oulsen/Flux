@@ -11,7 +11,7 @@ only way to tell that a beat grid is right - and now also the only way to
 tune the light against it, because the lag between a beat and a bulb is
 measured by somebody standing in the room watching both.
 
-## What works in 0.4.0
+## What works in 0.5.0
 
 - Finds the beat two independent ways, and either one drives the same grid.
   **Ableton Link** (rekordbox, Ableton Live, or any Link peer) is followed
@@ -68,7 +68,9 @@ measured by somebody standing in the room watching both.
 - Serves a web UI built around the visualizer, which fills the window: the BPM,
   the position in the bar, the anchor and strobe buttons, the achieved frame
   rate and the connection and source health sit over it, and everything
-  adjustable is behind a drawer. The page reconnects on its own through a Flux
+  adjustable is behind a drawer, in three tabs: what is reached for with music
+  playing, the look of the stage, and the one-time setup. Each device remembers
+  the tab it left open. The page reconnects on its own through a Flux
   restart or a Wi-Fi drop, and a phone that would rather not draw a 64 column
   spectrum thirty times a second can switch to numbers only, which it then
   remembers.
@@ -79,8 +81,13 @@ measured by somebody standing in the room watching both.
 - Streams state, beats, spectrum and bridge status over a WebSocket. The wire
   contract is [docs/protocol.md](docs/protocol.md).
 
-Flux is still a console app you start from a terminal: the desktop shell and the QR
-code that gets a phone onto the page without typing an address are Phase 5.
+Flux runs as a desktop window showing the same page, with an icon in the
+notification area. Closing the window hides it and the lights keep going; Quit on
+the tray icon stops Flux. Launching it again while it runs brings the window back
+rather than starting a second copy, it opens where it was left, and F11 puts the
+stage on the whole screen. The window shows Flux's own page and nothing else: a
+link that leads anywhere else opens in the default browser. The QR code that
+gets a phone onto the page without typing an address has moved to Phase 7.
 
 ## Requirements
 
@@ -112,8 +119,13 @@ cd ../..
 dotnet run --project src/Flux.App
 ```
 
-The console prints the addresses the page is reachable on, including the one
-to type on a phone. Play a track and the page picks the beat up by itself:
+A window opens on the page. The addresses it is reachable on, including the one
+to type on a phone, are in the log: `%LOCALAPPDATA%\Flux\logs`, one file per
+day, kept for two weeks. `dotnet run --project src/Flux.App -- --console` shows
+the log in the terminal as well, and is what the `Console:` settings below need.
+The window needs the Microsoft Edge WebView2 Runtime, which Windows 11 ships
+with; without it Flux opens the page in the default browser and runs from the
+tray. Play a track and the page picks the beat up by itself:
 enable LINK in rekordbox for the Link source, or pick an audio device on the
 page and switch the source to Audio. Whichever source you pick is remembered, so
 `Beat:DefaultSource` below only decides the first run.
@@ -148,8 +160,8 @@ backend.
 | `Hue:BridgeAddress` | `null` | The bridge's address, when discovery should not be asked; `null` discovers it. Discovery tries mDNS and SSDP together, then a local network scan, then the rate-limited cloud lookup, and remembers where the bridge last answered - so this is for the network none of that can cross, never a shortcut, since DHCP moves a bridge |
 | `Hue:StreamHz` | `50` | Frames a second sent to the bridge while streaming, 10 to 60. 50 is the official guidance; a bulb renders roughly 25 updates a second over Zigbee regardless, so raising this cannot make the lights smoother |
 | `Hue:LatencyOffsetMs` | `0` | Milliseconds to shift light against the beat as a session starts, from -500 to 500; positive sends it early. Only the starting value: the page owns it from there, because the instrument that measures it is somebody watching the room |
-| `Console:BeatLog` | `false` | Print one console line per beat, for debugging the beat grid without a browser |
-| `Console:AudioMeter` | `false` | Print the capture level four times a second, for identifying an audio device without a browser |
+| `Console:BeatLog` | `false` | Print one console line per beat, for debugging the beat grid without a browser. Needs `--console` |
+| `Console:AudioMeter` | `false` | Print the capture level four times a second, for identifying an audio device without a browser. Needs `--console` |
 
 The light engine's own settings - palette, how often the colour changes, how many
 colours at once and how they are spread, brightness, pulse length and pulse depth -
@@ -202,6 +214,7 @@ dotnet run --project tests/Flux.Audio.Tests
 dotnet run --project tests/Flux.Midi.Tests
 dotnet run --project tests/Flux.Web.Server.Tests
 dotnet run --project tests/Flux.Hue.Tests
+dotnet run --project tests/Flux.App.Tests
 ```
 
 Frontend checks, from `src/Flux.Web.Frontend`:
@@ -222,6 +235,7 @@ npm test
 | `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, the light engine that turns beats into a colour per light, the preview that runs it while nothing streams, the room-to-frequency mapping behind it, and the encrypted store the bridge keys live in |
 | `src/Flux.Web.Server` | WebSocket hub, beat, spectrum, device, bridge and stage broadcasters, the stage's own settings and their store, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
-| `src/Flux.App` | The host executable |
+| `src/Flux.App` | The host executable and its desktop shell: the window, the tray icon, one running copy, and the log file |
+| `assets/branding` | The Flux mark as SVG, one cut per size band, and the script that builds `flux.ico` from them |
 | `docs/protocol.md` | The WebSocket wire contract; where it and anything else disagree, it wins |
 | `docs/audio-constants.md` | Every number audio beat detection runs on, where it came from, and how the frequency bands are derived |

@@ -19,7 +19,15 @@
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
   import type { HueEngineData, StageData } from './lib/protocol.ts';
   import { bridgeNeedsSetup, colorChangeLabel, showsRooms } from './lib/hue.ts';
-  import { browserStorage, readStageOn, writeStageOn } from './lib/preferences.ts';
+  import {
+    DRAWER_TABS,
+    browserStorage,
+    readDrawerTab,
+    readStageOn,
+    writeDrawerTab,
+    writeStageOn,
+    type DrawerTab,
+  } from './lib/preferences.ts';
   import { FluxSocket, socketUrl } from './lib/socket.ts';
 
   /** How often the round trip is measured. Often enough to notice, rarely enough to ignore. */
@@ -52,6 +60,48 @@
   let devicesOpen = $state(false);
 
   let drawerOpen = $state(false);
+
+  /*
+   * Which part of the drawer is showing.
+   *
+   * Tabs rather than one long column, because the column had grown to six panels in a
+   * strip a phone's width wide, and on the desktop that meant scrolling a narrow ribbon
+   * beside a screen of empty stage. Grouped by how often each part is touched, so the
+   * tab open with music playing holds everything reached for then and nothing else.
+   */
+  let drawerTab = $state<DrawerTab>(readDrawerTab(storage));
+
+  function showTab(tab: DrawerTab): void {
+    drawerTab = tab;
+    writeDrawerTab(storage, tab);
+  }
+
+  /** Left and right move between tabs, as they do in any tab strip a keyboard reaches. */
+  function tabKeydown(event: KeyboardEvent): void {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (step === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    const next = DRAWER_TABS[(DRAWER_TABS.indexOf(drawerTab) + step + DRAWER_TABS.length) % DRAWER_TABS.length];
+    showTab(next);
+    document.getElementById(`tab-${next}`)?.focus();
+  }
+
+  /*
+   * Opens the drawer, on setup when that is what the button is asking for. Not
+   * remembered as the chosen tab: it is Flux choosing, and once the bridge is done the
+   * drawer goes back to opening where this device left it - read back on every open,
+   * because a setup tab Flux forced earlier in the session is still the one in hand.
+   */
+  function toggleDrawer(): void {
+    if (!drawerOpen) {
+      drawerTab = needsSetup ? 'setup' : readDrawerTab(storage);
+    }
+
+    drawerOpen = !drawerOpen;
+  }
 
   /*
    * Whether somebody has asked to see the bridge setup, which is not the same as
@@ -105,6 +155,7 @@
   $effect(() => {
     if (needsSetup && !prompted) {
       prompted = true;
+      drawerTab = 'setup';
       drawerOpen = true;
     }
   });
@@ -311,7 +362,7 @@
       class="settings"
       class:wants={needsSetup}
       aria-expanded={drawerOpen}
-      onclick={() => (drawerOpen = !drawerOpen)}
+      onclick={toggleDrawer}
     >
       {needsSetup ? 'set up' : 'settings'}
     </button>
@@ -385,116 +436,156 @@
   </div>
 </div>
 
-<Drawer open={drawerOpen} close={() => (drawerOpen = false)}>
-  <div class="drawer-head">
-    <h2 class="heading">settings</h2>
-    <button type="button" class="settings" onclick={() => (drawerOpen = false)}>close</button>
+<Drawer open={drawerOpen} close={() => (drawerOpen = false)} scrollKey={drawerTab}>
+  {#snippet header()}
+    <div class="drawer-head">
+      <h2 class="heading">settings</h2>
+      <button type="button" class="settings" onclick={() => (drawerOpen = false)}>close</button>
+    </div>
+
+    <div class="tabs" role="tablist" aria-label="Settings" tabindex="-1" onkeydown={tabKeydown}>
+      {#each DRAWER_TABS as tab (tab)}
+        <button
+          type="button"
+          role="tab"
+          id={`tab-${tab}`}
+          class="tab"
+          class:active={drawerTab === tab}
+          class:wants={tab === 'setup' && needsSetup}
+          aria-selected={drawerTab === tab}
+          aria-controls={`panel-${tab}`}
+          tabindex={drawerTab === tab ? 0 : -1}
+          onclick={() => showTab(tab)}
+        >
+          {tab}
+        </button>
+      {/each}
+    </div>
+  {/snippet}
+
+  <!--
+    Every tab stays mounted and the ones not showing are hidden, for the reason the
+    drawer itself is never unmounted: the bridge panel keeps a discovery that is halfway
+    through, and the pickers keep a list that was already right.
+  -->
+  <div class="tab-panel" role="tabpanel" id="panel-show" aria-labelledby="tab-show" hidden={drawerTab !== 'show'}>
+    <section class="panel">
+      <h2>beat</h2>
+      <SourceSelector
+        sources={store.sources}
+        active={store.source}
+        pending={store.pendingSource}
+        select={selectSource}
+      />
+      <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {anchor} {setBpm} />
+    </section>
+
+    <!--
+      The lights beside the beat, because these two are what the page is open for: they
+      are what gets touched with music playing.
+    -->
+    {#if showsRooms(store.hue) && store.hue !== null}
+      <section class="panel">
+        <h2>lights</h2>
+        <LightsPanel
+          hue={store.hue}
+          engine={{ ...store.hue.engine, ...store.pendingEngine }}
+          light={store.light}
+          bpm={store.grid?.bpm ?? null}
+          setEngine={setLightSettings}
+          setOffset={setLatencyOffset}
+          {startStream}
+          {stopStream}
+        />
+      </section>
+    {/if}
+
+    <!-- Said rather than left as a gap: without a room the lights panel is not
+         offered, and a show tab holding only the beat reads as one that lost half. -->
+    {#if store.hue !== null && !showsRooms(store.hue)}
+      <button type="button" class="hint" onclick={() => showTab('setup')}>
+        the lights appear here once a bridge is set up &rarr;
+      </button>
+    {/if}
   </div>
 
-  <section class="panel">
-    <h2>beat</h2>
-    <SourceSelector
-      sources={store.sources}
-      active={store.source}
-      pending={store.pendingSource}
-      select={selectSource}
-    />
-    <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {anchor} {setBpm} />
-  </section>
-
-  <!--
-    The lights first among the panels, because this is the one somebody has the page
-    open for: it is what gets touched with music playing.
-  -->
-  {#if showsRooms(store.hue) && store.hue !== null}
+  <div class="tab-panel" role="tabpanel" id="panel-stage" aria-labelledby="tab-stage" hidden={drawerTab !== 'stage'}>
+    <!--
+      The settings on this page that are about the device rather than about the show,
+      which is why they are remembered here and never sent to the server.
+    -->
     <section class="panel">
-      <h2>lights</h2>
-      <LightsPanel
-        hue={store.hue}
-        engine={{ ...store.hue.engine, ...store.pendingEngine }}
-        light={store.light}
-        bpm={store.grid?.bpm ?? null}
-        setEngine={setLightSettings}
-        setOffset={setLatencyOffset}
-        {startStream}
-        {stopStream}
+      <StagePanel
+        on={stageOn}
+        {stage}
+        lit={store.light?.color !== undefined}
+        previewing={store.light === null && store.preview !== null}
+        setOn={setStageOn}
+        {setStage}
       />
     </section>
-  {/if}
+  </div>
 
-  <!--
-    Setup, and collapsed once it is done. Forced open whenever there is something to
-    do here - unpaired, pairing, failed, or paired with no room chosen - because a
-    collapsed panel is only an improvement when the thing inside it is finished.
-  -->
-  <section class="panel">
-    <button
-      type="button"
-      class="disclosure"
-      class:open={bridgeOpen}
-      aria-expanded={bridgeOpen}
-      disabled={bridgeNeedsAttention}
-      onclick={() => (bridgeToggled = !bridgeToggled)}
-    >
-      <span class="heading">bridge</span>
-      <span class="toggle">{bridgeNeedsAttention ? 'set up' : bridgeOpen ? 'hide' : bridgeSummary}</span>
-    </button>
+  <div class="tab-panel" role="tabpanel" id="panel-setup" aria-labelledby="tab-setup" hidden={drawerTab !== 'setup'}>
+    <!--
+      Setup, and collapsed once it is done. Forced open whenever there is something to
+      do here - unpaired, pairing, failed, or paired with no room chosen - because a
+      collapsed panel is only an improvement when the thing inside it is finished.
+    -->
+    <section class="panel">
+      <button
+        type="button"
+        class="disclosure"
+        class:open={bridgeOpen}
+        aria-expanded={bridgeOpen}
+        disabled={bridgeNeedsAttention}
+        onclick={() => (bridgeToggled = !bridgeToggled)}
+      >
+        <span class="heading">bridge</span>
+        <span class="toggle">{bridgeNeedsAttention ? 'set up' : bridgeOpen ? 'hide' : bridgeSummary}</span>
+      </button>
 
-    {#if bridgeOpen}
-      <BridgePanel
-        hue={store.hue}
-        discover={discoverBridges}
-        pair={pairBridge}
-        {selectArea}
-        forget={forgetBridge}
-        {refreshing}
+      {#if bridgeOpen}
+        <BridgePanel
+          hue={store.hue}
+          discover={discoverBridges}
+          pair={pairBridge}
+          {selectArea}
+          forget={forgetBridge}
+          {refreshing}
+        />
+      {/if}
+    </section>
+
+    <section class="panel">
+      <button
+        type="button"
+        class="disclosure"
+        class:open={devicesOpen}
+        aria-expanded={devicesOpen}
+        onclick={() => (devicesOpen = !devicesOpen)}
+      >
+        <span class="heading">audio device</span>
+        <span class="toggle">{devicesOpen ? 'hide' : 'show'}</span>
+      </button>
+
+      {#if devicesOpen}
+        <DevicePicker devices={store.devices} pending={store.pendingDevice} select={selectAudioDevice} />
+      {/if}
+    </section>
+
+    <section class="panel">
+      <h2>{sourceName}</h2>
+      <Diagnostics
+        source={store.source}
+        diagnostics={store.diagnostics}
+        beatIndex={store.grid?.beatIndex ?? null}
+        latencyMs={store.latencyMs}
       />
-    {/if}
-  </section>
+    </section>
 
-  <section class="panel">
-    <button
-      type="button"
-      class="disclosure"
-      class:open={devicesOpen}
-      aria-expanded={devicesOpen}
-      onclick={() => (devicesOpen = !devicesOpen)}
-    >
-      <span class="heading">audio device</span>
-      <span class="toggle">{devicesOpen ? 'hide' : 'show'}</span>
-    </button>
-
-    {#if devicesOpen}
-      <DevicePicker devices={store.devices} pending={store.pendingDevice} select={selectAudioDevice} />
-    {/if}
-  </section>
-
-  <!--
-    The settings on this page that are about the device rather than about the show,
-    which is why they are remembered here and never sent to the server.
-  -->
-  <section class="panel">
-    <StagePanel
-      on={stageOn}
-      {stage}
-      lit={store.light?.color !== undefined}
-      previewing={store.light === null && store.preview !== null}
-      setOn={setStageOn}
-      {setStage}
-    />
-  </section>
-
-  <section class="panel">
-    <h2>{sourceName}</h2>
-    <Diagnostics
-      source={store.source}
-      diagnostics={store.diagnostics}
-      beatIndex={store.grid?.beatIndex ?? null}
-      latencyMs={store.latencyMs}
-    />
-  </section>
-
-  <p class="version">Flux {store.app ?? '--'} &middot; protocol {store.protocol ?? '--'}</p>
+    <p class="version">Flux {store.app ?? '--'} &middot; protocol {store.protocol ?? '--'}</p>
+  </div>
 </Drawer>
 
 <style>
@@ -715,6 +806,80 @@
 
   .drawer-head .settings {
     background: none;
+  }
+
+  /*
+   * The tab strip. Pills like the settings button, so the drawer's controls read as one
+   * family, and the active one filled rather than underlined: an underline two pixels
+   * high is the first thing lost on a phone held at arm's length.
+   */
+  .tabs {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .tab {
+    flex: 1;
+    padding: 0.45rem 0.6rem;
+    background: none;
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    color: var(--ink-dim);
+    font: inherit;
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition:
+      background 120ms ease,
+      color 120ms ease;
+  }
+
+  .tab:hover {
+    color: var(--ink);
+  }
+
+  .tab.active {
+    background: var(--panel);
+    color: var(--ink);
+  }
+
+  /* The same call to attention the settings button makes, on the tab it leads to. */
+  .tab.wants {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .tab:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .tab-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+  }
+
+  /* The attribute has to win over the display above, which it does not by default. */
+  .tab-panel[hidden] {
+    display: none;
+  }
+
+  .hint {
+    padding: 0.75rem var(--gap);
+    background: none;
+    border: 1px dashed var(--edge);
+    border-radius: var(--radius);
+    color: var(--ink-dim);
+    font: inherit;
+    font-size: 0.8rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .hint:hover {
+    color: var(--ink);
   }
 
   .panel {

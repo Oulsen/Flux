@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readStageOn, writeStageOn, type PreferenceStore } from './preferences.ts';
+import { readDrawerTab, readStageOn, writeDrawerTab, writeStageOn, type PreferenceStore } from './preferences.ts';
 
 function store(initial: Record<string, string> = {}): PreferenceStore & { items: Record<string, string> } {
   const items = { ...initial };
@@ -57,4 +57,24 @@ test('storage that throws cannot stop the page from starting', () => {
   // takes the beat display down with it - to remember a preference.
   assert.equal(readStageOn(hostile()), true);
   assert.doesNotThrow(() => writeStageOn(hostile(), false));
+});
+
+test('the drawer opens on show until another tab has been chosen', () => {
+  assert.equal(readDrawerTab(store()), 'show');
+  assert.equal(readDrawerTab(null), 'show');
+});
+
+test('the tab last open is the tab the drawer opens on', () => {
+  const saved = store();
+
+  writeDrawerTab(saved, 'setup');
+  assert.equal(readDrawerTab(saved), 'setup');
+});
+
+test('a remembered tab this page does not have falls back to show', () => {
+  // A key written by another version of the page, or by hand. Opening on a tab that
+  // does not exist would open on nothing at all.
+  assert.equal(readDrawerTab(store({ 'flux.drawerTab': 'lights' })), 'show');
+  assert.equal(readDrawerTab(hostile()), 'show');
+  assert.doesNotThrow(() => writeDrawerTab(hostile(), 'stage'));
 });

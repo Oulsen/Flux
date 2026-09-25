@@ -24,10 +24,32 @@
   interface Props {
     open: boolean;
     close: () => void;
+
+    /**
+     * What stays put above the scrolling part: the heading and the tabs. Outside the
+     * scroller so that switching tabs never means scrolling back up to find them.
+     */
+    header?: Snippet;
+
+    /**
+     * Changes whenever the content is a different page of the drawer, and puts the
+     * scroller back at the top when it does. A tab opened halfway down, at the offset
+     * the previous tab was left at, looks like a tab with its first panels missing.
+     */
+    scrollKey?: unknown;
+
     children: Snippet;
   }
 
-  const { open, close, children }: Props = $props();
+  const { open, close, header, scrollKey, children }: Props = $props();
+
+  let scroller: HTMLDivElement | undefined = $state();
+
+  $effect(() => {
+    // Read for the dependency: the value itself says nothing, only that it moved.
+    void scrollKey;
+    scroller?.scrollTo({ top: 0 });
+  });
 
   function onKeydown(event: KeyboardEvent): void {
     if (open && event.key === 'Escape') {
@@ -39,7 +61,13 @@
 <svelte:window onkeydown={onKeydown} />
 
 <aside class="drawer" class:open aria-label="Settings" inert={!open}>
-  <div class="scroller">
+  {#if header}
+    <div class="header">
+      {@render header()}
+    </div>
+  {/if}
+
+  <div class="scroller" bind:this={scroller}>
     {@render children()}
   </div>
 </aside>
@@ -74,7 +102,19 @@
     }
   }
 
+  .header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: var(--gap) var(--gap) 0.75rem;
+    border-bottom: 1px solid var(--edge);
+  }
+
   .scroller {
+    /* The rest of the drawer's height, and no more: without the zero basis a flex
+       child sizes to its content and the drawer, not the scroller, overflows. */
+    flex: 1 1 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: var(--gap);

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The same target as the app, for the reason the MIDI tests give: a project cannot
+       reference one that targets a higher Windows version than its own. Nothing here
+       opens a window, a WebView2 or a console. What is tested is the part of the shell
+       that decides things - the launch flag, and which files the log keeps - because
+       the window and the tray are verified by using them. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Flux.App\Flux.App.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -9,6 +9,7 @@
     <Project Path="src/Flux.Web.Server/Flux.Web.Server.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Flux.App.Tests/Flux.App.Tests.csproj" />
     <Project Path="tests/Flux.Audio.Tests/Flux.Audio.Tests.csproj" />
     <Project Path="tests/Flux.Beat.Tests/Flux.Beat.Tests.csproj" />
     <Project Path="tests/Flux.Hue.Tests/Flux.Hue.Tests.csproj" />
