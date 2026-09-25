@@ -68,7 +68,8 @@ numbers nobody has ever heard.
   prints it to the terminal too. Only one copy runs per Windows session: a
   second launch shows the first one's window and exits with code 0 at once, which
   looks like a start that quietly died. Check `tasklist` for a running `Flux.exe`
-  before reading anything into that.
+  before reading anything into that. The window's DevTools (F12) exist only in a
+  Debug build; for inspecting the page in a Release build, open it in a browser.
 - After C# edits are complete, run
   `dotnet format style --severity warn --verbosity quiet` (this repo opts in;
   it strips unused usings), then build, then run the tests.

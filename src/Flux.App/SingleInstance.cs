@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace Flux.App;
 
 /// <summary>
@@ -18,21 +20,34 @@ internal sealed class SingleInstance: IDisposable {
   private const string MutexName = @"Local\Flux.Running";
   private const string SignalName = @"Local\Flux.Show";
 
+  /// <summary><c>ASFW_ANY</c>: any process may take the foreground next.</summary>
+  private const int AnyProcess = -1;
+
   private readonly Mutex running;
   private readonly EventWaitHandle signal;
   private RegisteredWaitHandle? listening;
+  private bool held;
 
   internal SingleInstance() {
     this.running = new Mutex(initiallyOwned: true, MutexName, out bool created);
     this.IsFirst = created;
+    this.held = created;
     this.signal = new EventWaitHandle(initialState: false, EventResetMode.AutoReset, SignalName);
   }
 
   /// <summary>Whether this is the copy that gets to run.</summary>
   internal bool IsFirst { get; }
 
-  /// <summary>Asks the running copy to show its window.</summary>
+  /// <summary>
+  /// Asks the running copy to show its window.
+  ///
+  /// The foreground is handed over first. Windows only lets the process that has it
+  /// give it away, and that is this one, which the user just launched: without the
+  /// hand-over the running copy's window comes back behind whatever was in front, and
+  /// all that shows is a taskbar button flashing.
+  /// </summary>
   internal void ShowFirst() {
+    _ = AllowSetForegroundWindow(AnyProcess);
     this.signal.Set();
   }
 
@@ -50,15 +65,44 @@ internal sealed class SingleInstance: IDisposable {
       executeOnlyOnce: false);
   }
 
-  /// <summary>Must be called on the thread that created this, which owns the mutex.</summary>
-  public void Dispose() {
-    this.listening?.Unregister(null);
-    this.signal.Dispose();
+  /// <summary>
+  /// Stops answering later copies and lets the next launch be a real start, for a copy
+  /// that has begun to stop.
+  ///
+  /// Called as soon as the shell's loop ends rather than when this is disposed, because
+  /// stopping the host takes a while - the stream to the bridge is closed properly - and
+  /// a launch in that window would otherwise ask a copy on its way out to show itself,
+  /// then leave, and there would be no Flux at all. Released now, that launch starts,
+  /// and if the old copy still has the port it says so. Waits for a request already
+  /// being answered, so nothing calls into the shell once it is gone.
+  ///
+  /// Must be called on the thread that created this, which owns the mutex.
+  /// </summary>
+  internal void Leave() {
+    if(this.listening is { } registered) {
+      using ManualResetEvent unregistered = new ManualResetEvent(initialState: false);
 
-    if(this.IsFirst) {
-      this.running.ReleaseMutex();
+      if(registered.Unregister(unregistered)) {
+        unregistered.WaitOne();
+      }
+
+      this.listening = null;
     }
 
+    if(this.held) {
+      this.running.ReleaseMutex();
+      this.held = false;
+    }
+  }
+
+  /// <inheritdoc cref="Leave"/>
+  public void Dispose() {
+    this.Leave();
+    this.signal.Dispose();
     this.running.Dispose();
   }
+
+  [DllImport("user32.dll")]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool AllowSetForegroundWindow(int processId);
 }

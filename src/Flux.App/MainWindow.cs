@@ -29,6 +29,8 @@ internal sealed class MainWindow: Form {
 
   private bool leaving;
   private bool fullscreen;
+  private bool fullscreenByKey;
+  private bool fullscreenByPage;
   private FormWindowState stateBeforeFullscreen;
   private Rectangle boundsBeforeFullscreen;
 
@@ -136,6 +138,14 @@ internal sealed class MainWindow: Form {
     if(this.placements.Load() is { } placement
       && placement.IsUsableOn(Screen.AllScreens.Select(screen => screen.WorkingArea))) {
       this.StartPosition = FormStartPosition.Manual;
+
+      // Twice, and the second is the one that counts. The bounds are physical pixels,
+      // and the first move takes a window created on the primary screen onto the saved
+      // one; when that screen scales differently, Windows rescales the window on
+      // arrival, and a size that was already physical would come out scaled a second
+      // time - and be saved that way. The second move happens on the right screen, where
+      // there is nothing left to rescale.
+      this.Bounds = placement.Bounds;
       this.Bounds = placement.Bounds;
 
       if(placement.Maximized) {
@@ -229,6 +239,23 @@ internal sealed class MainWindow: Form {
     CoreWebView2 core = this.view.CoreWebView2;
     core.Settings.IsStatusBarEnabled = false;
 
+    // Developer tools in a development build only. In the one running the room they are
+    // a second way into the page that nobody at the desk needs.
+#if !DEBUG
+    core.Settings.AreDevToolsEnabled = false;
+#endif
+
+    // The window shows Flux's page and nothing else. A link, a redirect or a script
+    // that would take it anywhere else is sent to the default browser instead: this
+    // window has no address bar and no back button, so a page from somewhere else
+    // could only be left by quitting.
+    core.NavigationStarting += (_, args) => {
+      if(!IsSameOrigin(this.page, args.Uri)) {
+        args.Cancel = true;
+        OpenInBrowser(args.Uri, this.log);
+      }
+    };
+
     // A link that would open a new window goes to the default browser instead. A
     // second WebView2 window would be a browser with no address bar and no way back.
     core.NewWindowRequested += (_, args) => {
@@ -238,9 +265,25 @@ internal sealed class MainWindow: Form {
 
     // The page asking for fullscreen is honoured the same way F11 is, so a fullscreen
     // button in the page would work here as it does in a browser tab.
-    core.ContainsFullScreenElementChanged += (_, _) => this.SetFullscreen(core.ContainsFullScreenElement);
+    core.ContainsFullScreenElementChanged += (_, _) => {
+      this.fullscreenByPage = core.ContainsFullScreenElement;
+      this.SetFullscreen(this.fullscreenByKey || this.fullscreenByPage);
+    };
 
     this.view.Source = this.page;
+  }
+
+  /// <summary>
+  /// Whether an address is on the page's own origin: the same scheme, host and port.
+  /// </summary>
+  internal static bool IsSameOrigin(Uri page, string address) {
+    ArgumentNullException.ThrowIfNull(page);
+
+    return Uri.TryCreate(address, UriKind.Absolute, out Uri? uri)
+      && string.Equals(
+        uri.GetLeftPart(UriPartial.Authority),
+        page.GetLeftPart(UriPartial.Authority),
+        StringComparison.OrdinalIgnoreCase);
   }
 
   /// <summary>
@@ -249,11 +292,21 @@ internal sealed class MainWindow: Form {
   /// mean a script in the page talking to the window - the channel this window is
   /// built not to have. A fullscreen the page asks for still leaves on Escape, because
   /// there the browser engine handles it.
+  ///
+  /// The key and the page are kept apart, so one leaving fullscreen does not take the
+  /// other's with it. While the page holds fullscreen F11 does nothing: the window
+  /// cannot end the page's fullscreen without scripting it, and Escape already does.
   /// </summary>
   private void OnViewKeyDown(object? sender, KeyEventArgs e) {
     if(e.KeyCode == Keys.F11 && e.Modifiers == Keys.None) {
       e.Handled = true;
-      this.SetFullscreen(!this.fullscreen);
+
+      if(this.fullscreenByPage) {
+        return;
+      }
+
+      this.fullscreenByKey = !this.fullscreenByKey;
+      this.SetFullscreen(this.fullscreenByKey);
     }
   }
 

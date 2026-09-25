@@ -58,10 +58,22 @@ internal sealed class FileLoggerProvider: ILoggerProvider {
     return new FileLogger(this, categoryName);
   }
 
-  /// <summary>Lets the writer finish what is queued, for a bounded time.</summary>
+  /// <summary>
+  /// Lets the writer finish what is queued, for a bounded time. Safe to call more than
+  /// once, which a crash does: the crash handler flushes, then the normal way out does.
+  ///
+  /// Never throws. This runs on the way out of the process, and a writer that failed on
+  /// something unexpected has already lost its lines; rethrowing that here would only
+  /// replace a clean exit with a crash about the log.
+  /// </summary>
   public void Dispose() {
     this.lines.Writer.TryComplete();
-    this.writing.Wait(FlushTimeout);
+
+    try {
+      this.writing.Wait(FlushTimeout);
+    } catch(AggregateException) {
+      // The writer's own failure, already past saving.
+    }
   }
 
   /// <summary>The name of the file for a day.</summary>

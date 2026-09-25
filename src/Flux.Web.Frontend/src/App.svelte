@@ -92,11 +92,12 @@
   /*
    * Opens the drawer, on setup when that is what the button is asking for. Not
    * remembered as the chosen tab: it is Flux choosing, and once the bridge is done the
-   * drawer should go back to opening where this device left it.
+   * drawer goes back to opening where this device left it - read back on every open,
+   * because a setup tab Flux forced earlier in the session is still the one in hand.
    */
   function toggleDrawer(): void {
-    if (!drawerOpen && needsSetup) {
-      drawerTab = 'setup';
+    if (!drawerOpen) {
+      drawerTab = needsSetup ? 'setup' : readDrawerTab(storage);
     }
 
     drawerOpen = !drawerOpen;

@@ -43,9 +43,20 @@ internal static class Program {
     ILogger startup = fileLog.CreateLogger("Flux.App");
 
     // Anything that escapes a thread-pool thread ends the process, and a window
-    // application has nowhere to print the reason. The log is the one record left.
-    AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+    // application has nowhere to print the reason. The log is the one record left, and
+    // it is flushed here: logging only queues the line, and the process ends as soon as
+    // this handler returns, long before the writer would have got to it.
+    AppDomain.CurrentDomain.UnhandledException += (_, e) => {
       startup.LogCritical(e.ExceptionObject as Exception, "Flux stopped on an unhandled exception.");
+      fileLog.Dispose();
+    };
+
+    // The same for the shell's own thread - a tray click, the window closing - where
+    // WinForms would otherwise show its stock dialog with a Continue button and log
+    // nothing. Logged and carried on from, as that dialog's Continue would: the lights
+    // run on the host's threads, and a tray menu that threw once is no reason to cut them.
+    Application.ThreadException += (_, e) =>
+      startup.LogError(e.Exception, "The window or the tray failed on something it was doing.");
 
     ApplicationConfiguration.Initialize();
 
@@ -60,11 +71,17 @@ internal static class Program {
       Task.Run(app.StartFluxAsync).GetAwaiter().GetResult();
     } catch(Exception ex) {
       startup.LogCritical(ex, "Flux could not start.");
-      ReportStartupFailure(ex, fileLog.Path, launch.Console);
 
+      // Disposed before the message is shown, not after. Whatever did start - the audio
+      // capture, the Link listener - would otherwise keep running behind a box nobody
+      // has read yet, and a relaunch in the meantime would find this copy still holding
+      // the session and quietly leave.
       if(app is not null) {
         Task.Run(() => app.DisposeAsync().AsTask()).GetAwaiter().GetResult();
       }
+
+      instance.Leave();
+      ReportStartupFailure(ex, fileLog.Path, launch.Console);
 
       return 1;
     }
@@ -76,6 +93,10 @@ internal static class Program {
     using(ShellContext shell = new ShellContext(page, FluxPaths.WebView2, lifetime, shellLog)) {
       instance.OnShowRequested(shell.OpenFromAnyThread);
       Application.Run(shell);
+
+      // Before the shell is disposed, so no request from a later copy can reach it, and
+      // before the host stops, so a launch while it does is a real start.
+      instance.Leave();
     }
 
     // Off this thread for the reason the start was: the shell's synchronization

@@ -11,7 +11,7 @@ only way to tell that a beat grid is right - and now also the only way to
 tune the light against it, because the lag between a beat and a bulb is
 measured by somebody standing in the room watching both.
 
-## What works in 0.4.0
+## What works in 0.5.0
 
 - Finds the beat two independent ways, and either one drives the same grid.
   **Ableton Link** (rekordbox, Ableton Live, or any Link peer) is followed
@@ -68,7 +68,9 @@ measured by somebody standing in the room watching both.
 - Serves a web UI built around the visualizer, which fills the window: the BPM,
   the position in the bar, the anchor and strobe buttons, the achieved frame
   rate and the connection and source health sit over it, and everything
-  adjustable is behind a drawer. The page reconnects on its own through a Flux
+  adjustable is behind a drawer, in three tabs: what is reached for with music
+  playing, the look of the stage, and the one-time setup. Each device remembers
+  the tab it left open. The page reconnects on its own through a Flux
   restart or a Wi-Fi drop, and a phone that would rather not draw a 64 column
   spectrum thirty times a second can switch to numbers only, which it then
   remembers.
@@ -83,8 +85,9 @@ Flux runs as a desktop window showing the same page, with an icon in the
 notification area. Closing the window hides it and the lights keep going; Quit on
 the tray icon stops Flux. Launching it again while it runs brings the window back
 rather than starting a second copy, it opens where it was left, and F11 puts the
-stage on the whole screen. The QR code that gets a phone onto the page
-without typing an address is still to come in Phase 5.
+stage on the whole screen. The window shows Flux's own page and nothing else: a
+link that leads anywhere else opens in the default browser. The QR code that
+gets a phone onto the page without typing an address is still to come.
 
 ## Requirements
 

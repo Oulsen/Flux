@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
+using Microsoft.Win32;
 using System.Runtime.Versioning;
 
 namespace Flux.App;
@@ -28,6 +29,7 @@ internal sealed class ShellContext: ApplicationContext {
 
   private MainWindow? window;
   private bool hiddenOnce;
+  private bool watchingSession;
 
   /// <param name="page">The host's own page, for the window and for the browser fallback.</param>
   /// <param name="profileFolder">Where the window's browser profile lives.</param>
@@ -89,6 +91,11 @@ internal sealed class ShellContext: ApplicationContext {
 
   protected override void Dispose(bool disposing) {
     if(disposing) {
+      // A static event, so a handler left on it would outlive the shell.
+      if(this.watchingSession) {
+        SystemEvents.SessionEnding -= this.OnSessionEnding;
+      }
+
       this.stopping.Dispose();
       this.tray.Dispose();
       this.trayIcon.Dispose();
@@ -151,6 +158,14 @@ internal sealed class ShellContext: ApplicationContext {
       this.window = null;
     }
 
+    // The window was what heard Windows ending the session, and it is gone. Without
+    // this, signing out would end the process with the stream to the bridge cut
+    // mid-frame, rather than stopped the way every other way out stops it.
+    if(!this.watchingSession) {
+      SystemEvents.SessionEnding += this.OnSessionEnding;
+      this.watchingSession = true;
+    }
+
     MainWindow.OpenInBrowser(this.page.AbsoluteUri, this.log);
 
     this.tray.ShowBalloonTip(
@@ -160,5 +175,10 @@ internal sealed class ShellContext: ApplicationContext {
         ? "The Microsoft Edge WebView2 Runtime is not installed, so Flux runs from the tray and uses your browser for its window."
         : "Flux's window could not start, so it runs from the tray and uses your browser instead. The log says why.",
       ToolTipIcon.Warning);
+  }
+
+  private void OnSessionEnding(object? sender, SessionEndingEventArgs e) {
+    this.log.LogInformation("Windows is ending the session ({Reason}), so Flux is stopping.", e.Reason);
+    this.lifetime.StopApplication();
   }
 }
