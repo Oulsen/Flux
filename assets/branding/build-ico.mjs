@@ -1,7 +1,10 @@
-// Builds flux.ico from the SVG marks, each drawn for its own size band: the 16 px
-// cut has three bars because four do not survive at that size, the 32 px cut
-// serves 24 to 48, and the master serves everything above. The glow is the
-// master's alone, since below 64 px a blur reads as a smudge rather than light.
+// Builds flux.ico from the SVG marks, each drawn for its own size band. The mark is a
+// stretch of music seen through five bars, the hit burning white where it lands. The
+// 16, 24 and 32 px cuts serve the tray, the taskbar and the Start menu, and are drawn
+// on whole pixels with the waveform's texture and glow left out, since at those sizes
+// both read as blur; they keep what does survive, which is the bars, the heat colours
+// and the low lead-in that jumps at the white hit. The master serves 48 and up, where
+// its texture holds, so the desktop icon still shows the waveform inside the bars.
 //
 // Run with `npm install && npm run build-ico` in this folder after editing a mark.
 // The .ico is committed, so a build never needs node for it.
@@ -11,9 +14,9 @@ import pngToIco from 'png-to-ico';
 
 const sizes = [
   { svg: 'flux-mark-16.svg', intrinsic: 16, size: 16 },
-  { svg: 'flux-mark-32.svg', intrinsic: 32, size: 24 },
+  { svg: 'flux-mark-24.svg', intrinsic: 24, size: 24 },
   { svg: 'flux-mark-32.svg', intrinsic: 32, size: 32 },
-  { svg: 'flux-mark-32.svg', intrinsic: 32, size: 48 },
+  { svg: 'flux-mark.svg', intrinsic: 512, size: 48 },
   { svg: 'flux-mark.svg', intrinsic: 512, size: 64 },
   { svg: 'flux-mark.svg', intrinsic: 512, size: 128 },
   { svg: 'flux-mark.svg', intrinsic: 512, size: 256 },

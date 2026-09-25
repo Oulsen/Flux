@@ -1,8 +1,48 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <rect width="32" height="32" rx="6" fill="#0b0d12"/>
+  <defs>
+    <radialGradient id="cyan" gradientUnits="userSpaceOnUse" cx="1.9" cy="16" r="14.4">
+      <stop offset="0" stop-color="#22d3ee" stop-opacity=".5"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="magenta" gradientUnits="userSpaceOnUse" cx="10.7" cy="16" r="15.6">
+      <stop offset="0" stop-color="#d946ef" stop-opacity=".6"/><stop offset="1" stop-color="#d946ef" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="gold" gradientUnits="userSpaceOnUse" cx="30.6" cy="16" r="14.4">
+      <stop offset="0" stop-color="#fbbf24" stop-opacity=".45"/><stop offset="1" stop-color="#fbbf24" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="heat" gradientUnits="userSpaceOnUse" x1="-0.5" y1="0" x2="32.5" y2="0">
+      <stop offset="0" stop-color="#22d3ee"/><stop offset=".245" stop-color="#6366f1"/>
+      <stop offset=".339" stop-color="#ffa6ce"/><stop offset=".415" stop-color="#ff4d9d"/>
+      <stop offset=".606" stop-color="#d946ef"/><stop offset=".773" stop-color="#ea838a"/>
+      <stop offset="1" stop-color="#fbbf24"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="6" fill="#120a33"/>
+  <rect width="32" height="32" rx="6" fill="url(#cyan)"/>
+  <rect width="32" height="32" rx="6" fill="url(#magenta)"/>
+  <rect width="32" height="32" rx="6" fill="url(#gold)"/>
 
-  <rect x="3" y="17" width="5" height="9" rx="2.5" fill="#60a5fa"/>
-  <rect x="10" y="10" width="5" height="16" rx="2.5" fill="#a78bfa"/>
-  <rect x="17" y="6" width="5" height="20" rx="2.5" fill="#f472b6"/>
-  <rect x="24" y="13" width="5" height="13" rx="2.5" fill="#fbbf24"/>
+  <g>
+    <rect x="2" y="10" width="1" height="12" fill="url(#heat)"/>
+    <rect x="3" y="10" width="1" height="12" fill="url(#heat)"/>
+    <rect x="4" y="10" width="1" height="12" fill="url(#heat)"/>
+    <rect x="5" y="10" width="1" height="12" fill="url(#heat)"/>
+    <rect x="8" y="10" width="1" height="12" fill="url(#heat)"/>
+    <rect x="9" y="10" width="1" height="12" fill="url(#heat)"/>
+    <rect x="14" y="7" width="1" height="18" fill="url(#heat)"/>
+    <rect x="15" y="7" width="1" height="18" fill="url(#heat)"/>
+    <rect x="16" y="8" width="1" height="16" fill="url(#heat)"/>
+    <rect x="17" y="8" width="1" height="16" fill="url(#heat)"/>
+    <rect x="20" y="9" width="1" height="14" fill="url(#heat)"/>
+    <rect x="21" y="9" width="1" height="14" fill="url(#heat)"/>
+    <rect x="22" y="9" width="1" height="14" fill="url(#heat)"/>
+    <rect x="23" y="9" width="1" height="14" fill="url(#heat)"/>
+    <rect x="26" y="9" width="1" height="14" fill="url(#heat)"/>
+    <rect x="27" y="9" width="1" height="14" fill="url(#heat)"/>
+    <rect x="28" y="9" width="1" height="14" fill="url(#heat)"/>
+    <rect x="29" y="9" width="1" height="14" fill="url(#heat)"/>
+    <rect x="10" y="3" width="1" height="26" fill="url(#heat)"/>
+    <rect x="11" y="4" width="1" height="24" fill="url(#heat)"/>
+  </g>
+  <rect x="10" y="3" width="1" height="26" fill="#ffffff" opacity=".9"/>
+  <rect x="11" y="4" width="1" height="24" fill="#ffffff" opacity=".4"/>
 </svg>
