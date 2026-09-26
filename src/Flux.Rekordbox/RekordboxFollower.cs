@@ -30,10 +30,10 @@ namespace Flux.Rekordbox;
 /// from the grid again; the correction for a grid that is a beat off is
 /// <see cref="Shift"/>, which lasts until the track changes.
 ///
-/// <b>With LINK on there is no master deck</b>: Link is rekordbox's master, and the byte
-/// that names the deck reads 255. The deck playing is then followed instead - the one
-/// already followed while it plays, else the one playing longest, which is the one on
-/// air while the next is started.
+/// <b>Without a master deck</b> - the byte that names it reads 255 with LINK on, when Link
+/// is rekordbox's master, and is unreadable when its chain has moved - the deck playing is
+/// followed instead: the one already followed while it plays, else the one playing
+/// longest, which is the one on air while the next is started.
 ///
 /// <b>Nothing playing means nothing published.</b> A stopped master withdraws its tempo
 /// rather than letting it run on, so while rekordbox is the source the lights settle at
@@ -165,13 +165,13 @@ internal sealed class RekordboxFollower {
   private void FollowWhileLocked(RekordboxReading reading, double now) {
     this.Watch(reading, now);
 
-    // With LINK on, Link is rekordbox's master and no deck is: the master byte reads 255.
-    // That is a normal way to play rather than a fault, so the deck playing stands in for
-    // the master. Silenced rather than lost when there is none, so a paused track keeps
-    // its shift for when it plays again.
+    // No master deck: the byte reads 255 with LINK on, when Link is rekordbox's master, and
+    // it cannot be read at all when its chain has moved. Either way the deck playing stands
+    // in for the master, and the message does not guess which cause it was. Silenced rather
+    // than lost when nothing plays, so a paused track keeps its shift for when it plays again.
     if(reading.MasterDeck is not { } deck) {
       if(this.PlayingDeck(reading.Decks.Count, now) is not { } playing) {
-        this.Silence("no deck is playing (with LINK on, Link is rekordbox's master and no deck is)");
+        this.Silence("no deck is playing");
         return;
       }
 

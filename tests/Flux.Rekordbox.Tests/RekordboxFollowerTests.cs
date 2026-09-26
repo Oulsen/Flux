@@ -246,8 +246,7 @@ public class RekordboxFollowerTests {
     rig.Steps(forMs: 50, deck1FromMs: null, deck2FromMs: null, deck1HeldAtMs: 0, deck2HeldAtMs: 0);
 
     Assert.False(rig.Grid.TryGetSnapshot(out _));
-    Assert.Contains("no deck is playing", rig.Follower.Describe().Detail);
-    Assert.Contains("LINK", rig.Follower.Describe().Detail);
+    Assert.Equal("no deck is playing", rig.Follower.Describe().Detail);
   }
 
   [Fact]
