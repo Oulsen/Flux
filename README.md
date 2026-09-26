@@ -241,7 +241,7 @@ npm test
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable and its desktop shell: the window, the tray icon, one running copy, and the log file |
 | `assets/branding` | The Flux mark as SVG, one cut per size band, and the script that builds `flux.ico` from them |
-| `tools/Flux.Rekordbox.ChainFinder` | A desk tool that finds the pointer chains for a new rekordbox version and appends its entry to `chains.json`; see `docs/rekordbox-chains.md` |
+| `tools/Flux.Rekordbox.ChainFinder` | A desk tool that finds the pointer chains for a rekordbox version and appends its entry to `chains.json`, or for a version already there replaces what no longer reads, on a yes; see `docs/rekordbox-chains.md` |
 | `docs/protocol.md` | The WebSocket wire contract; where it and anything else disagree, it wins |
 | `docs/rekordbox-chains.md` | The rekordbox chain table's rules, format and evidence per version, and the checks a new version's entry has to pass |
 | `docs/rekordbox-anlz.md` | The layout of the rekordbox analysis files Flux reads, the beatgrid and the phrases, and what checking it against a real library found |

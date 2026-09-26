@@ -22,30 +22,36 @@ internal static class DeckChains {
   private const int SamplesPerSecond = 44_100;
 
   /// <summary>
-  /// Tempo chains for two loaded decks showing <paramref name="bpm1"/> and
-  /// <paramref name="bpm2"/>, strongest first: shortest chain, then fewest hops above
-  /// the array.
+  /// Tempo chains for two loaded decks, deck 1 showing one of <paramref name="tempos1"/>
+  /// and deck 2 one of <paramref name="tempos2"/>, strongest first: shortest chain, then
+  /// fewest hops above the array. The tempos are sets because they come from the
+  /// candidate ANLZ files rather than the screen, and until the chains are found it is
+  /// not known which candidate is the deck's.
   /// </summary>
-  internal static List<DeckChain> FindTempo(MemorySweep sweep, float bpm1, float bpm2) {
+  internal static List<DeckChain> FindTempo(MemorySweep sweep, IReadOnlyCollection<float> tempos1, IReadOnlyCollection<float> tempos2) {
     IReadOnlyList<(long, long)> regions = sweep.Regions();
     var floats1 = new List<long>();
     var floats2 = new List<long>();
     sweep.Floats(regions, (at, value) => {
-      if(MathF.Abs(value - bpm1) < 0.006f) {
+      if(Near(tempos1, value)) {
         floats1.Add(at);
       }
 
-      if(MathF.Abs(value - bpm2) < 0.006f) {
+      if(Near(tempos2, value)) {
         floats2.Add(at);
       }
-    });
+    }, "finding the decks' tempos");
 
-    Console.WriteLine($"  {floats1.Count} places hold {bpm1}, {floats2.Count} hold {bpm2}.");
+    Console.WriteLine($"  {floats1.Count} places hold deck 1's tempo, {floats2.Count} hold deck 2's.");
 
     // Level 1: a field pointing at an object whose H2 is the tempo. Level 2: a field
     // pointing at an object whose H1 is that field. Both decks must share H1 and H2.
-    var subs = Shared(sweep.Up(regions, floats1), sweep.Up(regions, floats2));
-    var decks = Shared(sweep.Up(regions, subs.First.Select(s => s.Slot)), sweep.Up(regions, subs.Second.Select(s => s.Slot)));
+    var subs = Shared(
+      sweep.Up(regions, floats1, what: "finding what holds deck 1's tempo (1 of 4)"),
+      sweep.Up(regions, floats2, what: "finding what holds deck 2's tempo (2 of 4)"));
+    var decks = Shared(
+      sweep.Up(regions, subs.First.Select(s => s.Slot), what: "finding deck 1's object (3 of 4)"),
+      sweep.Up(regions, subs.Second.Select(s => s.Slot), what: "finding deck 2's object (4 of 4)"));
     Console.WriteLine($"  {subs.First.Count} candidate tempo fields, {decks.First.Count} candidate deck objects.");
 
     var h2ByField = subs.First.ToLookup(s => s.Slot, s => s.Offset);
@@ -64,10 +70,11 @@ internal static class DeckChains {
     Console.WriteLine($"  {arrays.Count} deck arrays; climbing to the module.");
     var found = new List<DeckChain>();
     var byArray = arrays.ToLookup(a => a.Slot);
-    foreach((long target, PointerChain toArray) in sweep.Climb(regions, byArray.Select(g => g.Key), levels: 2)) {
+    foreach((long target, PointerChain toArray) in sweep.Climb(regions, byArray.Select(g => g.Key), levels: 2, what: "climbing from the deck arrays to rekordbox's own code")) {
       foreach((long _, long h1, long h2) in byArray[target]) {
         var chain = new DeckChain(new PointerChain([.. toArray.Offsets, h1, h2]), toArray.Offsets.Count - 1, DeckStride);
-        if(ReadsBoth(sweep, chain, bpm1, bpm2)) {
+        if(chain.For(0).TryReadSingle(sweep.Process, sweep.ModuleBase, out float one) && Near(tempos1, one)
+          && chain.For(1).TryReadSingle(sweep.Process, sweep.ModuleBase, out float two) && Near(tempos2, two)) {
           found.Add(chain);
         }
       }
@@ -180,10 +187,10 @@ internal static class DeckChains {
         int next = bytes[(i + 1)..].IndexOf(needle);
         i = next < 0 ? -1 : i + 1 + next;
       }
-    });
+    }, "finding ANLZ paths");
 
     Console.WriteLine($"  {paths.Count} ANLZ paths in memory; climbing to the module.");
-    List<(long Target, PointerChain Chain)> chains = sweep.Climb(regions, paths.Keys, levels: 3, firstOffset: 0);
+    List<(long Target, PointerChain Chain)> chains = sweep.Climb(regions, paths.Keys, levels: 3, firstOffset: 0, what: "climbing from the ANLZ paths to rekordbox's own code");
     var found = new List<DeckChain>();
     foreach(var group in chains.GroupBy(c => (c.Chain.Offsets[0], c.Chain.Offsets.Count))) {
       var list = group.ToList();
@@ -210,10 +217,54 @@ internal static class DeckChains {
       .OrderBy(f => f.Chain.Offsets.Count)];
   }
 
+  /// <summary>
+  /// The distinct tempos in the beatgrid of the file <paramref name="chain"/> names for
+  /// <paramref name="deck"/>, or null when it names no ANLZ file with one.
+  /// </summary>
+  internal static IReadOnlyList<float>? FileTempos(MemorySweep sweep, DeckChain chain, int deck) =>
+    chain.For(deck).TryReadUtf8(sweep.Process, sweep.ModuleBase, 1024, out string path)
+      && path.EndsWith(".DAT", StringComparison.OrdinalIgnoreCase)
+      ? AnlzTempo.Read(path) : null;
+
+  /// <summary>
+  /// The tempo and ANLZ candidates that vouch for each other on decks 1 and 2: a tempo
+  /// chain is kept when some ANLZ chain names files carrying what it reads, and an ANLZ
+  /// chain when some tempo chain reads what its files carry. The two are found in
+  /// different ways - a float in memory, a file on disk - so a wrong one of either has
+  /// to be matched by a wrong one of the other to get through.
+  /// </summary>
+  internal static (List<DeckChain> Tempo, List<DeckChain> Anlz) Agreeing(
+    MemorySweep sweep, IReadOnlyList<DeckChain> tempo, IReadOnlyList<DeckChain> anlz) {
+    var reads = new List<(DeckChain Chain, float One, float Two)>();
+    foreach(DeckChain chain in tempo) {
+      if(chain.For(0).TryReadSingle(sweep.Process, sweep.ModuleBase, out float one)
+        && chain.For(1).TryReadSingle(sweep.Process, sweep.ModuleBase, out float two)) {
+        reads.Add((chain, one, two));
+      }
+    }
+
+    var files = new List<(DeckChain Chain, IReadOnlyList<float> One, IReadOnlyList<float> Two)>();
+    foreach(DeckChain chain in anlz) {
+      if(FileTempos(sweep, chain, 0) is { } one && FileTempos(sweep, chain, 1) is { } two) {
+        files.Add((chain, one, two));
+      }
+    }
+
+    bool Agree((DeckChain, float One, float Two) read, (DeckChain, IReadOnlyList<float> One, IReadOnlyList<float> Two) file) =>
+      Near(file.One, read.One, 0.06f) && Near(file.Two, read.Two, 0.06f);
+
+    return (
+      [.. reads.Where(read => files.Any(file => Agree(read, file))).Select(read => read.Chain)],
+      [.. files.Where(file => reads.Any(read => Agree(read, file))).Select(file => file.Chain)]);
+  }
+
   /// <summary>Whether a chain reads both tempos, deck 1 then deck 2.</summary>
   internal static bool ReadsBoth(MemorySweep sweep, DeckChain chain, float bpm1, float bpm2) =>
     chain.For(0).TryReadSingle(sweep.Process, sweep.ModuleBase, out float one) && MathF.Abs(one - bpm1) < 0.006f
       && chain.For(1).TryReadSingle(sweep.Process, sweep.ModuleBase, out float two) && MathF.Abs(two - bpm2) < 0.006f;
+
+  private static bool Near(IEnumerable<float> tempos, float value, float within = 0.006f) =>
+    tempos.Any(tempo => MathF.Abs(tempo - value) < within);
 
   /// <summary>Candidates for deck 1 and deck 2, reduced to the field offsets both decks have.</summary>
   private static (List<(long Slot, long Target, long Offset)> First, List<(long Slot, long Target, long Offset)> Second) Shared(

@@ -15,7 +15,7 @@ public class DeckChainsTests {
     Layout.Deck(memory, 0, bpm: 174.0f);
     Layout.Deck(memory, 1, bpm: 175.0f);
 
-    List<DeckChain> found = DeckChains.FindTempo(new MemorySweep(memory), 174.0f, 175.0f);
+    List<DeckChain> found = DeckChains.FindTempo(new MemorySweep(memory), [174.0f], [175.0f]);
 
     Assert.NotEmpty(found);
     Assert.Equal("5E09790 0 2C0 1A0", found[0].Chain.ToString());
@@ -32,7 +32,7 @@ public class DeckChainsTests {
     Layout.Deck(memory, 0, bpm: 174.0f);
     Layout.Deck(memory, 1, bpm: 175.0f);
 
-    Assert.Empty(DeckChains.FindTempo(new MemorySweep(memory), 128.0f, 130.0f));
+    Assert.Empty(DeckChains.FindTempo(new MemorySweep(memory), [128.0f], [130.0f]));
   }
 
   [Fact]
@@ -101,6 +101,66 @@ public class DeckChainsTests {
     memory.Region(0x300_0000_0000, 0x100);
 
     Assert.Throws<ArgumentException>(() => new MasterDeckSearch(new MemorySweep(memory)).Narrow(0));
+  }
+
+  [Fact]
+  public void KeepsTheTempoAndAnlzChainsThatVouchForEachOther() {
+    // No BPM typed in: the decks' tempos come from their ANLZ files. A tempo chain that
+    // reads something no candidate file carries goes, and so does a library pair whose
+    // files carry tempos no tempo chain reads.
+    using var files = new AnlzFiles();
+    var memory = new FakeScannableMemory(ModuleBase);
+    Layout.DeckArray(memory);
+    Layout.Deck(memory, 0, bpm: 174.0f);
+    Layout.Deck(memory, 1, bpm: 175.0f);
+    Layout.AnlzArray(memory);
+    Layout.Anlz(memory, 0, files.Write("deck1", 174.0f));
+    Layout.Anlz(memory, 1, files.Write("deck2", 175.0f));
+    Layout.Library(memory, [files.Write("lib1", 128.0f), files.Write("lib2", 130.0f)]);
+    var sweep = new MemorySweep(memory);
+    var tempo = new DeckChain(PointerChain.Parse("5E09790 0 2C0 1A0"), 1, 8);
+    var wrongField = new DeckChain(PointerChain.Parse("5E09790 0 2C0 1A4"), 1, 8);
+
+    (List<DeckChain> keptTempo, List<DeckChain> keptAnlz) = DeckChains.Agreeing(sweep, [tempo, wrongField], DeckChains.FindAnlzPath(sweep));
+
+    Assert.Equal([tempo], keptTempo);
+    Assert.Equal(["5F53DA8 8 3F0 0"], keptAnlz.Select(c => c.Chain.ToString()));
+  }
+
+  [Fact]
+  public void FindsEveryByteHoldingAValue() {
+    var memory = new FakeScannableMemory(ModuleBase);
+    memory.Region(0x300_0000_0000, 0x100);
+    memory.Byte(0x300_0000_0000, 2);
+    memory.Byte(0x300_0000_0041, 2);
+    memory.Byte(0x300_0000_00FF, 2);
+    memory.Byte(0x300_0000_0042, 3);
+    var found = new List<long>();
+
+    new MemorySweep(memory).Find(memory.Regions().ToList(), 2, found.Add);
+
+    Assert.Equal([0x300_0000_0000, 0x300_0000_0041, 0x300_0000_00FF], found);
+  }
+
+  [Theory]
+  [InlineData(2)]
+  [InlineData(3)]
+  [InlineData(4)]
+  public void TheMasterRoundsCoverEveryDeckAndMixTheMasterPlayingWithItStopped(int decks) {
+    IReadOnlyList<(int Master, int Playing)> rounds = MasterDeckSearch.Rounds(decks);
+
+    // Deck 1 first would list every zero in memory.
+    Assert.NotEqual(1, rounds[0].Master);
+    Assert.Equal(Enumerable.Range(1, decks), rounds.Select(r => r.Master).Distinct().Order());
+    // Each round has to move the master, or it narrows nothing.
+    Assert.All(rounds.Zip(rounds.Skip(1)), pair => Assert.NotEqual(pair.First.Master, pair.Second.Master));
+    // Within the first two rounds, the master both is and is not the deck playing: a
+    // byte that follows the playing deck, and one that means "the master is stopped
+    // while another plays", each drop out there rather than rounds later.
+    Assert.Equal(rounds[0].Master, rounds[0].Playing);
+    Assert.NotEqual(rounds[1].Master, rounds[1].Playing);
+    // And the master moves while the playing deck stays.
+    Assert.Contains(rounds.Zip(rounds.Skip(1)), pair => pair.First.Playing == pair.Second.Playing);
   }
 
   /// <summary>The 7.2.19 shapes, spaced far apart so no search matches across structures.</summary>

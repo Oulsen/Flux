@@ -38,4 +38,14 @@ public class AnlzTempoTests {
     Assert.False(AnlzTempo.Carries(path, 174.0f));
     Assert.False(AnlzTempo.Carries(path + ".missing", 172.0f));
   }
+
+  [Fact]
+  public void NamesTheTrackFromThePathSection() {
+    // rekordbox 7 keeps "?/" and the audio file's name there; the desk wants the name.
+    Assert.Equal("track", AnlzTrack.Name(AnlzFiles.Build(174.0f, 16)));
+  }
+
+  [Fact]
+  public void NamesNoTrackForAFileThatIsNotAnAnlzFile() =>
+    Assert.Null(AnlzTrack.Name("not an ANLZ file"u8));
 }

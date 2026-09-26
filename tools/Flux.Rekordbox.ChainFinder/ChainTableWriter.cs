@@ -1,12 +1,14 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Flux.Rekordbox.ChainFinder;
 
 /// <summary>
-/// Appends one version's entry to <c>src/Flux.Rekordbox/chains.json</c>, in the shape
-/// <see cref="RekordboxChains"/> reads. It writes the file by hand rather than
-/// re-serializing: the committed file's exact formatting is what the diff for a new
-/// version should show, one block added and nothing else touched.
+/// Appends one version's entry to <c>src/Flux.Rekordbox/chains.json</c>, or replaces
+/// one, in the shape <see cref="RekordboxChains"/> reads. It writes the file by hand
+/// rather than re-serializing: the committed file's exact formatting is what the diff
+/// for a version should show, one block added or swapped and nothing else touched.
 /// </summary>
 internal static class ChainTableWriter {
   internal static string Entry(
@@ -41,11 +43,58 @@ internal static class ChainTableWriter {
   }
 
   /// <summary>
+  /// Replaces the entry for <paramref name="version"/> with <paramref name="entry"/>,
+  /// under the same check as <see cref="Insert"/>. Its own call rather than a fallback of
+  /// adding, so a version already in the table is never overwritten by accident: the
+  /// finder calls it only after comparing the entry with a full run and asking.
+  /// </summary>
+  internal static void Replace(string path, Version version, string entry) {
+    string updated = Replaced(File.ReadAllText(path), version, entry);
+    using(var check = new MemoryStream(Encoding.UTF8.GetBytes(updated))) {
+      RekordboxChains.Load(check);
+    }
+
+    File.WriteAllText(path, updated);
+  }
+
+  /// <summary>The entry for <paramref name="version"/> as the table holds it, for keeping the chains a run did not change.</summary>
+  internal static ChainTableEntry? Existing(string content, Version version) {
+    ChainTableFile? file = JsonSerializer.Deserialize(content, ChainTableJson.Default.ChainTableFile);
+    string wanted = $"{version.Major}.{version.Minor}.{version.Build}";
+    return file?.Versions?.SingleOrDefault(entry => entry.Version == wanted);
+  }
+
+  /// <summary>
+  /// <paramref name="content"/> with the block for <paramref name="version"/> swapped for
+  /// <paramref name="entry"/> and nothing else touched, so the diff shows the one entry.
+  /// </summary>
+  internal static string Replaced(string content, Version version, string entry) {
+    string wanted = Regex.Escape($"{version.Major}.{version.Minor}.{version.Build}");
+    Match found = Regex.Match(content, $@"""version""\s*:\s*""{wanted}""");
+    int open = found.Success ? content.LastIndexOf('{', found.Index) : -1;
+    if(open < 0) {
+      throw new InvalidOperationException($"chains.json has no {version.Major}.{version.Minor}.{version.Build} to replace.");
+    }
+
+    int depth = 0;
+    for(int at = open; at < content.Length; at++) {
+      depth += content[at] switch { '{' => 1, '}' => -1, _ => 0 };
+      if(depth == 0) {
+        int lineStart = content.LastIndexOf('\n', open) + 1;
+        return $"{content[..lineStart]}{entry}{content[(at + 1)..]}";
+      }
+    }
+
+    throw new InvalidDataException("chains.json ends inside an entry.");
+  }
+
+  /// <summary>
   /// <paramref name="content"/> with <paramref name="entry"/> added to the end of the
   /// <c>versions</c> array. Fails rather than overwrites if the version is already there:
-  /// an existing entry has passed a restart, and a rerun that lands on different numbers
-  /// is a reason to look, not to replace. The duplicate check reads the table rather than
-  /// matching text, so a reformatted file cannot slip a second entry past it.
+  /// an existing entry has passed its restarts, and a rerun that lands on different
+  /// numbers is a reason to look, which is what <see cref="Replace"/> is for. The
+  /// duplicate check reads the table rather than matching text, so a reformatted file
+  /// cannot slip a second entry past it.
   /// </summary>
   internal static string Inserted(string content, Version version, string entry) {
     IReadOnlyDictionary<Version, RekordboxChains> table;

@@ -17,6 +17,9 @@ internal sealed class MemorySweep(IScannableMemory process) {
   /// <summary>How far above a target a pointer may point and still be counted as reaching it.</summary>
   internal const long MaxFieldOffset = 0x800;
 
+  /// <summary>What a pass says it is doing when its caller does not say more.</summary>
+  private const string Reading = "reading rekordbox's memory";
+
   internal IScannableMemory Process => process;
 
   internal long ModuleBase => process.ModuleBase;
@@ -28,7 +31,14 @@ internal sealed class MemorySweep(IScannableMemory process) {
   /// Walks the regions a chunk at a time. A chunk that cannot be read whole is read
   /// page by page, because one unmapped page in the middle must not lose the rest.
   /// </summary>
-  internal void Sweep(IReadOnlyList<(long Base, long Size)> regions, Action<long, ReadOnlySpan<byte>> chunk) {
+  internal void Sweep(IReadOnlyList<(long Base, long Size)> regions, Action<long, ReadOnlySpan<byte>> chunk, string what = Reading) {
+    // A pass is tens of seconds with nothing else to show, which at the desk reads as a
+    // hang; the percentage and what the pass is for say it is still going, and where the
+    // run is. Only on a console: in a redirected log it would be a line of carriage returns.
+    bool progress = !Console.IsOutputRedirected;
+    long total = Math.Max(1, regions.Sum(region => region.Size));
+    long done = 0;
+    int shown = -1;
     byte[] buffer = new byte[ChunkBytes];
     foreach((long start, long size) in regions) {
       for(long offset = 0; offset < size; offset += ChunkBytes) {
@@ -36,35 +46,52 @@ internal sealed class MemorySweep(IScannableMemory process) {
         Span<byte> span = buffer.AsSpan(0, length);
         if(process.TryRead(start + offset, span)) {
           chunk(start + offset, span);
-          continue;
+        } else {
+          for(int page = 0; page < length; page += Page) {
+            Span<byte> one = buffer.AsSpan(page, Math.Min(Page, length - page));
+            if(process.TryRead(start + offset + page, one)) {
+              chunk(start + offset + page, one);
+            }
+          }
         }
 
-        for(int page = 0; page < length; page += Page) {
-          Span<byte> one = buffer.AsSpan(page, Math.Min(Page, length - page));
-          if(process.TryRead(start + offset + page, one)) {
-            chunk(start + offset + page, one);
-          }
+        done += length;
+        int percent = (int)(done * 100 / total);
+        if(progress && percent / 5 != shown / 5) {
+          Console.Write($"\r  {what}... {percent,3}%");
+          shown = percent;
         }
       }
     }
+
+    if(progress) {
+      Console.Write("\r" + new string(' ', what.Length + 12) + "\r");
+    }
   }
 
-  internal void Floats(IReadOnlyList<(long, long)> regions, Action<long, float> hit) =>
+  /// <summary>
+  /// Every address holding <paramref name="value"/>. A vectorised search per chunk
+  /// rather than a callback per byte: over several gigabytes the callback alone costs
+  /// minutes.
+  /// </summary>
+  internal void Find(IReadOnlyList<(long, long)> regions, byte value, Action<long> hit, string what = Reading) =>
+    this.Sweep(regions, (at, bytes) => {
+      for(int i = bytes.IndexOf(value); i >= 0;) {
+        hit(at + i);
+        int next = bytes[(i + 1)..].IndexOf(value);
+        i = next < 0 ? -1 : i + 1 + next;
+      }
+    }, what);
+
+  internal void Floats(IReadOnlyList<(long, long)> regions, Action<long, float> hit, string what = Reading) =>
     this.Sweep(regions, (at, bytes) => {
       for(int i = 0; i + 4 <= bytes.Length; i += 4) {
         hit(at + i, BinaryPrimitives.ReadSingleLittleEndian(bytes[i..]));
       }
-    });
-
-  internal void Bytes(IReadOnlyList<(long, long)> regions, Action<long, byte> hit) =>
-    this.Sweep(regions, (at, bytes) => {
-      for(int i = 0; i < bytes.Length; i++) {
-        hit(at + i, bytes[i]);
-      }
-    });
+    }, what);
 
   /// <summary>Every 8-aligned slot holding something that could be a pointer.</summary>
-  internal void Pointers(IReadOnlyList<(long, long)> regions, Action<long, long> hit) =>
+  internal void Pointers(IReadOnlyList<(long, long)> regions, Action<long, long> hit, string what = Reading) =>
     this.Sweep(regions, (at, bytes) => {
       int first = (int)((8 - (at & 7)) & 7);
       for(int i = first; i + 8 <= bytes.Length; i += 8) {
@@ -73,30 +100,30 @@ internal sealed class MemorySweep(IScannableMemory process) {
           hit(at + i, value);
         }
       }
-    });
+    }, what);
 
   /// <summary>Re-reads only the addresses in <paramref name="sorted"/>, in one pass.</summary>
-  internal void Recheck(IReadOnlyList<(long, long)> regions, long[] sorted, Action<long, byte> hit) =>
+  internal void Recheck(IReadOnlyList<(long, long)> regions, long[] sorted, Action<long, byte> hit, string what = Reading) =>
     this.Sweep(regions, (at, bytes) => {
       int i = Index(sorted, at);
       for(; i < sorted.Length && sorted[i] < at + bytes.Length; i++) {
         hit(sorted[i], bytes[(int)(sorted[i] - at)]);
       }
-    });
+    }, what);
 
   /// <summary>
   /// Slots holding a pointer that lands within <see cref="MaxFieldOffset"/> below one
   /// of <paramref name="targets"/>: the objects that own them, one level up.
   /// </summary>
   internal List<(long Slot, long Target, long Offset)> Up(
-    IReadOnlyList<(long, long)> regions, IEnumerable<long> targets, long maxOffset = MaxFieldOffset) {
+    IReadOnlyList<(long, long)> regions, IEnumerable<long> targets, long maxOffset = MaxFieldOffset, string what = Reading) {
     long[] sorted = [.. targets.Distinct().Order()];
     var found = new List<(long, long, long)>();
     this.Pointers(regions, (slot, value) => {
       for(int i = Index(sorted, value); i < sorted.Length && sorted[i] - value <= maxOffset; i++) {
         found.Add((slot, sorted[i], sorted[i] - value));
       }
-    });
+    }, what);
 
     return found;
   }
@@ -107,7 +134,8 @@ internal sealed class MemorySweep(IScannableMemory process) {
   /// order. Heap slots are followed up to <paramref name="levels"/> deep.
   /// </summary>
   internal List<(long Target, PointerChain Chain)> Climb(
-    IReadOnlyList<(long, long)> regions, IEnumerable<long> targets, int levels, long firstOffset = MaxFieldOffset) {
+    IReadOnlyList<(long, long)> regions, IEnumerable<long> targets, int levels, long firstOffset = MaxFieldOffset,
+    string what = "climbing to rekordbox's own code") {
     // rekordbox.exe is about 100 MB mapped; this window is comfortably past its end and
     // well short of the heap, which sits far higher. A slot beyond it is not a static,
     // and a false one here only adds a candidate the restart will drop.
@@ -128,7 +156,7 @@ internal sealed class MemorySweep(IScannableMemory process) {
             next.TryAdd(slot, (target, chain));
           }
         }
-      });
+      }, $"{what}, level {level} of {levels}");
 
       frontier = next;
     }

@@ -50,21 +50,32 @@ meet the checks below.
 ## Finding a new version's chains
 
 `tools/Flux.Rekordbox.ChainFinder` does the search: `dotnet run --project
-tools/Flux.Rekordbox.ChainFinder`, with the new rekordbox open, every deck's pitch at 0
-(so the BPM on screen is the track's own), and 4-deck mode to cover four decks. It
-reads rekordbox the same read-only way Flux does and prompts for what it cannot set:
-the tempos on screen, which deck plays, the master, and a restart. Every value keeps
-all of its candidates until every check below has run on them, because the candidate
-that looks best in one session is not reliably the one that survives the next.
+tools/Flux.Rekordbox.ChainFinder`, with rekordbox open, LINK off, every deck's pitch at
+0 (so each deck's tempo is its track's own), 4-deck mode to cover four decks, and an
+analysed track on every deck, with different BPMs on decks 1 and 2. It reads rekordbox
+the same read-only way Flux does. Nothing is typed in: the tool says which deck to play
+and which to make master, and when to restart, and asks for a yes when the tempos it
+reads match the screen. Every value keeps all of its candidates until every check below
+has run on them, because the candidate that looks best in one session is not reliably
+the one that survives the next.
 
-The ANLZ path is told apart from rekordbox's library, which keeps hundreds of the same
-kind of path behind chains of the same shape, by the file itself: the path a deck's
-chain names has to be a file whose beatgrid (`PQTZ`) carries that deck's tempo.
+The ANLZ path is found first, because it needs nothing from the desk, and it is told
+apart from rekordbox's library, which keeps hundreds of the same kind of path behind
+chains of the same shape, by the file itself. The tempos in the candidate files are what
+the tempo search looks for, and a tempo chain and an ANLZ chain are kept only when they
+agree: the chain reads a tempo the file carries. The two are found in different ways, a
+float in memory and a file on disk, so a wrong one of either needs a wrong one of the
+other to get through. When the candidate files carry too many tempos to search for at
+once, the tool asks for the two on screen instead.
 
-For a version already in the table the tool compares what it found with the entry and
-writes nothing. For a new version it appends the entry to `chains.json`, but only after
-checking that Flux would load the result. It never replaces an existing version. After
-it writes, build, run the tests, and add the version's evidence here by hand.
+For a new version the tool appends the entry to `chains.json`. For a version already in
+the table it compares the entry with what it found on every deck, keeps each chain that
+reads the same (its evidence is here), and offers to replace the ones that differ,
+listing old and new, only on a yes. When only an entry's master deck has stopped
+reading, `--master` skips the ANLZ, tempo and playhead searches, takes those chains from
+the entry, and runs the master rounds and the restarts alone. Either way it writes only
+after checking that Flux would load the result. After it writes, build, run the tests, and add the evidence here
+by hand.
 
 ## What an entry has to survive
 
@@ -76,9 +87,10 @@ because a chain that skipped it was wrong:
 2. **Every change that moves the value.** Tempo alone is not enough. Change which deck
    is playing and which is master, separately from each other. The candidate described
    above failed only when the playing deck changed.
-3. **A rekordbox restart, with different tracks.** Most candidates that pass within a
-   session break here: 22 of 24 tempo candidates did, and a restart plus one master
-   switch left 2 of 120 master candidates.
+3. **Three rekordbox restarts, with different tracks each time.** Most candidates that
+   pass within a session break at the first: 22 of 24 tempo candidates did, and a
+   restart plus one master switch left 2 of 120 master candidates. The first 7.2.19
+   master chain passed two and failed on the third, so the tool asks for at least three.
 4. **All four decks**, in 4-deck mode, including master values 2 and 3.
 5. **Against something outside memory.** The ANLZ path has to lead to the file for the
    track on that deck, and the playhead in seconds has to match rekordbox's screen.
