@@ -150,10 +150,11 @@ public class RekordboxChainsTests {
     }
 
     internal static void Master(FakeProcessMemory memory, byte master) {
-      memory.PutPointer(ModuleBase + 0x61A82C0, 0x1998_4000_0000);
-      memory.PutPointer(0x1998_4000_0000 + 0x3A0, 0x1998_5000_0000);
-      memory.PutPointer(0x1998_5000_0000 + 0x378, 0x1998_6000_0000);
-      memory.Put(0x1998_6000_0000 + 0x254, [master]);
+      memory.PutPointer(ModuleBase + 0x5F19B48, 0x1998_4000_0000);
+      memory.PutPointer(0x1998_4000_0000 + 0x20, 0x1998_5000_0000);
+      memory.PutPointer(0x1998_5000_0000, 0x1998_6000_0000);
+      memory.PutPointer(0x1998_6000_0000 + 0x280, 0x1998_7000_0000);
+      memory.Put(0x1998_7000_0000 + 0x124, [master]);
     }
   }
 }

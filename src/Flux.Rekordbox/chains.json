@@ -6,7 +6,7 @@
       "bpm": { "chain": "5E09790 0 2C0 1A0", "deckHop": 1, "deckStride": 8 },
       "samplePosition": { "chain": "5E09790 0 2C0 130", "deckHop": 1, "deckStride": 8 },
       "anlzPath": { "chain": "5F53DA8 8 3F0 0", "deckHop": 1, "deckStride": 8 },
-      "masterDeck": { "chain": "61A82C0 3A0 378 254" }
+      "masterDeck": { "chain": "5F19B48 20 0 280 124" }
     }
   ]
 }

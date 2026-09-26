@@ -111,23 +111,33 @@ Found 2026-09-25 on Windows 11, rekordbox 7.2.19.0, in Performance mode.
 | `bpm` | `5E09790 d*8 2C0 1A0` | Distinct tempos on four decks (87, 87, 174, 172), read correctly after a restart with new tracks |
 | `samplePosition` | `5E09790 d*8 2C0 130` | Moves only on the playing deck, resets on cue, matches the screen in seconds (see Units) |
 | `anlzPath` | `5F53DA8 8+d*8 3F0 0` | Three sessions with different tracks, four decks; each file's `PPTH` names the track on that deck |
-| `masterDeck` | `61A82C0 3A0 378 254` | Followed four master changes with the playing deck varied separately, then two after a restart, then values 2 and 3 in 4-deck mode. Reads 255 while LINK is on, when Link is rekordbox's master and no deck is |
+| `masterDeck` | `5F19B48 20 0 280 124` | Found 2026-09-26 by the chain finder's `--master` run: seven master rounds over four decks, alternating the master playing itself with the master stopped while another deck plays, left 9 bytes, reached by 3116 chains of up to four heap hops. Three restarts, each with four new tracks and all four decks made master in turn, left 4: this one, `5F19B48 28 10 280 124`, `60FCFC0 28 0 2C8 124` and `60FCFC0 30 10 2C8 124`. What it reads with LINK on is not yet checked |
 
 Compared with the 7.2.2 chains published by the rkbx_link project (used as facts, not
 code): the tempo and playhead chains kept their shape with one offset moved (`2B0` to
 `2C0`), the ANLZ chain kept its shape with only the base moved, and the master deck
 chain changed completely. So expect a new search with every update, not a shift.
 
-**The `masterDeck` chain is not stable.** On 2026-09-25 it failed after a third
-rekordbox restart: the static and its first pointer still resolved, but the object
-they lead to held data rather than a pointer at `+3A0`, so the chain landed nowhere.
-The same session read `bpm`, `samplePosition` and `anlzPath` correctly. It passed two
-restarts during the search, which is the check it was held to, and that was not
-enough. Until a better chain is found with the chain finder, Flux treats a master that
-cannot be read like one that names no deck: it follows the deck that is playing. That
-is right with one deck playing and a reasoned guess with two, which is why this
-entry's `masterDeck` needs a new search rather than a note. The live test in
-`RekordboxProcessTests` fails while it does not resolve, and should.
+**The first `masterDeck` chain was not stable.** The entry first held
+`61A82C0 3A0 378 254`, found 2026-09-25: it followed four master changes and two
+restarts, then failed after a third, when the object its first pointer leads to held
+data rather than a pointer at `+3A0`. The same session read `bpm`, `samplePosition`
+and `anlzPath` correctly. The search on 2026-09-26 showed it was not that one chain:
+seven rounds left 9 master bytes, and none of the 179 chains of up to three heap hops
+that reach them read the master after one restart. The chains that did survive three
+restarts are all four hops long, which is why the chain finder now climbs four. Three
+restarts is also why check 3 above asks for three.
+
+The master is not kept per deck. A search on 2026-09-26 looked for a master bit in each
+deck's own objects, the ones the deck chains above pass through and the objects they
+point to, and found none that held across the rounds, so the chain finder searches for
+the one byte only. What looked like one in
+`5E09790 d*8 2C0` +`18` is a flag meaning the master is stopped while another deck
+plays: it followed five rounds that were all of that kind, and dropped out the first
+time the master was the deck playing. Two bytes beside it, +`11` and +`14`, stay set on
+a deck after it has been master or played and so do not follow the master either.
+Rounds now alternate the two kinds from the start, so a flag like that drops out in
+the second round.
 
 Not yet checked: a reboot, which maps `rekordbox.exe` at a new base. The chains are
 relative to that base, so it should not matter.
