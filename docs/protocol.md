@@ -316,9 +316,8 @@ These are not equally trustworthy and only the user can judge which applies, so 
 method travels with the alignment: showing what aligned the bar is what lets a wrong
 one be recognised as wrong.
 
-When rekordbox names no master deck - with LINK on, Link is its master and no deck is,
-and the master can also be unreadable - the deck that is playing stands in for the
-master deck: the one on air while the next is started, and the next once the first
+When rekordbox names no master deck, or the master cannot be read, the deck that is
+playing stands in for the master deck: the one on air while the next is started, and the next once the first
 stops.
 
 rekordbox sets the bar when there is a new reason to read it - a new track on the
@@ -560,7 +559,7 @@ nothing rather than a number that means nothing.
 | `lastBeatAgoMs` | number | audio | Milliseconds since the last accepted beat |
 | `taps` | int | manual | Taps in the current sequence, up to the eight the estimate uses |
 | `lastTapAgoMs` | number | manual | Milliseconds since the last tap |
-| `deck` | int | rekordbox | The deck being followed, counted from 1 as rekordbox shows it: the master deck, or when rekordbox names none (with LINK on, or when the master cannot be read), the deck that is playing. Absent until rekordbox has been read |
+| `deck` | int | rekordbox | The deck being followed, counted from 1 as rekordbox shows it: the master deck, or when rekordbox names none or the master cannot be read, the deck that is playing. Absent until rekordbox has been read |
 | `detail` | string | rekordbox | Why it is not following a playing deck, in words: rekordbox not running, running as administrator, a version Flux has no chains for, a track with no beatgrid, the deck stopped, no deck playing while rekordbox names no master. **Absent while it is following one**, so its absence is the good state |
 
 `reanchorMaxBeats` is the grid's own metric rather than any source's, which is

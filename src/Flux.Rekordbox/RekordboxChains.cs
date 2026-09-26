@@ -122,8 +122,8 @@ internal sealed class RekordboxChains {
 
   /// <summary>
   /// The master byte as rekordbox keeps it, before <see cref="Read"/> turns anything
-  /// that is not a deck into null. Seen at the desk: 255 while LINK is on, when Link is
-  /// rekordbox's master and no deck is. For checking the chain rather than for reading.
+  /// that is not a deck into null. The first 7.2.19 chain read 255 there while LINK was
+  /// on. For checking the chain rather than for reading.
   /// </summary>
   internal bool TryReadMasterByte(IProcessMemory memory, long moduleBase, out byte value) {
     ArgumentNullException.ThrowIfNull(memory);

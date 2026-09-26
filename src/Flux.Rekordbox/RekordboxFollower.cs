@@ -30,10 +30,10 @@ namespace Flux.Rekordbox;
 /// from the grid again; the correction for a grid that is a beat off is
 /// <see cref="Shift"/>, which lasts until the track changes.
 ///
-/// <b>Without a master deck</b> - the byte that names it reads 255 with LINK on, when Link
-/// is rekordbox's master, and is unreadable when its chain has moved - the deck playing is
-/// followed instead: the one already followed while it plays, else the one playing
-/// longest, which is the one on air while the next is started.
+/// <b>Without a master deck</b> - the byte that names it holds no deck, as the first
+/// 7.2.19 chain's did with LINK on, or is unreadable when its chain has moved - the deck
+/// playing is followed instead: the one already followed while it plays, else the one
+/// playing longest, which is the one on air while the next is started.
 ///
 /// <b>Nothing playing means nothing published.</b> A stopped master withdraws its tempo
 /// rather than letting it run on, so while rekordbox is the source the lights settle at
@@ -165,8 +165,8 @@ internal sealed class RekordboxFollower {
   private void FollowWhileLocked(RekordboxReading reading, double now) {
     this.Watch(reading, now);
 
-    // No master deck: the byte reads 255 with LINK on, when Link is rekordbox's master, and
-    // it cannot be read at all when its chain has moved. Either way the deck playing stands
+    // No master deck: the byte holds no deck, as the first 7.2.19 chain's did with LINK on,
+    // or cannot be read at all when its chain has moved. Either way the deck playing stands
     // in for the master, and the message does not guess which cause it was. Silenced rather
     // than lost when nothing plays, so a paused track keeps its shift for when it plays again.
     if(reading.MasterDeck is not { } deck) {

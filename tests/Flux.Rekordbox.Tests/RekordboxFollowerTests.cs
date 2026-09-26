@@ -209,7 +209,7 @@ public class RekordboxFollowerTests {
   }
 
   /// <summary>
-  /// With LINK on, Link is rekordbox's master and the master byte names no deck. The deck
+  /// The master byte names no deck, as the first 7.2.19 chain's did with LINK on. The deck
   /// that is playing is then the only music there is, and it is followed as the master.
   /// </summary>
   [Fact]
@@ -325,7 +325,7 @@ public class RekordboxFollowerTests {
     }
 
     /// <summary>
-    /// Both decks at once with no master named, as rekordbox reads with LINK on: a deck
+    /// Both decks at once with no master named: a deck
     /// given a start plays from there, one given a hold stands still, and one given
     /// neither has no track.
     /// </summary>
