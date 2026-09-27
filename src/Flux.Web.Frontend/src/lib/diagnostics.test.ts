@@ -19,7 +19,7 @@ test('each source is asked only for the counters it keeps', () => {
   assert.deepEqual(labels('link', GRID), ['packets']);
   assert.deepEqual(labels('audio', GRID), ['fps', 'beats', 'bpm lock', 'last beat']);
   assert.deepEqual(labels('manual', GRID), ['taps', 'last tap']);
-  assert.deepEqual(labels('rekordbox', GRID), ['deck', 'status']);
+  assert.deepEqual(labels('rekordbox', GRID), ['deck', 'status', 'phrase']);
 });
 
 test('rekordbox says in words why it is not following, and nothing when it is', () => {
@@ -28,6 +28,15 @@ test('rekordbox says in words why it is not following, and nothing when it is', 
   assert.equal(valueOf('rekordbox', stopped, 'status'), 'deck 2 is stopped');
   assert.equal(valueOf('rekordbox', { reanchorMaxBeats: 0, deck: 1 }, 'status'), 'following');
   assert.equal(valueOf('rekordbox', GRID, 'deck'), UNKNOWN);
+});
+
+test('rekordbox names the phrase playing, or why there is none, as the server words it', () => {
+  assert.equal(valueOf('rekordbox', { reanchorMaxBeats: 0, deck: 1, phrase: 'Chorus 2' }, 'phrase'), 'Chorus 2');
+  assert.equal(
+    valueOf('rekordbox', { reanchorMaxBeats: 0, deck: 1, phrase: 'none: the phrases do not fit the beatgrid' }, 'phrase'),
+    'none: the phrases do not fit the beatgrid',
+  );
+  assert.equal(valueOf('rekordbox', GRID, 'phrase'), UNKNOWN);
 });
 
 test('no source is offered another source\'s counter', () => {

@@ -263,6 +263,91 @@ public class RekordboxFollowerTests {
   }
 
   [Fact]
+  public void OffersThePhrasesAsMomentsOnTheTimelineItPublishes() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, phrases: Song(endBeat: 400));
+
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+
+    PhraseMap map = Assert.IsType<PhraseMap>(rig.Grid.Phrases);
+    Assert.Equal([PhraseKind.Intro, PhraseKind.Verse, PhraseKind.Chorus], map.Phrases.Select(phrase => phrase.Kind));
+
+    // rekordbox's beat 17 is the grid's beat 16, which is where the grid itself puts it.
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot now));
+    double expected = rig.Clock.NowMicros + ((16 - now.Beat) * 500_000);
+    Assert.Equal(expected, map.Phrases[1].StartMicros, tolerance: 10);
+    Assert.Equal(399 * 500_000, map.EndMicros - map.Phrases[0].StartMicros, precision: 0);
+
+    // At 1 s the playhead is on the grid's beat 2, rekordbox's 3: the intro.
+    Assert.Equal("Intro 1", rig.Follower.Describe().Phrase);
+  }
+
+  [Fact]
+  public void OffersThePhrasesWhileAnotherSourceKeepsTheTempo() {
+    using var rig = new Rig(active: "link", firstBeatInBar: 1, phrases: Song(endBeat: 400));
+
+    rig.Play(deck: 0, fromMs: 9000, forMs: 50);
+
+    Assert.NotNull(rig.Grid.Phrases);
+    Assert.Equal("Verse 1", rig.Follower.Describe().Phrase);
+  }
+
+  [Theory]
+  [InlineData(800)]
+  [InlineData(200)]
+  public void OffersNoPhrasesThatDoNotFitTheGrid(int endBeat) {
+    // The grid has 400 beats: phrases running twice its length, or half of it, are laid
+    // out on a grid at a different tempo from this one.
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, phrases: Song(endBeat));
+
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+
+    Assert.Null(rig.Grid.Phrases);
+    Assert.Equal("none: the phrases do not fit the beatgrid", rig.Follower.Describe().Phrase);
+  }
+
+  [Fact]
+  public void SaysSoWhenTheTrackHasNoPhraseAnalysis() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+
+    Assert.Null(rig.Grid.Phrases);
+    Assert.Equal("none: rekordbox has no phrase analysis for this track", rig.Follower.Describe().Phrase);
+  }
+
+  [Fact]
+  public void MovesThePhrasesWithTheUsersShift() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, phrases: Song(endBeat: 400));
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+    double before = rig.Grid.Phrases!.Phrases[1].StartMicros;
+
+    Assert.True(rig.Manager.ShiftBar(1));
+    rig.Play(deck: 0, fromMs: 1055, forMs: 300);
+
+    Assert.Equal(before + 500_000, rig.Grid.Phrases!.Phrases[1].StartMicros, tolerance: 10);
+  }
+
+  [Fact]
+  public void WithdrawsThePhrasesWhenTheDeckStops() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, phrases: Song(endBeat: 400));
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+
+    rig.Hold(deck: 0, atMs: 1050, forMs: 400);
+
+    Assert.Null(rig.Grid.Phrases);
+    Assert.Null(rig.Follower.Describe().Phrase);
+  }
+
+  [Theory]
+  [InlineData(401, true)]
+  [InlineData(402, false)]
+  [InlineData(267, true)]
+  [InlineData(266, false)]
+  public void PhrasesFitAGridTheyEndWithinABeatOfAndCoverTwoThirdsOf(int endBeat, bool fits) {
+    Assert.Equal(fits, RekordboxFollower.Fits(Song(endBeat), gridBeats: 400));
+  }
+
+  [Fact]
   public void WithdrawsAndSaysWhyWhenRekordboxIsLost() {
     using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
     rig.Play(deck: 0, fromMs: 0, forMs: 100);
@@ -279,9 +364,11 @@ public class RekordboxFollowerTests {
     private readonly int firstBeatInBar;
     private readonly int trackBFirstBeatInBar;
     private readonly bool withGrid;
+    private readonly AnlzPhraseList? phrases;
 
-    internal Rig(string active, int firstBeatInBar, bool withGrid = true, int? trackBFirstBeatInBar = null) {
+    internal Rig(string active, int firstBeatInBar, bool withGrid = true, int? trackBFirstBeatInBar = null, AnlzPhraseList? phrases = null) {
       this.firstBeatInBar = firstBeatInBar;
+      this.phrases = phrases;
       this.trackBFirstBeatInBar = trackBFirstBeatInBar ?? firstBeatInBar;
       this.withGrid = withGrid;
       this.Grid = new BeatGrid(this.Clock, quantum: 4, TimeSpan.FromSeconds(2.5));
@@ -292,7 +379,7 @@ public class RekordboxFollowerTests {
         settings: null,
         NullLogger<SyncSourceManager>.Instance);
       this.Link = this.Manager.Register(new NamedSource("link"));
-      this.Follower = new RekordboxFollower(this.Manager.Register(new NamedSource("rekordbox")), this.Load);
+      this.Follower = new RekordboxFollower(this.Manager.Register(new NamedSource("rekordbox")), this.Load, _ => this.phrases);
       this.Manager.BarShifted += this.Follower.Shift;
     }
 
@@ -358,6 +445,15 @@ public class RekordboxFollowerTests {
         ? [.. Enumerable.Range(0, 400).Select(n => new AnlzBeat(((first - 1 + n) % 4) + 1, 120f, n * 500))]
         : null;
     }
+  }
+
+  /// <summary>An intro, a verse and a chorus of 16 beats each, from rekordbox's beat 1, ending where it is told.</summary>
+  private static AnlzPhraseList Song(int endBeat) {
+    return new AnlzPhraseList(PhraseMood.High, endBeat, [
+      new AnlzPhrase(1, PhraseKind.Intro, 1, FillBeat: null),
+      new AnlzPhrase(17, PhraseKind.Verse, 1, FillBeat: null),
+      new AnlzPhrase(33, PhraseKind.Chorus, 1, FillBeat: null),
+    ]);
   }
 
   private sealed class NamedSource(string name): ISyncSource {

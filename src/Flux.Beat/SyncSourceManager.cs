@@ -356,5 +356,9 @@ public sealed class SyncSourceManager {
     public bool AlignBarAt(BarAlignmentMethod method, double atMicros) {
       return manager.AlignBarAt(method, atMicros);
     }
+
+    public void PublishPhrases(PhraseMap? phrases) {
+      manager.grid.SetPhrases(phrases);
+    }
   }
 }

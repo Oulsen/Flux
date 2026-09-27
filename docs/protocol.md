@@ -141,6 +141,11 @@ no diagnostics rows under it, and reads the alignment as a bar anchored by somet
 it cannot name. The bar position it draws is still right, which is the difference
 between a degradation and a misreading.
 
+Phase 6 then gave the light engine rekordbox's phrases: `setLightSettings` gained
+`followPhrases` as a **required** field, the way `strobe` arrived, and `diagnostics`
+gained `phrase`. The required field is loud for the reason given above, and `phrase`
+is one more rekordbox row that an older page does not draw.
+
 Phase 2's lesson about `devices` is worth repeating rather than filing, because
 this document is once again describing messages before anything produces them.
 Where that left a field's honesty uncertain the field is nullable rather than
@@ -561,6 +566,7 @@ nothing rather than a number that means nothing.
 | `lastTapAgoMs` | number | manual | Milliseconds since the last tap |
 | `deck` | int | rekordbox | The deck being followed, counted from 1 as rekordbox shows it: the master deck, or when rekordbox names none or the master cannot be read, the deck that is playing. Absent until rekordbox has been read |
 | `detail` | string | rekordbox | Why it is not following a playing deck, in words: rekordbox not running, running as administrator, a version Flux has no chains for, a track with no beatgrid, the deck stopped, no deck playing while rekordbox names no master. **Absent while it is following one**, so its absence is the good state |
+| `phrase` | string | rekordbox | The phrase playing on the deck followed as rekordbox labels it, such as `"Chorus 2"` or `"Down"`, or why there is none, in words beginning `"none: "`: no phrase analysis, phrases that do not fit the beatgrid, before the first phrase or past the last. Display text, not an enumeration. Absent while no deck is followed |
 
 `reanchorMaxBeats` is the grid's own metric rather than any source's, which is
 why it is always present: it measures whether extrapolating the current timeline
@@ -735,7 +741,7 @@ immediately after `hello`, and then **only when something changes**.
   "selectedAreaId": "6f3a1c58-0c1e-4f1a-9b7d-2f8e5a0d4c11",
   "pairingSecondsRemaining": null,
   "latencyOffsetMs": 90,
-  "engine": { "palette": "random", "colorChangeBars": 4, "pulseMs": 240, "brightness": 100, "pulseDepth": 85, "colorCount": 1, "colorLayout": "radial", "strobe": false, "strobeCycle": 50 },
+  "engine": { "palette": "random", "colorChangeBars": 4, "pulseMs": 240, "brightness": 100, "pulseDepth": 85, "colorCount": 1, "colorLayout": "radial", "strobe": false, "strobeCycle": 50, "followPhrases": true },
   "message": null
 }}
 ```
@@ -807,6 +813,7 @@ documents the ranges and what each value does; this is what is in force now.
 | `colorLayout` | string | How the room is divided between them: `radial`, `alternating` or `random` |
 | `strobe` | bool | Whether the strobe is switched on. **A held strobe button never shows here** |
 | `strobeCycle` | int | How long one strobe cycle is, 10 to 100 per cent of a beat |
+| `followPhrases` | bool | Whether a phrase starting changes the colour and restarts the bar count, when the track has phrases |
 
 **Named `engine` and not `light`, because `state.light` already exists and means
 something else** - what the stream is achieving, as a measurement. These are
@@ -1363,7 +1370,8 @@ is `invalid_data`.
   "colorCount": 1,
   "colorLayout": "radial",
   "strobe": false,
-  "strobeCycle": 50
+  "strobeCycle": 50,
+  "followPhrases": true
 }}
 ```
 
@@ -1378,6 +1386,7 @@ is `invalid_data`.
 | `colorLayout` | string | How the room is divided between them: `radial`, `alternating` or `random`. A no-op at one colour |
 | `strobe` | bool | Whether the room strobes white on the beat grid until this is switched off. **Off by default** |
 | `strobeCycle` | int | How long one strobe cycle is, 10 to 100 per cent of a beat. **Smaller is faster**: 50 flashes twice a beat, 100 once |
+| `followPhrases` | bool | Whether a phrase starting changes the colour and restarts the `colorChangeBars` count, when the track playing has phrases. **On by default** |
 
 Sets how beats become colour. **Every field is required**: this is one complete
 statement of how the lights should look, not a patch, for the reason `subscribe`
@@ -1408,6 +1417,20 @@ frame carries - four by default, and the engine has no separate opinion about it
 Where no downbeat is known - `alignment.method` of `none` - it falls back to every
 `quantum x n`-th beat from wherever the numbering starts, because changing on a
 guessed phase is worth more than not changing at all.
+
+**With `followPhrases` on, a phrase restarts the count.** rekordbox reads the phrases
+of the track on its master deck - intro, verse, up, down, chorus, bridge, outro - and
+a phrase starting always takes a colour, with the count running on from there: every
+`colorChangeBars` bars from the phrase start rather than from the anchor. The anchor
+still puts the changes on downbeats, but it does not say which downbeat the count
+should run from. rekordbox sets it at the downbeat nearest the playhead on every load,
+master change and jump, which is rarely where a phrase begins, and then every change
+lands a bar or three off the track's structure. The phrases hold whichever source keeps
+time, as rekordbox's downbeat does. A track whose phrases do not fit its beatgrid - a
+few whose grid was set to half or double tempo after rekordbox found the phrases -
+offers none, and neither do Link, audio or a typed tempo on their own. Without phrases,
+or with the setting off, the count runs from the anchor exactly as above. The
+`diagnostics` field `phrase` shows which phrase is playing, or why there is none.
 
 **`colorCount` splits the room along the frequency axis**, which is the same axis
 that already decides how hard each light is hit: at two, the lights listening to the

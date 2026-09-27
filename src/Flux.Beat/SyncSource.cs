@@ -59,6 +59,11 @@ public readonly record struct SyncSourceStatus(
 /// The other sources can say what is wrong with a number; this one's failures are all
 /// different kinds, and a count would not tell them apart.
 /// </param>
+/// <param name="Phrase">
+/// rekordbox: the phrase playing on the deck followed, as rekordbox labels it ("Chorus 2"),
+/// or why there is none, in words - the track has no phrase analysis, or its phrases do not
+/// fit its beatgrid. Null while no deck is followed.
+/// </param>
 public readonly record struct SyncSourceDiagnostics(
   long? Packets = null,
   double? Fps = null,
@@ -68,7 +73,8 @@ public readonly record struct SyncSourceDiagnostics(
   int? Taps = null,
   double? LastTapAgoMs = null,
   int? Deck = null,
-  string? Detail = null);
+  string? Detail = null,
+  string? Phrase = null);
 
 /// <summary>
 /// One way of knowing where the beat is: an Ableton Link session, audio
@@ -164,4 +170,11 @@ public interface ITimelineSink {
   /// and needs to know that it has to.
   /// </returns>
   bool AlignBarAt(BarAlignmentMethod method, double atMicros);
+
+  /// <summary>
+  /// Offers the phrases of the track playing, or null when there are none to offer any
+  /// more. Not gated on this source being active, for the reason <see cref="AlignBar"/>
+  /// gives: a phrase is a statement about the music, true whoever is timing it.
+  /// </summary>
+  void PublishPhrases(PhraseMap? phrases);
 }

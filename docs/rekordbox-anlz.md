@@ -96,11 +96,25 @@ tag's phrases are numbered 1, 2, 3, and the mask cannot leave that standing. The
 unmasking has been checked only against the notes, not against a real export. The
 first USB stick at the desk is the check still owed.
 
-Start beats are as rekordbox wrote them, and they do not always fit the grid. On ten
-tracks in the library the phrases count close to twice as many beats as the grid
-holds, as if the grid had been set to half tempo after the phrases were found, and
-their later phrases run past the grid's end. The reader does not repair that. Whether a phrase fits its grid is for the sync
-source to decide.
+Start beats are as rekordbox wrote them, and they do not always fit the grid. The
+reader does not repair that; whether a phrase fits its grid is for the sync source to
+decide, and it decides by comparing the phrases' end beat (header byte 26) with the
+number of beats in the grid. Across the 5,433 tracks in the library with both on
+2026-09-27:
+
+| Phrase end against grid length | Tracks |
+|---|---|
+| Within one beat past the grid's end, covering 0.85 of it or more | 5,401 |
+| About twice the grid's length (1.9 to 2.0) | 11 |
+| About half of it or less (0.4 to 0.5) | 21 |
+
+Nothing falls between those. The first group fits: the end can be one past the grid
+because it is the beat after the last phrase's final one, and the tail rekordbox leaves
+unphrased is at most about 15 per cent of a track. The second is a grid set to half
+tempo after the phrases were found, the third the same at double tempo, and in both
+every phrase start names the wrong beat. The rekordbox source keeps a track's phrases
+when their end is no more than one beat past the grid and at least two thirds of the
+way through it, which sits in the empty ground on both sides.
 
 ## How it was checked
 

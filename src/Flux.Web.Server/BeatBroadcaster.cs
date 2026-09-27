@@ -283,7 +283,8 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
       source.Taps,
       source.LastTapAgoMs,
       source.Deck,
-      source.Detail);
+      source.Detail,
+      source.Phrase);
   }
 
   /// <summary>

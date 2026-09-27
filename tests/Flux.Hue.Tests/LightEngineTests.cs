@@ -279,6 +279,49 @@ public class LightEngineTests {
   }
 
   /// <summary>
+  /// A phrase starting on a downbeat the bar count would pass over - beat 12 is bar 3,
+  /// and the count changes on even bars - takes a colour, and the count runs on from it:
+  /// two bars after the phrase, not two after the anchor.
+  /// </summary>
+  [Fact]
+  public void APhraseStartChangesTheColourAndRestartsTheBarCount() {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
+    harness.OfferPhrases(endIndex: 400, 0, 12);
+
+    Assert.Equal([8, 12, 20, 28], harness.ChangesOnTime(32));
+  }
+
+  [Fact]
+  public void WithPhrasesSwitchedOffTheBarCountRunsAsItAlwaysHas() {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0, FollowPhrases: false));
+    harness.OfferPhrases(endIndex: 400, 0, 12);
+
+    Assert.Equal([8, 16, 24], harness.ChangesOnTime(32));
+  }
+
+  [Fact]
+  public void PastTheLastPhraseTheBarCountTakesOverAgain() {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
+    harness.OfferPhrases(endIndex: 20, 0, 12);
+
+    Assert.Equal([8, 12, 24], harness.ChangesOnTime(32));
+  }
+
+  /// <summary>
+  /// The phrases are rekordbox's and the beats may be Link's, a few milliseconds apart, so
+  /// a phrase start either side of its beat has to be that beat's.
+  /// </summary>
+  [Theory]
+  [InlineData(-0.06)]
+  [InlineData(0.06)]
+  public void APhraseStartAHairOffItsBeatStillBelongsToIt(double offBeats) {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
+    harness.OfferPhrases(endIndex: 400, 0, 12 + offBeats);
+
+    Assert.Equal([8, 12, 20, 28], harness.ChangesOnTime(32));
+  }
+
+  /// <summary>
   /// "Off" removes the interval rather than the changes, which reads backwards and is
   /// the reference scene's own meaning: with no interval the colour changes as often
   /// as it can, which is every beat.
@@ -1356,12 +1399,11 @@ public class LightEngineTests {
 
       // A real scheduler, never started. The engine needs one to subscribe to and the
       // tests hand it beats directly, so nothing here runs a thread or invents a tempo.
-      BeatScheduler scheduler = new BeatScheduler(
-        new BeatGrid(Clock, quantum, TimeSpan.FromSeconds(2)),
-        Clock,
-        NullLogger<BeatScheduler>.Instance);
+      Grid = new BeatGrid(Clock, quantum, TimeSpan.FromSeconds(2));
+      BeatScheduler scheduler = new BeatScheduler(Grid, Clock, NullLogger<BeatScheduler>.Instance);
 
       Quantum = quantum;
+      Start = Clock.NowMicros;
 
       Engine = new LightEngine(
         scheduler,
@@ -1382,6 +1424,12 @@ public class LightEngineTests {
     internal HueBridgeService Bridge { get; }
 
     internal LightEngine Engine { get; }
+
+    /// <summary>The grid behind the scheduler, which is where a source's phrases land.</summary>
+    internal BeatGrid Grid { get; }
+
+    /// <summary>When the harness was built, which is where <see cref="MomentOf"/> puts beat 0.</summary>
+    internal double Start { get; }
 
     /// <summary>Beats to the bar, which the grid and the engine are both built on.</summary>
     internal int Quantum { get; }
@@ -1449,6 +1497,44 @@ public class LightEngineTests {
       Clock.Advance(TimeSpan.FromSeconds(2));
 
       return HueOf(Engine.Render());
+    }
+
+    /// <summary>
+    /// The moment beat <paramref name="index"/> falls on at the 120 BPM every beat is
+    /// stamped with, for tests where the beats' moments have to agree with their tempo -
+    /// a phrase is counted from in time, and <see cref="SettledHue"/> spaces beats two
+    /// seconds apart.
+    /// </summary>
+    internal double MomentOf(double index) => Start + (index * 500_000);
+
+    /// <summary>The hue after beat <paramref name="index"/> arrives at <see cref="MomentOf"/> and settles.</summary>
+    internal double SettledHueOnTime(long index) {
+      Engine.OnBeat(BeatAt(index, MomentOf(index)));
+
+      return Settle();
+    }
+
+    /// <summary>Phrases starting at the moments of the given beats, the last one ending at <paramref name="endIndex"/>'s.</summary>
+    internal void OfferPhrases(double endIndex, params double[] starts) {
+      Grid.SetPhrases(new PhraseMap(
+        [.. starts.Select(start => new PhraseMark(PhraseKind.Verse, 0, MomentOf(start)))],
+        MomentOf(endIndex)));
+    }
+
+    /// <summary>Which of beats 0 to <paramref name="count"/> - 1 changed the colour, each arriving on time.</summary>
+    internal List<long> ChangesOnTime(int count) {
+      List<long> changes = [];
+      double previous = SettledHueOnTime(0);
+      for(long index = 1; index < count; index++) {
+        double hue = SettledHueOnTime(index);
+        if(Separation(hue, previous) > HueTolerance) {
+          changes.Add(index);
+        }
+
+        previous = hue;
+      }
+
+      return changes;
     }
 
     private static long FloorMod(long value, long divisor) {

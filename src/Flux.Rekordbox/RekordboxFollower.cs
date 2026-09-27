@@ -38,8 +38,31 @@ namespace Flux.Rekordbox;
 /// <b>Nothing playing means nothing published.</b> A stopped master withdraws its tempo
 /// rather than letting it run on, so while rekordbox is the source the lights settle at
 /// their floor instead of pulsing to a track that is not playing.
+///
+/// <b>The phrases go out with the timeline.</b> They are read with the grid when the
+/// track changes, laid out on each timeline as it is published, with the user's shift
+/// on them as on the downbeat, and withdrawn with the tempo. A track whose phrases do not
+/// fit its grid offers none rather than phrases in the wrong places.
 /// </summary>
 internal sealed class RekordboxFollower {
+  /// <summary>
+  /// How far past the grid a track's phrases may end and still fit it, in beats: one,
+  /// since the end is the beat after the last phrase's final one. Measured across all
+  /// 5,433 analysed tracks of the library on 2026-09-27: the phrases of every track
+  /// either end at most one beat past the grid or run about twice its length (11 tracks,
+  /// a grid set to half tempo after the phrases were found), with nothing in between.
+  /// See <c>docs/rekordbox-anlz.md</c>.
+  /// </summary>
+  internal const int PhraseOverrunBeats = 1;
+
+  /// <summary>
+  /// How much of the grid a track's phrases have to cover to fit it. The same survey:
+  /// every track's phrases cover 0.85 of its grid or more, except 21 that cover half of
+  /// it or less, the opposite case of a grid set to double tempo. Two thirds sits in the
+  /// empty middle, and is Flux's own choice of where in it.
+  /// </summary>
+  internal const double PhraseCoverage = 2.0 / 3.0;
+
   /// <summary>
   /// How long the master's playhead may stand still before the deck counts as stopped.
   /// Flux's own number, reasoned rather than tuned: ten times the 20 ms or more a slow
@@ -86,11 +109,26 @@ internal sealed class RekordboxFollower {
 
   private readonly ITimelineSink sink;
   private readonly Func<string, IReadOnlyList<AnlzBeat>?> loadGrid;
+  private readonly Func<string, AnlzPhraseList?> loadPhrases;
   private readonly object gate = new object();
 
   private int? master;
   private string? trackPath;
   private IReadOnlyList<AnlzBeat>? grid;
+
+  /// <summary>The track's phrases, when it has some that fit its grid.</summary>
+  private AnlzPhraseList? phrases;
+
+  /// <summary>Why the track has no phrases to offer, when it has none; for the diagnostics.</summary>
+  private string? phraseNote;
+
+  /// <summary>Where the playhead was in the grid at the last fresh read, for naming the phrase playing.</summary>
+  private double? lastBeat;
+
+  /// <summary>What was last handed to the sink as the phrases, and the timeline and shift they were laid out on.</summary>
+  private PhraseMap? offered;
+  private BeatTimeline offeredOn;
+  private int offeredShift;
 
   /// <summary>Whole beats the user has moved this track's downbeat by. Reset with the track.</summary>
   private int shift;
@@ -111,9 +149,16 @@ internal sealed class RekordboxFollower {
   private DeckMotion[] decks = [];
   private string? detail = "rekordbox has not been read yet";
 
-  internal RekordboxFollower(ITimelineSink sink, Func<string, IReadOnlyList<AnlzBeat>?> loadGrid) {
+  /// <param name="sink">Where the timelines, the downbeat and the phrases go.</param>
+  /// <param name="loadGrid">Reads the beatgrid from a deck's <c>.DAT</c> path.</param>
+  /// <param name="loadPhrases">Reads the phrases for a deck's <c>.DAT</c> path, which live in the file beside it.</param>
+  internal RekordboxFollower(
+    ITimelineSink sink,
+    Func<string, IReadOnlyList<AnlzBeat>?> loadGrid,
+    Func<string, AnlzPhraseList?> loadPhrases) {
     this.sink = sink ?? throw new ArgumentNullException(nameof(sink));
     this.loadGrid = loadGrid ?? throw new ArgumentNullException(nameof(loadGrid));
+    this.loadPhrases = loadPhrases ?? throw new ArgumentNullException(nameof(loadPhrases));
   }
 
   /// <summary>Whether a timeline has ever been published, and when the one in force last was - null while none is.</summary>
@@ -123,11 +168,29 @@ internal sealed class RekordboxFollower {
     }
   }
 
-  /// <summary>The master deck from 1, and why nothing is being followed when nothing is.</summary>
-  internal (int? Deck, string? Detail) Describe() {
+  /// <summary>
+  /// The master deck from 1, why nothing is being followed when nothing is, and the
+  /// phrase playing - or why there is none - while a track is.
+  /// </summary>
+  internal (int? Deck, string? Detail, string? Phrase) Describe() {
     lock(this.gate) {
-      return (this.master + 1, this.detail);
+      return (this.master + 1, this.detail, this.DescribePhrase());
     }
+  }
+
+  /// <summary>The phrase <paramref name="phrase"/> as rekordbox labels it: "Chorus 2", or "Down" for one without a number.</summary>
+  internal static string Label(AnlzPhrase phrase) {
+    return phrase.Variant > 0 ? $"{phrase.Kind} {phrase.Variant}" : phrase.Kind.ToString();
+  }
+
+  /// <summary>
+  /// Whether a track's phrases can be laid on its grid: they end no more than
+  /// <see cref="PhraseOverrunBeats"/> past it, and cover at least
+  /// <see cref="PhraseCoverage"/> of it.
+  /// </summary>
+  internal static bool Fits(AnlzPhraseList phrases, int gridBeats) {
+    return phrases.EndBeat <= gridBeats + PhraseOverrunBeats
+      && phrases.EndBeat >= gridBeats * PhraseCoverage;
   }
 
   /// <summary>One read of rekordbox, taken at <paramref name="nowMicros"/>.</summary>
@@ -142,9 +205,7 @@ internal sealed class RekordboxFollower {
   internal void Lose(string why) {
     lock(this.gate) {
       this.master = null;
-      this.trackPath = null;
-      this.grid = null;
-      this.lastPosition = null;
+      this.ForgetTrack();
       this.Silence(why);
     }
   }
@@ -189,6 +250,7 @@ internal sealed class RekordboxFollower {
       this.master = deck;
       this.trackPath = path;
       this.grid = this.loadGrid(path);
+      this.LoadPhrases(path);
       this.shift = sameTrack ? this.shift : 0;
       this.lastPosition = position;
       this.lastMovedMicros = now;
@@ -228,6 +290,7 @@ internal sealed class RekordboxFollower {
     }
 
     double beat = BeatgridPosition.BeatAt(beats, position / SamplesPerMs);
+    this.lastBeat = beat;
     var observed = BeatTimeline.FromBpm(read.Bpm.Value, beat, now);
     if(!observed.IsPlausible) {
       this.Silence($"deck {deck + 1} reads a tempo of {read.Bpm.Value:F2} BPM, which cannot be right");
@@ -311,15 +374,110 @@ internal sealed class RekordboxFollower {
     this.held = timeline;
     this.lastPublishedMicros = now;
     this.sink.Publish(timeline, newSession);
+    this.OfferPhrases(timeline);
+  }
+
+  /// <summary>
+  /// Lays the track's phrases on <paramref name="timeline"/> and hands them over, unless
+  /// the ones last handed over were laid on the same timeline and shift - a heartbeat
+  /// repeats the timeline, and the phrases on it have not moved either.
+  /// </summary>
+  private void OfferPhrases(BeatTimeline timeline) {
+    if(this.phrases is not { } track) {
+      this.WithdrawPhrases();
+      return;
+    }
+
+    if(this.offered is not null && this.offeredOn == timeline && this.offeredShift == this.shift) {
+      return;
+    }
+
+    // Start beats count from 1 and the grid from 0, so rekordbox's beat n is the
+    // source's beat n - 1. The shift moves them with the downbeat, since a grid a beat
+    // off has its phrases a beat off with it.
+    var marks = new PhraseMark[track.Phrases.Count];
+    for(int i = 0; i < marks.Length; i++) {
+      AnlzPhrase phrase = track.Phrases[i];
+      marks[i] = new PhraseMark(phrase.Kind, phrase.Variant, timeline.MicrosOfBeat(phrase.StartBeat - 1 + this.shift));
+    }
+
+    this.offered = new PhraseMap(marks, timeline.MicrosOfBeat(track.EndBeat - 1 + this.shift));
+    this.offeredOn = timeline;
+    this.offeredShift = this.shift;
+    this.sink.PublishPhrases(this.offered);
+  }
+
+  private void WithdrawPhrases() {
+    if(this.offered is not null) {
+      this.offered = null;
+      this.sink.PublishPhrases(null);
+    }
+  }
+
+  /// <summary>Reads the phrases for the track at <paramref name="path"/>, keeping them only when they fit its grid.</summary>
+  private void LoadPhrases(string path) {
+    AnlzPhraseList? read = this.loadPhrases(path);
+    if(read is null) {
+      this.phrases = null;
+      this.phraseNote = "none: rekordbox has no phrase analysis for this track";
+    } else if(this.grid is not { Count: > 0 } beats || !Fits(read, beats.Count)) {
+      this.phrases = null;
+      this.phraseNote = "none: the phrases do not fit the beatgrid";
+    } else {
+      this.phrases = read;
+      this.phraseNote = null;
+    }
+
+    // The ones on offer belong to the track before, and the next publish lays these.
+    this.WithdrawPhrases();
+  }
+
+  /// <summary>The phrase at the last fresh read, the reason there is none, or null while no track is followed.</summary>
+  private string? DescribePhrase() {
+    if(this.trackPath is null || this.held is null) {
+      return null;
+    }
+
+    if(this.phrases is not { } track) {
+      return this.phraseNote;
+    }
+
+    if(this.lastBeat is not { } beat) {
+      return null;
+    }
+
+    // In rekordbox's own count, from 1, with the shift taken back off.
+    double at = beat + 1 - this.shift;
+    if(at >= track.EndBeat) {
+      return "none: past the last phrase";
+    }
+
+    AnlzPhrase? playing = null;
+    foreach(AnlzPhrase phrase in track.Phrases) {
+      if(phrase.StartBeat > at) {
+        break;
+      }
+
+      playing = phrase;
+    }
+
+    return playing is { } found ? Label(found) : "none: before the first phrase";
   }
 
   /// <summary>The deck is readable but has nothing to follow: stop publishing, and remember it as the master.</summary>
   private void Forget(int deck, string why) {
     this.master = deck;
+    this.ForgetTrack();
+    this.Silence(why);
+  }
+
+  private void ForgetTrack() {
     this.trackPath = null;
     this.grid = null;
+    this.phrases = null;
+    this.phraseNote = null;
+    this.lastBeat = null;
     this.lastPosition = null;
-    this.Silence(why);
   }
 
   private void Silence(string why) {
@@ -329,6 +487,8 @@ internal sealed class RekordboxFollower {
       this.held = null;
       this.sink.Withdraw();
     }
+
+    this.WithdrawPhrases();
   }
 
   /// <summary>One deck's playhead over the last reads: where it was, and since when it has been moving.</summary>

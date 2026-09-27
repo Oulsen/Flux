@@ -237,7 +237,7 @@ public static class Frames {
   /// with the name quoted - which this cannot produce and the caller can.
   /// </summary>
   public static bool TryReadLightSettings(JsonElement data, out HueEngineData engine) {
-    engine = new HueEngineData(string.Empty, 0, 0, 0, 0, 1, string.Empty, false, 0);
+    engine = new HueEngineData(string.Empty, 0, 0, 0, 0, 1, string.Empty, false, 0, false);
 
     if(data.ValueKind != JsonValueKind.Object
       || !TryReadString(data, "palette", out string palette)
@@ -248,11 +248,12 @@ public static class Frames {
       || !TryReadInt(data, "colorCount", out int colorCount)
       || !TryReadString(data, "colorLayout", out string colorLayout)
       || !TryReadBool(data, "strobe", out bool strobe)
-      || !TryReadInt(data, "strobeCycle", out int strobeCycle)) {
+      || !TryReadInt(data, "strobeCycle", out int strobeCycle)
+      || !TryReadBool(data, "followPhrases", out bool followPhrases)) {
       return false;
     }
 
-    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth, colorCount, colorLayout, strobe, strobeCycle);
+    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth, colorCount, colorLayout, strobe, strobeCycle, followPhrases);
     return true;
   }
 

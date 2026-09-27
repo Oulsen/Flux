@@ -68,6 +68,7 @@ export function sourceRows(source: string, diagnostics: DiagnosticsData): Diagno
       return [
         { label: 'deck', value: formatCount(diagnostics.deck) },
         { label: 'status', value: diagnostics.detail ?? 'following' },
+        { label: 'phrase', value: diagnostics.phrase ?? UNKNOWN },
       ];
 
     default:

@@ -52,6 +52,10 @@
     setEngine({ colorChangeBars: bars });
   }
 
+  function chooseFollowPhrases(followPhrases: boolean): void {
+    setEngine({ followPhrases });
+  }
+
   function chooseColorCount(colorCount: number): void {
     setEngine({ colorCount });
   }
@@ -138,6 +142,26 @@
           onclick={() => chooseInterval(bars)}
         >
           {colorChangeLabel(bars)}
+        </button>
+      {/each}
+    </div>
+  </div>
+
+  <!-- Beside the bar count because it is a correction to it rather than a second rhythm:
+       a phrase starting takes a colour and the count runs on from there. Only rekordbox
+       offers phrases, so with any other source this changes nothing. -->
+  <div class="choice">
+    <span class="name">follow phrases</span>
+    <div class="options">
+      {#each [false, true] as on (on)}
+        <button
+          type="button"
+          class="chip"
+          class:chosen={on === engine.followPhrases}
+          aria-pressed={on === engine.followPhrases}
+          onclick={() => chooseFollowPhrases(on)}
+        >
+          {on ? 'on' : 'off'}
         </button>
       {/each}
     </div>

@@ -1,3 +1,4 @@
+using Flux.Beat;
 using System.Buffers.Binary;
 
 namespace Flux.Rekordbox;
@@ -10,16 +11,6 @@ internal enum PhraseMood {
   High = 1,
   Mid = 2,
   Low = 3,
-}
-
-internal enum PhraseKind {
-  Intro,
-  Verse,
-  Bridge,
-  Up,
-  Down,
-  Chorus,
-  Outro,
 }
 
 /// <summary>

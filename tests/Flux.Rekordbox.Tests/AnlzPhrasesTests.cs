@@ -1,3 +1,4 @@
+using Flux.Beat;
 using Xunit;
 using static Flux.Rekordbox.Tests.AnlzFixture;
 

@@ -689,6 +689,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     }
 
     int colorCount = Math.Clamp(settings.ColorCount, 1, LightSettings.MaxColorCount);
+    PhraseMap? phrases = settings.FollowPhrases ? this.scheduler.Phrases : null;
 
     // The anchored beat was rendered before the press was heard, carrying the old count.
     // Answering now is a frame or so after the beat the user meant, against a bar later
@@ -742,7 +743,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
         this.colorRestartMicros = null;
       }
 
-      if(anchored || this.ShouldChangeColor(beat, settings.ColorChangeBars)) {
+      if(anchored || this.ShouldChangeColor(beat, settings.ColorChangeBars, phrases)) {
         this.PickHues(settings.Palette, colorCount);
       }
     }
@@ -777,8 +778,35 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// mean that for everything the bar count drives. Before any anchor the grid counts
   /// from its own beat 0, which is the scene's raw form - every n-th bar from wherever
   /// the numbering started - and worth more than not changing at all.
+  ///
+  /// <b>Within a phrase the count runs from the phrase start instead</b>, and the start
+  /// itself always changes the colour. The anchor says where bar one is, which puts the
+  /// changes on downbeats, but not which downbeat the count should run from: rekordbox
+  /// sets it at the downbeat nearest the playhead on every load, master change and jump,
+  /// which is rarely one where a phrase begins, and then every change lands a bar or
+  /// three off the track's structure until the next anchor. Restarting at the phrase
+  /// keeps the rhythm somebody chose in bars and puts it back on the music. Counted in
+  /// time from the phrase's own moment, because the phrase is rekordbox's while the beats
+  /// may be Link's, and rounded to whole beats and bars, which a timeline a few
+  /// milliseconds from rekordbox's cannot move. A phrase starting off the downbeat - about
+  /// one in twelve does - still takes its colour on its first beat; the bars after it
+  /// round to the downbeats either side.
   /// </summary>
-  private bool ShouldChangeColor(BeatEvent beat, int bars) {
+  private bool ShouldChangeColor(BeatEvent beat, int bars, PhraseMap? phrases) {
+    // Looked up half a beat ahead, so the beat a phrase starts on belongs to that phrase
+    // even when it lands a hair before the moment rekordbox gives.
+    if(phrases is not null
+      && this.beatPeriodMicros is { } period
+      && phrases.At(beat.ScheduledMicros + SameBeatMicros(period)) is { } phrase) {
+      long beatsIn = (long)Math.Round((beat.ScheduledMicros - phrase.StartMicros) / period);
+      if(beatsIn == 0 || bars <= 0) {
+        return true;
+      }
+
+      long barsIn = (long)Math.Round(beatsIn / (double)this.scheduler.Quantum);
+      return beat.PositionInBar == 1 && FloorMod(barsIn, bars) == 0;
+    }
+
     if(bars <= 0) {
       return true;
     }

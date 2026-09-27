@@ -159,6 +159,12 @@ export interface HueEngineData {
    * quarter of each. 50 flashes twice a beat, 100 once. Applies to a held strobe too.
    */
   strobeCycle: number;
+  /**
+   * Whether a phrase starting changes the colour and restarts the `colorChangeBars`
+   * count, when the track playing has phrases - which only rekordbox offers. On by
+   * default. Off, or with no phrases, the colours change on the bar count alone.
+   */
+  followPhrases: boolean;
 }
 
 export type HueColorLayout = 'radial' | 'alternating' | 'random';
@@ -212,6 +218,8 @@ export interface DiagnosticsData {
   deck?: number;
   /** rekordbox: why it is not following a playing deck, in words; absent while it is. */
   detail?: string;
+  /** rekordbox: the phrase playing as rekordbox labels it ("Chorus 2"), or why there is none, in words; absent while no deck is followed. */
+  phrase?: string;
 }
 
 /**

@@ -120,6 +120,9 @@ public sealed class BeatGrid {
 
   private BarAlignmentMethod alignmentMethod;
 
+  /// <summary>The phrases of the track playing, or null while nothing has offered any.</summary>
+  private volatile PhraseMap? phrases;
+
   public BeatGrid(IMonotonicClock clock, int quantum, TimeSpan staleAfter) {
     ArgumentNullException.ThrowIfNull(clock);
     ArgumentOutOfRangeException.ThrowIfLessThan(quantum, 1);
@@ -128,6 +131,30 @@ public sealed class BeatGrid {
     this.clock = clock;
     this.quantum = quantum;
     this.staleAfterMicros = staleAfter.TotalMilliseconds * 1000.0;
+  }
+
+  /// <summary>
+  /// Beats in a bar, <c>Beat:Quantum</c>. Exposed for whoever has to count bars between
+  /// two moments rather than read a bar number off a beat, which is the light engine
+  /// counting from a phrase start; restating four there would be a second opinion about
+  /// how long a bar is.
+  /// </summary>
+  public int Quantum => this.quantum;
+
+  /// <summary>
+  /// The phrases of the track playing, as a source last offered them, or null.
+  ///
+  /// Kept here beside the bar anchor because it is the same kind of fact: a statement
+  /// about the music rather than one source's opinion about the tempo. For the same
+  /// reason <see cref="Reset"/> leaves it alone. A source switch changes who keeps time,
+  /// not what is playing, and rekordbox, which is what offers phrases, withdraws them
+  /// itself when its track stops being followed.
+  /// </summary>
+  public PhraseMap? Phrases => this.phrases;
+
+  /// <summary>Takes the phrases of the track playing, or null when a source has none to offer any more.</summary>
+  public void SetPhrases(PhraseMap? offered) {
+    this.phrases = offered;
   }
 
   /// <summary>Raised on the first accepted packet, and again after every tempo change.</summary>

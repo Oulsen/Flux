@@ -276,7 +276,25 @@ public sealed class WireFormatTests {
     Assert.Equal(2, diagnostics.GetProperty("deck").GetInt32());
     Assert.Equal("deck 2 is stopped", diagnostics.GetProperty("detail").GetString());
     Assert.False(diagnostics.TryGetProperty("taps", out _));
+    Assert.False(diagnostics.TryGetProperty("phrase", out _));
     Assert.Equal("rekordbox", data.GetProperty("alignment").GetProperty("method").GetString());
+  }
+
+  [Fact]
+  public void RekordboxDiagnosticsCarryThePhrasePlaying() {
+    StateData state = new StateData(
+      "rekordbox",
+      "live",
+      [new SourceReportData("rekordbox", "live", 1.0)],
+      new GridData(174.0, 4.0, 4, 1, BarAligned: true),
+      new AlignmentData(Aligned: true, Method: "rekordbox"),
+      Light: null,
+      new DiagnosticsData(0.0, Deck: 1, Phrase: "Chorus 2"));
+
+    JsonElement diagnostics = Payload(Frames.State(state), "state").GetProperty("diagnostics");
+
+    Assert.Equal("Chorus 2", diagnostics.GetProperty("phrase").GetString());
+    Assert.False(diagnostics.TryGetProperty("detail", out _));
   }
 
   [Fact]

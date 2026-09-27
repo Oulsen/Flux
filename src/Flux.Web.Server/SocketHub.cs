@@ -754,7 +754,7 @@ public sealed class SocketHub {
     if(!Frames.TryReadLightSettings(data, out HueEngineData engine)) {
       client.Enqueue(Frames.Error(
         "invalid_data",
-        "Setting the light engine needs strings 'data.palette' and 'data.colorLayout', a boolean 'data.strobe' and integers 'data.colorChangeBars', 'data.pulseMs', 'data.brightness', 'data.pulseDepth', 'data.colorCount' and 'data.strobeCycle'."));
+        "Setting the light engine needs strings 'data.palette' and 'data.colorLayout', booleans 'data.strobe' and 'data.followPhrases' and integers 'data.colorChangeBars', 'data.pulseMs', 'data.brightness', 'data.pulseDepth', 'data.colorCount' and 'data.strobeCycle'."));
       return;
     }
 
@@ -777,7 +777,8 @@ public sealed class SocketHub {
       engine.ColorCount,
       layout,
       engine.Strobe,
-      engine.StrobeCycle);
+      engine.StrobeCycle,
+      engine.FollowPhrases);
 
     if(this.hue is null || !this.hue.TrySetLightSettings(settings)) {
       client.Enqueue(Frames.Error(

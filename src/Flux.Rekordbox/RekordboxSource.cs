@@ -61,7 +61,7 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
 
     // Registered last, as every source is, so Status() finds a complete object.
     ITimelineSink sink = sources.Register(this);
-    this.follower = new RekordboxFollower(sink, AnlzBeatGrid.Read);
+    this.follower = new RekordboxFollower(sink, AnlzBeatGrid.Read, dat => AnlzPhrases.Read(AnlzFile.ExtendedPath(dat)));
     sources.BarShifted += this.follower.Shift;
   }
 
@@ -74,8 +74,8 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
   /// read, not estimated.
   /// </summary>
   public SyncSourceStatus Status() {
-    (int? deck, string? detail) = this.follower.Describe();
-    var diagnostics = new SyncSourceDiagnostics(Deck: deck, Detail: this.options.Enabled ? detail : "turned off by Rekordbox:Enabled");
+    (int? deck, string? detail, string? phrase) = this.follower.Describe();
+    var diagnostics = new SyncSourceDiagnostics(Deck: deck, Detail: this.options.Enabled ? detail : "turned off by Rekordbox:Enabled", Phrase: phrase);
 
     (bool ever, double? last) = this.follower.Published();
     if(last is not { } at) {
