@@ -381,11 +381,12 @@ is a fact about each band on its own: a hat pattern under a held chord lifts the
 lights whether or not anything is louder elsewhere. That is the difference between a
 room the music moves through and a set of simultaneous flashes at different heights.
 
-**The pulse answers the music and not only the grid**, and it does so in three ways at
-once because they are three different questions.
+**The pulse answers the music and not only the grid**, and it does so in two ways at
+once because they are two different questions.
 
-*How hard did this beat hit* is the kick band's jump above its own recent average,
-read as the beat lands and allowed to rise - never fall - while the pulse is alive.
+*Is a kick playing on this beat* is the kick band against the loudest this track's
+kick has been over about the last minute, ramped so that under two fifths of it is no
+kick and four fifths or more is a whole one, read as the beat lands and allowed to rise - never fall - while the pulse is alive.
 It may rise because the light path runs deliberately ahead of the audio, so the kick a
 beat announces has usually not reached the analyzer at the moment the beat is consumed;
 it never falls, so the fade is not cut off by the gap after the kick that caused it.
@@ -396,8 +397,11 @@ and it is the unison rather than the brightness that gives it away. What carries
 break instead is the per-band response above: with the pulse out of the way the lights
 follow their own bands, so hats lift the outer lights and a stab lifts the middle.
 There is no break mode; this is what the room already does once the pulse stops
-sitting on top of it. The measure is the transient and not the level, because a
-breakdown often still has bass in it and what it lacks is a kick landing.
+sitting on top of it. The measure is against the track's own kick and not against
+the band's last second, which is what it was until 2026-09-30: a drop's bassline fills
+the band, so its kicks barely stand out from their own second and the drop pulsed at a
+fifth, while the bass left under a break or a build of strings sits well under what
+the track's kick does and reads as little or nothing.
 
 *Is anything playing at all* is how loud the room is now against the loudest it has
 been over about the last minute, applied continuously rather than captured, so a
@@ -409,18 +413,7 @@ average looks back over, and longer than the two bars its level is measured agai
 breakdown runs sixteen to thirty-two bars, and a reference that forgot inside one
 would decide halfway through the break that the break is now normal.
 
-*Is this section loud for this track* is how hot the room runs against its own typical
-of about the last twenty seconds, and it is spent on the resting level rather than on
-the pulse: a drop lifts what the lights fall back to between beats, and a steady
-passage rests on the floor as it always did, because by then it is the typical. This
-is the difference the loudness measure discards on purpose - it saturates well below
-the room's loudest precisely so that ordinary playing counts as simply playing, which
-means it cannot also say how loud - and it is what makes a verse and a drop read as
-two different rooms rather than one. It is also why a track quieter than the one
-before it reads as subdued only for its first half minute rather than for its whole
-length: its level becomes the room's typical, and the room breathes around that.
-
-**None of the three reaches the floor itself.** All of them spend the range above it,
+**Neither reaches the floor itself.** Both spend the range above it,
 and the floor is never zero while a stream is open - a light that goes out is
 indistinguishable from one that has stopped receiving anything. A `brightness` of 0
 is still black, because that is a blackout and somebody asking for no light should

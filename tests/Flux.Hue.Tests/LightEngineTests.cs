@@ -70,9 +70,12 @@ public class LightEngineTests {
   public void AKickThatLandsAfterTheBeatIsConsumedStillCountsForThePulse() {
     Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
 
-    // A background for the kick to stand out from, and a beat consumed on a frame where
-    // the kick band is doing nothing unusual: the gate reads it as no hit at all.
-    harness.Heard.Bands = new SpectrumLevels(Kick: 0.4, Mids: 0.3, Highs: 0.3);
+    // The track's own kick first, and then a beat consumed in the gap before the next
+    // one lands, where the kick band is at a fraction of it: the gate reads no kick.
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 0.3, Highs: 0.3);
+    harness.Engine.Render();
+    harness.Clock.Advance(TimeSpan.FromSeconds(1));
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 0.3, Highs: 0.3);
     harness.BeatNow(index: 0);
     Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
 
@@ -84,14 +87,18 @@ public class LightEngineTests {
 
   /// <summary>
   /// The other half of the ratchet's contract: it can only pass a hit along, never
-  /// invent one. A beat in a passage where the kick band sits flat stays gated shut
+  /// invent one. A beat in a passage where the kick band sits well under the track's
+  /// own kick stays gated shut
   /// however long the pulse waits, which is what keeps a breakdown dark.
   /// </summary>
   [Fact]
   public void AKickThatNeverArrivesLeavesThePulseGatedShut() {
     Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
 
-    harness.Heard.Bands = new SpectrumLevels(Kick: 0.4, Mids: 0.3, Highs: 0.3);
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 0.3, Highs: 0.3);
+    harness.Engine.Render();
+    harness.Clock.Advance(TimeSpan.FromSeconds(1));
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 0.3, Highs: 0.3);
     harness.BeatNow(index: 0);
     harness.Engine.Render();
 
@@ -905,11 +912,10 @@ public class LightEngineTests {
     Assert.Equal(1.0, Brightness(lights[0]), 3);
     Assert.Equal(0.575, Brightness(lights[1]), 3);
 
-    // The edge light's band is nearly silent, so its cut of the beat is nothing - what
-    // holds it up on a frame this much hotter than the history is the room's own energy,
-    // which lifts every light alike and reads here as the resting level rather than as a
-    // share of the pulse.
-    Assert.Equal(0.49, Brightness(lights[2]), 3);
+    // The edge light's band is at a tenth of its own recent loudest, so it takes a tenth
+    // of the beat. Nothing holds every light up alike between beats any more, so a
+    // band that is not playing leaves its light near the floor.
+    Assert.Equal(0.235, Brightness(lights[2]), 3);
 
     // The room's own colour is the full pulse, not the average of the three: it is what
     // the engine decided this beat was worth before any light's position was consulted.
@@ -1065,40 +1071,46 @@ public class LightEngineTests {
   }
 
   /// <summary>
-  /// A section running hotter than the room has been lifts the resting level between
-  /// beats, which is the difference the loudness gate discards on purpose: it saturates
-  /// so that ordinary playing counts as playing, so a verse and a drop pulse alike, and
-  /// before this the room answered them identically everywhere else too.
+  /// <b>A drop pulses at full height even when its kick does not stand out</b>, and a
+  /// build whose kick band holds only the low end of its strings does not pulse.
   ///
-  /// Measured a second after the beat so the pulse is spent and no kick is hitting:
-  /// whatever holds the room up is its energy and nothing else. And the lift is not
-  /// forever - held long enough, the drop is the room's own level and the rest returns
-  /// to the floor, because a room merely at its own level is not a drop.
+  /// Both cases were watched failing on 2026-09-30, one after the fix for the other. In
+  /// a drop the bassline fills the kick band, so its kicks barely rise above their own
+  /// last second, and a pulse sized by that sat at a fifth. The patch - letting the
+  /// room's running-hot energy vouch for the beat - then pulsed a vocal and strings
+  /// build at full, since a build runs hot by definition. What tells them apart is the
+  /// kick band against this track's own kick, which is what is asserted: flat against
+  /// its own second in the drop and still at the track's level, and at a third of it
+  /// in the build while the rest of the room swells.
   /// </summary>
   [Fact]
-  public void ASectionRunningHotterThanTheRoomHasBeenLiftsTheRestingLevel() {
+  public void ADropPulsesFullyEvenWhenItsKickDoesNotStandOut() {
     Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
 
-    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 0.3, Highs: 0.3);
+    // The track's kick, held flat: nothing for a beat to stand out from.
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.9, Mids: 0.6, Highs: 0.6);
+    harness.Engine.Render();
+    harness.Clock.Advance(TimeSpan.FromSeconds(1));
     harness.BeatNow(index: 0);
+    Assert.Equal(1.0, Brightness(harness.Engine.Render()), 3);
+
+    // A second later the pulse is spent, and nothing holds the room up.
+    harness.Clock.Advance(TimeSpan.FromSeconds(1));
     Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
 
-    // The drop arrives: three times what the room has been. The pulse is long spent, so
-    // the lift is the energy's claim on the resting level and nothing else.
+    // The build: the kick band at a third of the track's kick, the strings swelling.
     harness.Clock.Advance(TimeSpan.FromSeconds(1));
-    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 1, Highs: 1);
-    Assert.Equal(0.49, Brightness(harness.Engine.Render()), 3);
-
-    // Two minutes into the same level it is the room's typical, and the rest settles.
-    harness.Clock.Advance(TimeSpan.FromSeconds(120));
-    double settled = Brightness(harness.Engine.Render());
-    Assert.True(settled < 0.2, $"A level held for two minutes still lifts the rest to {settled:F3}, so the room never settles.");
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 0.9, Highs: 0.8);
+    harness.Engine.Render();
+    harness.BeatNow(index: 1);
+    double build = Brightness(harness.Engine.Render());
+    Assert.True(build < 0.5, $"The build pulsed to {build:F3} on a kick band at a third of the track's kick.");
   }
 
+
   /// <summary>
-  /// The counterpart that keeps the energy honest: a room playing steadily at any level
-  /// is its own typical, so the rest stays on the floor. Without this the measure would
-  /// be reading loudness rather than change, which is the gate's job and already taken.
+  /// Between beats a room playing steadily rests on the floor: nothing but the pulse and
+  /// a band doing something right now lifts a light, and a steady band is doing nothing.
   /// </summary>
   [Fact]
   public void ARoomHoldingItsUsualLevelRestsOnTheFloor() {

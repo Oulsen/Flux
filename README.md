@@ -52,10 +52,10 @@ measured by somebody standing in the room watching both.
   corners, and each band is read against its own recent behaviour rather than
   against the others - otherwise the kick wins every comparison on every frame and
   the room is a fixed gradient. A beat with no kick under it does not pulse at all,
-  which is what leaves a breakdown to the bands that are still playing. The room
-  also breathes with the section: a passage running hotter than the room has been
-  lifts what the lights fall back to between beats, so a drop and a verse no
-  longer look the same.
+  which is what leaves a breakdown to the bands that are still playing. Whether a
+  kick is playing is judged against the track's own kick, so a drop pulses at full
+  height even where the bassline buries its kicks, and a build of vocals and strings
+  does not pulse on the strings' low end.
 - Eight palettes to draw from, one to three colours at once and how to spread them
   across the room, a brightness ceiling, a pulse length, how far the light drops
   between beats, and a latency offset to line the light up against the music - all
