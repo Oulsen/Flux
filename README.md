@@ -3,26 +3,38 @@
 Music in, light out.
 
 Flux is a standalone Windows app being built, in phases, to drive Philips Hue
-Entertainment lights from music with proper beat sync. It finds the beat,
-either from an Ableton Link session or by listening to the music itself, and
-drives a Hue entertainment area from it at 50 frames a second. What it found
+Entertainment lights from music with proper beat sync. It finds the beat -
+from rekordbox itself, from an Ableton Link session, or by listening to the
+music - and drives a Hue entertainment area from it at 50 frames a second. What it found
 stays visible in any browser on the LAN, phone included, which is still the
 only way to tell that a beat grid is right - and now also the only way to
 tune the light against it, because the lag between a beat and a bulb is
 measured by somebody standing in the room watching both.
 
-## What works in 0.5.0
+## What works in 0.6.0
 
-- Finds the beat two independent ways, and either one drives the same grid.
-  **Ableton Link** (rekordbox, Ableton Live, or any Link peer) is followed
-  passively: Flux listens without joining, so it never appears as a peer and
-  never influences the session. **Audio** analyses the sound itself, which is
-  the only source that reports what is actually coming out of the speakers.
+- Finds the beat three independent ways, and any one drives the same grid.
+  **rekordbox** is read directly: Flux follows the master deck's tempo and
+  playhead from rekordbox's memory, read-only, and takes bar 1 from the track's
+  own beatgrid, so the bar is right without a tap and follows a deck switch.
+  That read is tied to one rekordbox version at a time (7.2.19 so far, see
+  [docs/rekordbox-chains.md](docs/rekordbox-chains.md)); on any other the source
+  says so and stays silent. **Ableton Link** (rekordbox, Ableton Live, or any
+  Link peer) is followed passively: Flux listens without joining, so it never
+  appears as a peer and never influences the session. **Audio** analyses the
+  sound itself, which is the only source that reports what is actually coming
+  out of the speakers.
 - Switches between the sources live, from the page, without a restart. Each
-  one reports its own tempo, confidence and health, so the two can be compared
+  one reports its own tempo, confidence and health, so they can be compared
   rather than trusted in turn.
-- Anchors bar 1 from a tap on the page or a cue press on a DDJ-FLX10. Neither
-  source transmits a downbeat, so somebody has to say where the bar starts; a
+- Follows rekordbox's phrases: a phrase starting (an Intro, a Chorus, a Down)
+  changes the colour and restarts the colour count, so changes land on the
+  track's structure instead of a bar or three off it. The phrase playing is named
+  under the beat dots. It holds under Link as well, and a switch turns it off.
+- Anchors bar 1 from a tap on the page or a cue press on a DDJ-FLX10, where the
+  source does not already know it. Link and audio transmit no downbeat, so
+  somebody has to say where the bar starts; under rekordbox the page offers to
+  move the grid's downbeat a beat instead, for a track whose grid is off. A
   cue press is only accepted from a deck whose channel fader says it is
   audible, because previewing the next track in headphones must not move the
   grid. Under the manual source a tap is also a tempo press, so a separate
