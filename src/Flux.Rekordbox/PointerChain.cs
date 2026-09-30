@@ -154,7 +154,8 @@ internal sealed class PointerChain {
     // Memory is mapped in whole pages, so a read that stays inside one cannot fail
     // halfway.
     // On the stack for a path's length, since the poll loop reads one per deck on every
-    // poll, a few hundred a second, and a heap buffer each time is garbage for nothing.
+    // poll, a few hundred a second. The string decoded from it is still allocated each
+    // time; the buffer is kept off the heap so it does not add its own garbage to that.
     const int Page = 0x1000;
     const int OnStack = 2048;
     Span<byte> text = maxBytes < OnStack ? stackalloc byte[maxBytes + 1] : new byte[maxBytes + 1];

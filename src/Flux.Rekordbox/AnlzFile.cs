@@ -67,16 +67,21 @@ internal static class AnlzFile {
   /// Windows connect to that host, and offer it the user's credentials, before the file
   /// turned out not to be there. A drive letter mapped to a share connects just the same,
   /// so a path on one is refused too.
+  ///
+  /// Only the plain form, a drive letter, a colon and a separator, is accepted. Every
+  /// other fully qualified form is a device path - <c>\\?\</c>, <c>\\.\</c>, <c>\??\</c> -
+  /// and each of them can name a share, <c>\??\UNC\host\share</c> among them, without
+  /// starting with the two separators a share is otherwise known by.
   /// </summary>
   internal static bool IsLocal(string path) {
     ArgumentNullException.ThrowIfNull(path);
-    bool share = path.Length >= 2 && IsSeparator(path[0]) && IsSeparator(path[1]);
-    return !share && Path.IsPathFullyQualified(path) && !OnNetworkDrive(path);
+    bool onDrive = path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && IsSeparator(path[2]);
+    return onDrive && !OnNetworkDrive(path);
 
     static bool IsSeparator(char c) => c is '\\' or '/';
 
-    // A fully qualified path that is not a share starts with its drive letter. Asking
-    // Windows what the letter is mapped to does not connect to the host behind it.
+    // Asking Windows what the drive letter is mapped to does not connect to the host
+    // behind it.
     static bool OnNetworkDrive(string path) {
       try {
         return new DriveInfo(path[..1]).DriveType == DriveType.Network;

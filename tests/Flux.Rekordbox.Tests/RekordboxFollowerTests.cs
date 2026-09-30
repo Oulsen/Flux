@@ -195,6 +195,33 @@ public class RekordboxFollowerTests {
     Assert.InRange(rig.Loads, 2, 4);
   }
 
+  /// <summary>A track analysed without phrases never gains them while it plays, so its files are read less and less often, not once a second for as long as it plays.</summary>
+  [Fact]
+  public void ReadsAnAnalysisThatStaysMissingLessAndLessOften() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+
+    // Read at 0, 1, 3, 7, 15 and 25 s, then every 10 s: six in 30 s, where a read once a
+    // second would be thirty-one.
+    rig.Play(deck: 0, fromMs: 1000, forMs: 30_000);
+
+    Assert.InRange(rig.Loads, 5, 7);
+    Assert.Contains("no phrase analysis", rig.Follower.Describe().Phrase);
+  }
+
+  /// <summary>The long wait belongs to the track that earned it: a new one is looked at again within a second.</summary>
+  [Fact]
+  public void ReadsANewTracksMissingAnalysisSoonAgain() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, withGrid: false);
+    rig.Play(deck: 0, fromMs: 1000, forMs: 30_000);
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50, path: TrackB);
+    Assert.False(rig.Grid.TryGetSnapshot(out _));
+
+    rig.WithGrid = true;
+    rig.Play(deck: 0, fromMs: 1055, forMs: RetryMs, path: TrackB);
+
+    Assert.True(rig.Grid.TryGetSnapshot(out _));
+  }
+
   /// <summary>One hop of the tempo's or the playhead's chain failing for a read is not a new track, and does not cost the user the shift.</summary>
   [Theory]
   [InlineData(0f, 4_000.0)]

@@ -41,9 +41,10 @@ namespace Flux.Rekordbox;
 ///
 /// <b>The phrases go out with the timeline.</b> They are read with the grid when the
 /// track changes, and both are read again now and then while either is missing, since
-/// rekordbox can load a track before it has analysed it. They are laid out on each timeline as it is published, with the user's shift
-/// on them as on the downbeat, and withdrawn with the tempo. A track whose phrases do not
-/// fit its grid offers none rather than phrases in the wrong places.
+/// rekordbox can load a track before it has analysed it. They are laid out on each
+/// timeline as it is published, with the user's shift on them as on the downbeat, and
+/// withdrawn with the tempo. A track whose phrases do not fit its grid offers none rather
+/// than phrases in the wrong places.
 /// </summary>
 internal sealed class RekordboxFollower {
   /// <summary>
@@ -106,12 +107,22 @@ internal sealed class RekordboxFollower {
   internal static readonly double HeartbeatMicros = 250_000;
 
   /// <summary>
-  /// How long a track's missing grid or phrases go before its files are read again.
+  /// How long a track's missing grid or phrases go before its files are first read again.
   /// Flux's own number, reasoned: rekordbox takes seconds to analyse a track, so a second
-  /// more before the room follows it is not noticed, and a read of two files once a
-  /// second, while a track has no phrase analysis, costs the poll loop nothing it notices.
+  /// more before the room follows it is not noticed.
   /// </summary>
   internal static readonly double ReloadAfterMicros = 1_000_000;
+
+  /// <summary>
+  /// The longest wait between reads of a track's files while its analysis is still
+  /// missing; the wait doubles from <see cref="ReloadAfterMicros"/> after every read that
+  /// still finds it missing. Flux's own number, reasoned: a track analysed without
+  /// phrases never gains them while it plays, and its files, the <c>.EXT</c> several
+  /// megabytes of them, are read on the poll thread, which stands still for the read.
+  /// Once the analysis has stayed missing for seconds it is most likely not coming, and
+  /// ten seconds is still short against a reanalysis started by hand.
+  /// </summary>
+  internal static readonly double ReloadAtMostEveryMicros = 10_000_000;
 
   /// <summary>Playhead units per millisecond of track: 44.1 kHz whatever the file's own rate, measured, see <c>docs/rekordbox-chains.md</c>.</summary>
   private const double SamplesPerMs = 44.1;
@@ -136,6 +147,9 @@ internal sealed class RekordboxFollower {
 
   /// <summary>When the track's files were last read. Only the poll thread touches it.</summary>
   private double loadedMicros;
+
+  /// <summary>How long after <see cref="loadedMicros"/> the track's files are read again while incomplete. Only the poll thread touches it.</summary>
+  private double reloadAfterMicros = ReloadAfterMicros;
 
   /// <summary>Where the playhead was in the grid at the last fresh read, for naming the phrase playing.</summary>
   private double? lastBeat;
@@ -229,8 +243,10 @@ internal sealed class RekordboxFollower {
     if(deck is { } followed && TrackPath(reading.Decks[followed]) is { } path) {
       if(followed != this.master || path != this.trackPath) {
         switching = this.Load(path, nowMicros);
-      } else if(this.incomplete && nowMicros - this.loadedMicros >= ReloadAfterMicros) {
+        this.reloadAfterMicros = ReloadAfterMicros;
+      } else if(this.incomplete && nowMicros - this.loadedMicros >= this.reloadAfterMicros) {
         reloaded = this.Load(path, nowMicros);
+        this.reloadAfterMicros = Math.Min(this.reloadAfterMicros * 2, ReloadAtMostEveryMicros);
       }
     }
 
@@ -537,7 +553,7 @@ internal sealed class RekordboxFollower {
     }
 
     if(grid is not { Count: > 0 } beats) {
-      return new TrackFiles(grid, null, "none: the phrases do not fit the beatgrid", Incomplete: true);
+      return new TrackFiles(grid, null, "none: the track has no beatgrid", Incomplete: true);
     }
 
     if(!Fits(read, beats.Count)) {

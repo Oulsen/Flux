@@ -39,8 +39,9 @@ to - the per-band and per-room reference windows, the transient ratio, the kick
 presence ramp that sizes the pulse - as are `ShimmerShare`,
 `MinimumLitFraction` and `StrobeStaleBeats` in `LightEngine.cs`, and the six
 stand-in lights in `LightPreview.cs`. The stage's afterimage trail in
-`src/Flux.Web.Frontend/src/lib/scene.ts` is Flux's own too: the scene's trail ran to nearly ten seconds and was cut to one by looking,
-and the copy count and opacity beside it were reasoned about. These are the
+`src/Flux.Web.Frontend/src/lib/scene.ts` is Flux's own too: the scene's trail
+ran to nearly ten seconds and was cut to one by looking, and the copy count and
+opacity beside it were reasoned about. These are the
 opposite case to the palette: they were reasoned about rather than listened to,
 they are the first things to move when the room looks wrong, and each says so
 where it is declared. Treating them as carried-across material would protect
