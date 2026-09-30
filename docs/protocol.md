@@ -559,7 +559,7 @@ nothing rather than a number that means nothing.
 | `taps` | int | manual | Taps in the current sequence, up to the eight the estimate uses |
 | `lastTapAgoMs` | number | manual | Milliseconds since the last tap |
 | `deck` | int | rekordbox | The deck being followed, counted from 1 as rekordbox shows it: the master deck, or when rekordbox names none or the master cannot be read, the deck that is playing. Absent until rekordbox has been read |
-| `detail` | string | rekordbox | Why it is not following a playing deck, in words: rekordbox not running, running as administrator, a version Flux has no chains for, a track with no beatgrid, the deck stopped, no deck playing while rekordbox names no master. **Absent while it is following one**, so its absence is the good state |
+| `detail` | string | rekordbox | Why it is not following a playing deck, in words: rekordbox not running, running as administrator, a version Flux has no chains for, a track with no beatgrid, a deck whose tempo or playhead cannot be read for a moment, the deck stopped, no deck playing while rekordbox names no master. **Absent while it is following one**, so its absence is the good state |
 | `phrase` | string | rekordbox | The phrase playing on the deck followed as rekordbox labels it, such as `"Chorus 2"` or `"Down"`, or why there is none, in words beginning `"none: "`: no phrase analysis, phrases that do not fit the beatgrid, before the first phrase or past the last. Display text, not an enumeration. Absent while no deck is followed |
 
 `reanchorMaxBeats` is the grid's own metric rather than any source's, which is

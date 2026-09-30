@@ -23,6 +23,17 @@ public class AnlzFileTests {
     Assert.Equal(local, AnlzFile.IsLocal(path));
   }
 
+  /// <summary>Skipped on a computer with no drive letter mapped to a share, which is most of them.</summary>
+  [Fact]
+  public void OpensNothingOnADriveLetterMappedToAShare() {
+    DriveInfo? mapped = DriveInfo.GetDrives().FirstOrDefault(drive => drive.DriveType == DriveType.Network);
+    if(mapped is null) {
+      Assert.Skip("no drive letter here is mapped to a share");
+    }
+
+    Assert.False(AnlzFile.IsLocal(Path.Combine(mapped.RootDirectory.FullName, "PIONEER", "ANLZ0000.DAT")));
+  }
+
   [Theory]
   [InlineData("C:/rb/USBANLZ/a/ANLZ0000.DAT", true)]
   [InlineData("C:/rb/USBANLZ/a/anlz0000.dat", true)]

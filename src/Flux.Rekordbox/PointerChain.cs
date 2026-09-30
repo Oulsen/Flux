@@ -153,19 +153,22 @@ internal sealed class PointerChain {
     // unmapped page, where reading the full span would fail on bytes past the NUL.
     // Memory is mapped in whole pages, so a read that stays inside one cannot fail
     // halfway.
+    // On the stack for a path's length, since the poll loop reads one per deck on every
+    // poll, a few hundred a second, and a heap buffer each time is garbage for nothing.
     const int Page = 0x1000;
-    byte[] text = new byte[maxBytes + 1];
+    const int OnStack = 2048;
+    Span<byte> text = maxBytes < OnStack ? stackalloc byte[maxBytes + 1] : new byte[maxBytes + 1];
     int filled = 0;
     while(filled < text.Length) {
       int toPageEnd = Page - (int)((address + filled) & (Page - 1));
       int length = Math.Min(toPageEnd, text.Length - filled);
-      if(!memory.TryRead(address + filled, text.AsSpan(filled, length))) {
+      if(!memory.TryRead(address + filled, text.Slice(filled, length))) {
         return false;
       }
 
-      int end = text.AsSpan(filled, length).IndexOf((byte)0);
+      int end = text.Slice(filled, length).IndexOf((byte)0);
       if(end >= 0) {
-        return TryDecode(text.AsSpan(0, filled + end), out value);
+        return TryDecode(text[..(filled + end)], out value);
       }
 
       filled += length;

@@ -150,6 +150,68 @@ public class RekordboxFollowerTests {
     Assert.Contains("no beatgrid", rig.Follower.Describe().Detail);
   }
 
+  /// <summary>rekordbox analyses a track loaded before it was analysed, and the grid is read once it is there, without loading the track again.</summary>
+  [Fact]
+  public void FollowsABeatgridAnalysedAfterTheTrackWasLoaded() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, withGrid: false);
+    rig.Play(deck: 0, fromMs: 0, forMs: 50);
+    Assert.False(rig.Grid.TryGetSnapshot(out _));
+
+    rig.WithGrid = true;
+    rig.Play(deck: 0, fromMs: 55, forMs: RetryMs);
+
+    Assert.True(rig.Grid.TryGetSnapshot(out _));
+    Assert.Null(rig.Follower.Describe().Detail);
+  }
+
+  [Fact]
+  public void OffersPhrasesAnalysedAfterTheTrackWasLoaded() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+    Assert.Contains("no phrase analysis", rig.Follower.Describe().Phrase);
+
+    rig.Phrases = Song(endBeat: 400);
+    rig.Play(deck: 0, fromMs: 1055, forMs: RetryMs);
+
+    Assert.NotNull(rig.Grid.Phrases);
+    Assert.Equal("Intro 1", rig.Follower.Describe().Phrase);
+  }
+
+  [Fact]
+  public void ReadsATrackWithAGridAndPhrasesOnlyOnce() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, phrases: Song(endBeat: 400));
+
+    rig.Play(deck: 0, fromMs: 1000, forMs: 3 * RetryMs);
+
+    Assert.Equal(1, rig.Loads);
+  }
+
+  [Fact]
+  public void ReadsAnAnalysisStillMissingOnlyNowAndThen() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, withGrid: false);
+
+    rig.Play(deck: 0, fromMs: 1000, forMs: 3 * RetryMs);
+
+    Assert.InRange(rig.Loads, 2, 4);
+  }
+
+  /// <summary>One hop of the tempo's or the playhead's chain failing for a read is not a new track, and does not cost the user the shift.</summary>
+  [Theory]
+  [InlineData(0f, 4_000.0)]
+  [InlineData(120f, null)]
+  public void KeepsTheShiftThroughAReadMissingTheTempoOrThePlayhead(float bpm, double? positionMs) {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+    Assert.True(rig.Manager.ShiftBar(1));
+
+    rig.ReadRaw(deck: 0, new DeckReading(bpm, positionMs is { } at ? (long)Math.Round(at * 44.1) : null, TrackA));
+    Assert.False(rig.Grid.TryGetSnapshot(out _));
+    rig.Play(deck: 0, fromMs: 4_000, forMs: 50);
+
+    Assert.Equal(1, rig.Grid.PositionOf(9).PositionInBar);
+    Assert.Equal(1, rig.Loads);
+  }
+
   [Fact]
   public void KeepsTheUsersShiftWhenTheBarIsReadAgainAfterASeek() {
     using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
@@ -542,18 +604,19 @@ public class RekordboxFollowerTests {
     Assert.True(rig.Follower.Published().Ever);
   }
 
+  /// <summary>Long enough of playing for the follower to look for a track's missing analysis again.</summary>
+  private static double RetryMs => (RekordboxFollower.ReloadAfterMicros / 1000) + 10;
+
   /// <summary>A manager with a Link stand-in and the follower registered, a clock, and a 120 BPM grid per track.</summary>
   private sealed class Rig: IDisposable {
     private readonly int firstBeatInBar;
     private readonly int trackBFirstBeatInBar;
-    private readonly bool withGrid;
-    private readonly AnlzPhraseList? phrases;
 
     internal Rig(string active, int firstBeatInBar, bool withGrid = true, int? trackBFirstBeatInBar = null, AnlzPhraseList? phrases = null) {
       this.firstBeatInBar = firstBeatInBar;
-      this.phrases = phrases;
+      this.Phrases = phrases;
       this.trackBFirstBeatInBar = trackBFirstBeatInBar ?? firstBeatInBar;
-      this.withGrid = withGrid;
+      this.WithGrid = withGrid;
       this.Grid = new BeatGrid(this.Clock, quantum: 4, TimeSpan.FromSeconds(2.5));
       this.Grid.TempoChanged += _ => this.TempoChanges++;
       this.Manager = new SyncSourceManager(
@@ -562,7 +625,7 @@ public class RekordboxFollowerTests {
         settings: null,
         NullLogger<SyncSourceManager>.Instance);
       this.Link = this.Manager.Register(new NamedSource("link"));
-      this.Follower = new RekordboxFollower(this.Manager.Register(new NamedSource("rekordbox")), this.Load, _ => this.phrases);
+      this.Follower = new RekordboxFollower(this.Manager.Register(new NamedSource("rekordbox")), this.Load, _ => this.Phrases);
       this.Manager.BarShifted += this.Follower.Shift;
     }
 
@@ -577,6 +640,12 @@ public class RekordboxFollowerTests {
     internal RekordboxFollower Follower { get; }
 
     internal int TempoChanges { get; private set; }
+
+    /// <summary>Whether the tracks have a beatgrid yet: set later, rekordbox has analysed them since.</summary>
+    internal bool WithGrid { get; set; }
+
+    /// <summary>The phrases every track has, if any: set later, rekordbox has analysed them since.</summary>
+    internal AnlzPhraseList? Phrases { get; set; }
 
     /// <summary>How many times a track's grid has been read.</summary>
     internal int Loads { get; private set; }
@@ -625,6 +694,14 @@ public class RekordboxFollowerTests {
       this.Follower.Follow(new RekordboxReading(decks, deck), this.Clock.NowMicros);
     }
 
+    /// <summary>One read of <paramref name="deck"/> exactly as given, the other deck empty.</summary>
+    internal void ReadRaw(int deck, DeckReading read) {
+      var decks = new DeckReading[2];
+      decks[deck] = read;
+      decks[1 - deck] = new DeckReading(0, 0, null);
+      this.Follower.Follow(new RekordboxReading(decks, deck), this.Clock.NowMicros);
+    }
+
     public void Dispose() => this.Manager.BarShifted -= this.Follower.Shift;
 
     /// <summary>A long steady 120 BPM grid from 0 ms: beat n at n * 500 ms, the first on the track's own first beat in bar.</summary>
@@ -632,7 +709,7 @@ public class RekordboxFollowerTests {
       this.Loads++;
       this.DuringLoad?.Invoke();
       int first = path == TrackB ? this.trackBFirstBeatInBar : this.firstBeatInBar;
-      return this.withGrid
+      return this.WithGrid
         ? [.. Enumerable.Range(0, 400).Select(n => new AnlzBeat(((first - 1 + n) % 4) + 1, 120f, n * 500))]
         : null;
     }
