@@ -243,6 +243,31 @@ public class SyncSourceManagerTests {
   }
 
   /// <summary>
+  /// Phrases are a statement about the track, like a downbeat, so they reach the grid
+  /// from a source that is not keeping time - rekordbox's phrases with Link selected -
+  /// and a switch of source, which changes who keeps time and not what is playing,
+  /// leaves them where they are.
+  /// </summary>
+  [Fact]
+  public void PhrasesReachTheGridFromAnInactiveSourceAndSurviveASwitch() {
+    BeatGrid grid = NewGrid(new FakeClock());
+    SyncSourceManager manager = NewManager(grid, defaultSource: "link");
+
+    manager.Register(new FakeSource("link"));
+    ITimelineSink manual = manager.Register(new FakeSource("manual"));
+    var phrases = new PhraseMap([new PhraseMark(PhraseKind.Intro, 1, StartMicros: 0)], EndMicros: 1_000_000);
+
+    manual.PublishPhrases(phrases);
+    Assert.Same(phrases, grid.Phrases);
+
+    Assert.True(manager.TrySelect("manual"));
+    Assert.Same(phrases, grid.Phrases);
+
+    manual.PublishPhrases(null);
+    Assert.Null(grid.Phrases);
+  }
+
+  /// <summary>
   /// Withdrawing is the opposite of publishing rather than a way of reporting
   /// silence. A quiet source still has a last tempo worth extrapolating; a
   /// source that has retracted its tempo has nothing, and extrapolating it
@@ -359,6 +384,28 @@ public class SyncSourceManagerTests {
     store.Writes = 0;
     Assert.True(manager.TrySelect("manual"));
     Assert.Equal(0, store.Writes);
+  }
+
+  /// <summary>
+  /// A shift is announced only when it moved something, since the one listener - the
+  /// rekordbox source - keeps it as a correction to reapply, and a correction to a bar
+  /// that had no anchor would be applied to the next one instead.
+  /// </summary>
+  [Fact]
+  public void AnnouncesAShiftOnlyWhenTheBarHadAnAnchorToMove() {
+    BeatGrid grid = NewGrid(new FakeClock());
+    SyncSourceManager manager = NewManager(grid, defaultSource: "link");
+    ITimelineSink link = manager.Register(new FakeSource("link"));
+    List<(int, BarAlignmentMethod)> shifted = [];
+    manager.BarShifted += (beats, method) => shifted.Add((beats, method));
+
+    link.Publish(AtOneTwenty);
+    Assert.False(manager.ShiftBar(1));
+
+    Assert.True(link.AlignBarAt(BarAlignmentMethod.Rekordbox, 0));
+    Assert.True(manager.ShiftBar(-1));
+
+    Assert.Equal([(-1, BarAlignmentMethod.Rekordbox)], shifted);
   }
 
   private static BeatGrid NewGrid(IMonotonicClock clock) {

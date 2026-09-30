@@ -1,0 +1,650 @@
+using Flux.Beat;
+
+namespace Flux.Rekordbox;
+
+/// <summary>
+/// Turns reads of rekordbox into what a sync source says: a timeline for the master
+/// deck, the downbeat from its beatgrid, and silence when there is nothing playing to
+/// follow.
+///
+/// Kept apart from the process and the poll loop so the decisions can be tested on
+/// readings laid out by the test, as the chain walker is; <see cref="RekordboxSource"/>
+/// only feeds it reads and the time they were taken.
+///
+/// <b>What a read is worth</b> was measured at the desk on 2026-09-25, on rekordbox's own
+/// audio device with no controller: the playhead moves one audio buffer at a time, about
+/// 5 ms of track, delivered in pairs about 9 ms apart, so a read is up to 10 ms old; the
+/// tempo read is the pitched one, following the fader on every read; and the playhead
+/// counts the track's own time, so it maps straight onto the grid. A controller's ASIO
+/// buffer can be larger, and the numbers below leave room for one of 20 ms or more.
+///
+/// A timeline is therefore anchored only on a read the playhead has just moved in, and
+/// republished only when the one in force is out by more than a read can explain. In
+/// between it is repeated unchanged, as Link repeats its own, so the grid sees a source
+/// that is alive and a drift of exactly zero rather than a stream of 5 ms corrections.
+///
+/// <b>The downbeat is rekordbox's, always.</b> It is set when there is a new reason to
+/// read it - a new track on the master, a different master, playback starting, a jump in
+/// the track - and at no other time, with the user's whole-beat correction for this track
+/// added on. A tap is not overruled between those events, but the next one sets the bar
+/// from the grid again; the correction for a grid that is a beat off is
+/// <see cref="Shift"/>, which lasts until the track changes.
+///
+/// <b>Without a master deck</b> - the byte that names it holds no deck, as the first
+/// 7.2.19 chain's did with LINK on, or is unreadable when its chain has moved - the deck
+/// playing is followed instead: the one already followed while it plays, else the one
+/// playing longest, which is the one on air while the next is started.
+///
+/// <b>Nothing playing means nothing published.</b> A stopped master withdraws its tempo
+/// rather than letting it run on, so while rekordbox is the source the lights settle at
+/// their floor instead of pulsing to a track that is not playing.
+///
+/// <b>The phrases go out with the timeline.</b> They are read with the grid when the
+/// track changes, and both are read again now and then while either is missing, since
+/// rekordbox can load a track before it has analysed it. They are laid out on each
+/// timeline as it is published, with the user's shift on them as on the downbeat, and
+/// withdrawn with the tempo. A track whose phrases do not fit its grid offers none rather
+/// than phrases in the wrong places.
+/// </summary>
+internal sealed class RekordboxFollower {
+  /// <summary>
+  /// How far past the grid a track's phrases may end and still fit it, in beats: one,
+  /// since the end is the beat after the last phrase's final one. Measured across all
+  /// 5,433 analysed tracks of the library on 2026-09-27: the phrases of every track
+  /// either end at most one beat past the grid or run about twice its length (11 tracks,
+  /// a grid set to half tempo after the phrases were found), with nothing in between.
+  /// See <c>docs/rekordbox-anlz.md</c>.
+  /// </summary>
+  internal const int PhraseOverrunBeats = 1;
+
+  /// <summary>
+  /// How much of the grid a track's phrases have to cover to fit it. The same survey:
+  /// every track's phrases cover 0.85 of its grid or more, except 21 that cover half of
+  /// it or less, the opposite case of a grid set to double tempo. Two thirds sits in the
+  /// empty middle, and is Flux's own choice of where in it.
+  /// </summary>
+  internal const double PhraseCoverage = 2.0 / 3.0;
+
+  /// <summary>
+  /// How long the master's playhead may stand still before the deck counts as stopped.
+  /// Flux's own number, reasoned rather than tuned: ten times the 20 ms or more a slow
+  /// audio buffer can hold a playhead still while it plays, and short enough that
+  /// pressing pause dims the room within a beat at any dance tempo.
+  /// </summary>
+  internal static readonly double StoppedAfterMicros = 250_000;
+
+  /// <summary>
+  /// How far the timeline in force may be from a fresh read before it is re-anchored.
+  /// Flux's own number, reasoned: above the 10 ms old a read can be, so an honest
+  /// timeline is not republished on every read, and below the 20 ms or so at which light
+  /// against music starts to look early or late.
+  /// </summary>
+  internal static readonly double DriftToleranceMicros = 15_000;
+
+  /// <summary>
+  /// How far the tempo read may move from the one in force before it is published as a
+  /// change, as a fraction: 0.05 per cent, 0.09 BPM at 175. Flux's own number, reasoned
+  /// after watching a deck under LINK read 176.00, 176.02 and back from one read to the
+  /// next, each published as a tempo change and re-anchored on a read up to 10 ms old -
+  /// beats that wandered by milliseconds, and once by 124, which the room showed as
+  /// restless flashing. A pitch fader moving at all passes this within a few reads, and
+  /// what a smaller difference does to the phase the drift tolerance catches.
+  /// </summary>
+  internal static readonly double TempoToleranceFraction = 0.0005;
+
+  /// <summary>
+  /// How far out, in beats, a read has to be for the playhead to have been moved rather
+  /// than to have drifted - a seek, a loop, a beat jump, a cue. Flux's own number: half a
+  /// beat is the most a timeline can be wrong and still point at the same beat.
+  /// </summary>
+  internal static readonly double JumpBeats = 0.5;
+
+  /// <summary>
+  /// How often an unchanged timeline is repeated, so the source reads as alive to the
+  /// grid and the page. Flux's own number, borrowed in spirit from Link, which repeats
+  /// its timeline about four times a second with nothing new in it.
+  /// </summary>
+  internal static readonly double HeartbeatMicros = 250_000;
+
+  /// <summary>
+  /// How long a track's missing grid or phrases go before its files are first read again.
+  /// Flux's own number, reasoned: rekordbox takes seconds to analyse a track, so a second
+  /// more before the room follows it is not noticed.
+  /// </summary>
+  internal static readonly double ReloadAfterMicros = 1_000_000;
+
+  /// <summary>
+  /// The longest wait between reads of a track's files while its analysis is still
+  /// missing; the wait doubles from <see cref="ReloadAfterMicros"/> after every read that
+  /// still finds it missing. Flux's own number, reasoned: a track analysed without
+  /// phrases never gains them while it plays, and its files, the <c>.EXT</c> several
+  /// megabytes of them, are read on the poll thread, which stands still for the read.
+  /// Once the analysis has stayed missing for seconds it is most likely not coming, and
+  /// ten seconds is still short against a reanalysis started by hand.
+  /// </summary>
+  internal static readonly double ReloadAtMostEveryMicros = 10_000_000;
+
+  /// <summary>Playhead units per millisecond of track: 44.1 kHz whatever the file's own rate, measured, see <c>docs/rekordbox-chains.md</c>.</summary>
+  private const double SamplesPerMs = 44.1;
+
+  private readonly ITimelineSink sink;
+  private readonly Func<string, IReadOnlyList<AnlzBeat>?> loadGrid;
+  private readonly Func<string, AnlzPhraseList?> loadPhrases;
+  private readonly object gate = new object();
+
+  private int? master;
+  private string? trackPath;
+  private IReadOnlyList<AnlzBeat>? grid;
+
+  /// <summary>The track's phrases, when it has some that fit its grid.</summary>
+  private AnlzPhraseList? phrases;
+
+  /// <summary>Why the track has no phrases to offer, when it has none; for the diagnostics.</summary>
+  private string? phraseNote;
+
+  /// <summary>Whether the track's grid or phrases were missing when its files were last read, so they are read again.</summary>
+  private bool incomplete;
+
+  /// <summary>When the track's files were last read. Only the poll thread touches it.</summary>
+  private double loadedMicros;
+
+  /// <summary>How long after <see cref="loadedMicros"/> the track's files are read again while incomplete. Only the poll thread touches it.</summary>
+  private double reloadAfterMicros = ReloadAfterMicros;
+
+  /// <summary>Where the playhead was in the grid at the last fresh read, for naming the phrase playing.</summary>
+  private double? lastBeat;
+
+  /// <summary>What was last handed to the sink as the phrases, and the timeline and shift they were laid out on.</summary>
+  private PhraseMap? offered;
+  private BeatTimeline offeredOn;
+  private int offeredShift;
+
+  /// <summary>Whole beats the user has moved this track's downbeat by. Reset with the track.</summary>
+  private int shift;
+
+  private long? lastPosition;
+  private double lastMovedMicros;
+  /// <summary>The timeline last published and not withdrawn: what the manager holds for this source.</summary>
+  private BeatTimeline? held;
+
+  /// <summary>The master or its track changed, so the next fresh read starts a new session whatever the timeline in force says.</summary>
+  private bool rebase;
+
+  private double lastPublishedMicros;
+  private bool everPublished;
+  private bool alignPending;
+
+  /// <summary>How each deck's playhead has been moving, for choosing one when rekordbox names no master.</summary>
+  private DeckMotion[] decks = [];
+  private string? detail = "rekordbox has not been read yet";
+
+  /// <param name="sink">Where the timelines, the downbeat and the phrases go.</param>
+  /// <param name="loadGrid">Reads the beatgrid from a deck's <c>.DAT</c> path.</param>
+  /// <param name="loadPhrases">Reads the phrases for a deck's <c>.DAT</c> path, which live in the file beside it.</param>
+  internal RekordboxFollower(
+    ITimelineSink sink,
+    Func<string, IReadOnlyList<AnlzBeat>?> loadGrid,
+    Func<string, AnlzPhraseList?> loadPhrases) {
+    this.sink = sink ?? throw new ArgumentNullException(nameof(sink));
+    this.loadGrid = loadGrid ?? throw new ArgumentNullException(nameof(loadGrid));
+    this.loadPhrases = loadPhrases ?? throw new ArgumentNullException(nameof(loadPhrases));
+  }
+
+  /// <summary>Whether a timeline has ever been published, and when the one in force last was - null while none is.</summary>
+  internal (bool Ever, double? LastMicros) Published() {
+    lock(this.gate) {
+      return (this.everPublished, this.held is null ? null : this.lastPublishedMicros);
+    }
+  }
+
+  /// <summary>
+  /// The master deck from 1, why nothing is being followed when nothing is, and the
+  /// phrase playing - or why there is none - while a track is.
+  /// </summary>
+  internal (int? Deck, string? Detail, string? Phrase) Describe() {
+    lock(this.gate) {
+      return (this.master + 1, this.detail, this.DescribePhrase());
+    }
+  }
+
+  /// <summary>The phrase <paramref name="phrase"/> as rekordbox labels it: "Chorus 2", or "Down" for one without a number.</summary>
+  internal static string Label(AnlzPhrase phrase) {
+    return phrase.Variant > 0 ? $"{phrase.Kind} {phrase.Variant}" : phrase.Kind.ToString();
+  }
+
+  /// <summary>
+  /// Whether a track's phrases can be laid on its grid: they end no more than
+  /// <see cref="PhraseOverrunBeats"/> past it, and cover at least
+  /// <see cref="PhraseCoverage"/> of it.
+  /// </summary>
+  internal static bool Fits(AnlzPhraseList phrases, int gridBeats) {
+    return phrases.EndBeat <= gridBeats + PhraseOverrunBeats
+      && phrases.EndBeat >= gridBeats * PhraseCoverage;
+  }
+
+  /// <summary>
+  /// One read of rekordbox, taken at <paramref name="nowMicros"/>.
+  ///
+  /// Only the poll loop calls this and <see cref="Lose"/>, so which deck and track are
+  /// followed is changed by that one thread alone and can be settled before the lock,
+  /// with a new track's files read there too: the page's status waits on the lock, and
+  /// would otherwise wait on the disk.
+  /// </summary>
+  internal void Follow(RekordboxReading reading, double nowMicros) {
+    ArgumentNullException.ThrowIfNull(reading);
+    this.Watch(reading, nowMicros);
+
+    // No master deck: the byte holds no deck, as the first 7.2.19 chain's did with LINK on,
+    // or cannot be read at all when its chain has moved. Either way the deck playing stands
+    // in for the master, and the message does not guess which cause it was.
+    int? deck = reading.MasterDeck ?? this.PlayingDeck(reading.Decks.Count, nowMicros);
+    TrackFiles? switching = null;
+    TrackFiles? reloaded = null;
+    if(deck is { } followed && TrackPath(reading.Decks[followed]) is { } path) {
+      if(followed != this.master || path != this.trackPath) {
+        switching = this.Load(path, nowMicros);
+        this.reloadAfterMicros = ReloadAfterMicros;
+      } else if(this.incomplete && nowMicros - this.loadedMicros >= this.reloadAfterMicros) {
+        reloaded = this.Load(path, nowMicros);
+        this.reloadAfterMicros = Math.Min(this.reloadAfterMicros * 2, ReloadAtMostEveryMicros);
+      }
+    }
+
+    lock(this.gate) {
+      this.FollowWhileLocked(reading, nowMicros, deck, switching, reloaded);
+    }
+  }
+
+  /// <summary>
+  /// rekordbox cannot be read at all; <paramref name="why"/> says what to do about it.
+  ///
+  /// The track is kept, and its shift with it, so a moment in which rekordbox cannot be
+  /// read does not cost the user a correction. With no master left to match, the next
+  /// read loads the track's files again, and keeps the shift only if it is the same track.
+  /// </summary>
+  internal void Lose(string why) {
+    lock(this.gate) {
+      this.master = null;
+      this.Silence(why);
+    }
+  }
+
+  /// <summary>
+  /// The user moved the downbeat by <paramref name="beats"/>. Kept for the track on the
+  /// master, so the next time the bar is read from its grid - after a jump, say - it is
+  /// read with the correction rather than without it.
+  ///
+  /// Kept within a bar of zero, at the nearest of the shifts that put the downbeat in
+  /// the same place. The downbeat cannot tell three beats forward from one back, but
+  /// the phrases can: they move by the shift itself, so three presses of "beat ›" would
+  /// land every phrase a bar after the downbeat it belongs on.
+  ///
+  /// Only a shift of a bar rekordbox set is kept. A cue press or a tap replaces
+  /// rekordbox's downbeat until the next seek, and a shift correcting that press says
+  /// nothing about the track's grid: kept, it would move every phrase off the track's
+  /// structure and outlast the press it was correcting.
+  ///
+  /// The bar is read again on the next fresh read. The grid moved before this heard of
+  /// it, outside this lock, so a read in between can have put rekordbox's downbeat back
+  /// with the shift it had before; reading it again with this one puts the downbeat
+  /// where the phrases are about to be laid.
+  /// </summary>
+  internal void Shift(int beats, BarAlignmentMethod method) {
+    if(method != BarAlignmentMethod.Rekordbox) {
+      return;
+    }
+
+    lock(this.gate) {
+      if(this.trackPath is not null) {
+        const int bar = BeatgridPosition.BeatsPerBar;
+        this.shift = ((((this.shift + beats) % bar) + bar + (bar / 2)) % bar) - (bar / 2);
+        this.alignPending = true;
+      }
+    }
+  }
+
+  /// <summary>
+  /// The read, with the deck <see cref="Follow"/> chose to follow - null when none is
+  /// playing - and the files it read: <paramref name="switching"/> when that deck or its
+  /// track is a new one, <paramref name="reloaded"/> when it is the same track read again
+  /// for an analysis it was missing.
+  /// </summary>
+  private void FollowWhileLocked(RekordboxReading reading, double now, int? followed, TrackFiles? switching, TrackFiles? reloaded) {
+    // Silenced rather than lost when nothing plays, so a paused track keeps its shift for
+    // when it plays again.
+    if(followed is not { } deck) {
+      this.Silence("no deck is playing");
+      return;
+    }
+
+    DeckReading read = reading.Decks[deck];
+    if(read.AnlzPath is not { Length: > 0 } path) {
+      this.Forget(deck, $"deck {deck + 1} has no track loaded");
+      return;
+    }
+
+    if(read.Bpm is not > 0 || read.SamplePosition is not { } position) {
+      // The track is still named, so a tempo or a playhead that cannot be read is a hop of
+      // its chain failing for a moment, as in Lose, and the shift is kept for when it
+      // reads again. A track not already followed has nothing to keep.
+      if(path == this.trackPath) {
+        this.Silence($"deck {deck + 1}'s tempo or playhead cannot be read");
+      } else {
+        this.Forget(deck, $"deck {deck + 1} has no track loaded");
+      }
+
+      return;
+    }
+
+    if(!AnlzFile.IsLocalDat(path)) {
+      this.Forget(deck, $"deck {deck + 1} names an analysis file that is not a .DAT on this computer, so it is not opened; the chains for this rekordbox may have moved");
+      return;
+    }
+
+    // Follow read the files exactly when the deck or its track is new, by the same tests
+    // as above, so they say which case this is and the disk is never read under the lock.
+    if(switching is { } files) {
+      bool sameTrack = path == this.trackPath;
+      this.master = deck;
+      this.trackPath = path;
+      this.Take(files);
+
+      // The ones on offer belong to the track before, and the next publish lays these.
+      this.WithdrawPhrases();
+      this.shift = sameTrack ? this.shift : 0;
+      this.lastPosition = position;
+      this.lastMovedMicros = now;
+
+      // Whether it plays takes a second read to tell, and until then this is what is true.
+      this.detail = $"waiting to see whether deck {deck + 1} is playing";
+
+      // Not withdrawn: a switch to a deck already playing should hand over on its first
+      // fresh read as a new session, which the grid carries across like any other,
+      // rather than leave the room dark for a read in between. A deck that turns out
+      // not to be playing is silenced by the stopped test like any other.
+      this.rebase = true;
+    } else if(reloaded is { } again) {
+      // Laid on the timeline in force at once rather than at the next heartbeat. A grid
+      // that was missing starts a session on the next fresh read, and one rekordbox has
+      // changed moves the playhead's beat, which the jump and drift tests correct.
+      this.WithdrawPhrases();
+      this.Take(again);
+      if(this.held is { } laidOn) {
+        this.OfferPhrases(laidOn);
+      }
+    }
+
+    if(this.grid is not { Count: > 0 } beats) {
+      this.Silence($"the track on deck {deck + 1} has no beatgrid; analyse it in rekordbox");
+      return;
+    }
+
+    bool moved = position != this.lastPosition;
+    this.lastPosition = position;
+    if(moved) {
+      this.lastMovedMicros = now;
+    } else if(now - this.lastMovedMicros > StoppedAfterMicros) {
+      this.Silence($"deck {deck + 1} is stopped");
+      return;
+    }
+
+    if(!moved) {
+      // Nothing new in this read. The timeline in force is still the best statement of
+      // where the beat is; repeat it now and then so it does not read as gone. Not while a
+      // new master waits for its first fresh read, though: the timeline in force is still
+      // the deck before's, and the publish would lay the new track's phrases on it.
+      if(!this.rebase && this.held is { } steady && now - this.lastPublishedMicros > HeartbeatMicros) {
+        this.Publish(steady, now, newSession: false);
+      }
+
+      return;
+    }
+
+    double beat = BeatgridPosition.BeatAt(beats, position / SamplesPerMs);
+    this.lastBeat = beat;
+    var observed = BeatTimeline.FromBpm(read.Bpm.Value, beat, now);
+    if(!observed.IsPlausible) {
+      this.Silence($"deck {deck + 1} reads a tempo of {read.Bpm.Value:F2} BPM, which cannot be right");
+      return;
+    }
+
+    if(this.held is not { } current || this.rebase) {
+      this.rebase = false;
+      this.Publish(observed, now, newSession: true);
+      this.alignPending = true;
+    } else {
+      double off = beat - current.BeatAt(now);
+      if(Math.Abs(off) > JumpBeats) {
+        this.Publish(observed, now, newSession: true);
+        this.alignPending = true;
+      } else if(Math.Abs(observed.MicrosPerBeat - current.MicrosPerBeat) > current.MicrosPerBeat * TempoToleranceFraction) {
+        this.Publish(observed, now, newSession: false);
+      } else if(Math.Abs(off) * current.MicrosPerBeat > DriftToleranceMicros) {
+        // The tempo in force is still right, so the re-anchor keeps it: a drift is a
+        // phase correction, and publishing the read's own hair-different tempo with it
+        // would be announced as a tempo change it is not.
+        this.Publish(new BeatTimeline(current.MicrosPerBeat, beat, (long)Math.Round(now)), now, newSession: false);
+      } else if(now - this.lastPublishedMicros > HeartbeatMicros) {
+        this.Publish(current, now, newSession: false);
+      }
+    }
+
+    this.detail = null;
+    if(this.alignPending) {
+      long downbeat = BeatgridPosition.NearestDownbeat(beats, beat) + this.shift;
+      this.alignPending = !this.sink.AlignBarAt(BarAlignmentMethod.Rekordbox, observed.MicrosOfBeat(downbeat));
+
+      // A shift moves the phrases with the downbeat, on this read rather than whenever
+      // the timeline is next published.
+      if(this.held is { } laidOn) {
+        this.OfferPhrases(laidOn);
+      }
+    }
+  }
+
+  /// <summary>
+  /// Notes which decks moved in this read, for when there is no master to follow. Every
+  /// deck, every read, because which one is playing is only knowable from the one before.
+  /// </summary>
+  private void Watch(RekordboxReading reading, double now) {
+    if(this.decks.Length != reading.Decks.Count) {
+      this.decks = new DeckMotion[reading.Decks.Count];
+    }
+
+    for(int i = 0; i < this.decks.Length; i++) {
+      long? position = reading.Decks[i].SamplePosition;
+      ref DeckMotion motion = ref this.decks[i];
+      if(position is { } at && motion.Position is { } before && at != before) {
+        if(!motion.IsPlaying(now)) {
+          motion.PlayingSince = now;
+        }
+
+        motion.MovedAt = now;
+      }
+
+      motion.Position = position;
+    }
+  }
+
+  /// <summary>
+  /// The deck to follow without a master: the one already followed while it plays, and
+  /// otherwise the one that has played longest, which is the one on air while the next
+  /// is started. Null when none is playing.
+  /// </summary>
+  private int? PlayingDeck(int count, double now) {
+    if(this.master is { } current && current < count && this.decks[current].IsPlaying(now)) {
+      return current;
+    }
+
+    int? longest = null;
+    for(int i = 0; i < count; i++) {
+      if(this.decks[i].IsPlaying(now) && (longest is not { } l || this.decks[i].PlayingSince < this.decks[l].PlayingSince)) {
+        longest = i;
+      }
+    }
+
+    return longest;
+  }
+
+  private void Publish(BeatTimeline timeline, double now, bool newSession) {
+    this.everPublished = true;
+    this.held = timeline;
+    this.lastPublishedMicros = now;
+    this.sink.Publish(timeline, newSession);
+    this.OfferPhrases(timeline);
+  }
+
+  /// <summary>
+  /// Lays the track's phrases on <paramref name="timeline"/> and hands them over, unless
+  /// the ones last handed over were laid on the same timeline and shift - a heartbeat
+  /// repeats the timeline, and the phrases on it have not moved either.
+  /// </summary>
+  private void OfferPhrases(BeatTimeline timeline) {
+    if(this.phrases is not { } track) {
+      this.WithdrawPhrases();
+      return;
+    }
+
+    if(this.offered is not null && this.offeredOn == timeline && this.offeredShift == this.shift) {
+      return;
+    }
+
+    // Start beats count from 1 and the grid from 0, so rekordbox's beat n is the
+    // source's beat n - 1. The shift moves them with the downbeat, since a grid a beat
+    // off has its phrases a beat off with it.
+    var marks = new PhraseMark[track.Phrases.Count];
+    for(int i = 0; i < marks.Length; i++) {
+      AnlzPhrase phrase = track.Phrases[i];
+      marks[i] = new PhraseMark(phrase.Kind, phrase.Variant, timeline.MicrosOfBeat(phrase.StartBeat - 1 + this.shift));
+    }
+
+    this.offered = new PhraseMap(marks, timeline.MicrosOfBeat(track.EndBeat - 1 + this.shift));
+    this.offeredOn = timeline;
+    this.offeredShift = this.shift;
+    this.sink.PublishPhrases(this.offered);
+  }
+
+  private void WithdrawPhrases() {
+    if(this.offered is not null) {
+      this.offered = null;
+      this.sink.PublishPhrases(null);
+    }
+  }
+
+  /// <summary>The deck's analysis file, when the deck has a track to follow and names a file that may be opened.</summary>
+  private static string? TrackPath(DeckReading read) {
+    return read.AnlzPath is { Length: > 0 } path && read.Bpm is > 0 && read.SamplePosition is not null && AnlzFile.IsLocalDat(path)
+      ? path
+      : null;
+  }
+
+  /// <summary>
+  /// Reads the grid and phrases of the track at <paramref name="path"/>, keeping the
+  /// phrases only when they fit the grid. Incomplete when either is missing, which a
+  /// later read can change; phrases that do not fit a grid are not, since the same files
+  /// would not fit again.
+  /// </summary>
+  private TrackFiles Load(string path, double now) {
+    this.loadedMicros = now;
+    IReadOnlyList<AnlzBeat>? grid = this.loadGrid(path);
+    AnlzPhraseList? read = this.loadPhrases(path);
+    if(read is null) {
+      return new TrackFiles(grid, null, "none: rekordbox has no phrase analysis for this track", Incomplete: true);
+    }
+
+    if(grid is not { Count: > 0 } beats) {
+      return new TrackFiles(grid, null, "none: the track has no beatgrid", Incomplete: true);
+    }
+
+    if(!Fits(read, beats.Count)) {
+      return new TrackFiles(grid, null, "none: the phrases do not fit the beatgrid", Incomplete: false);
+    }
+
+    return new TrackFiles(grid, read, null, Incomplete: false);
+  }
+
+  private void Take(TrackFiles files) {
+    this.grid = files.Grid;
+    this.phrases = files.Phrases;
+    this.phraseNote = files.PhraseNote;
+    this.incomplete = files.Incomplete;
+  }
+
+  /// <summary>The phrase at the last fresh read, the reason there is none, or null while no track is followed.</summary>
+  private string? DescribePhrase() {
+    if(this.trackPath is null || this.held is null) {
+      return null;
+    }
+
+    if(this.phrases is not { } track) {
+      return this.phraseNote;
+    }
+
+    if(this.lastBeat is not { } beat) {
+      return null;
+    }
+
+    // In rekordbox's own count, from 1, with the shift taken back off.
+    double at = beat + 1 - this.shift;
+    if(at >= track.EndBeat) {
+      return "none: past the last phrase";
+    }
+
+    AnlzPhrase? playing = null;
+    foreach(AnlzPhrase phrase in track.Phrases) {
+      if(phrase.StartBeat > at) {
+        break;
+      }
+
+      playing = phrase;
+    }
+
+    return playing is { } found ? Label(found) : "none: before the first phrase";
+  }
+
+  /// <summary>The deck is readable but has nothing to follow: stop publishing, and remember it as the master.</summary>
+  private void Forget(int deck, string why) {
+    this.master = deck;
+    this.ForgetTrack();
+    this.Silence(why);
+  }
+
+  private void ForgetTrack() {
+    this.trackPath = null;
+    this.grid = null;
+    this.phrases = null;
+    this.phraseNote = null;
+    this.incomplete = false;
+    this.lastBeat = null;
+    this.lastPosition = null;
+  }
+
+  private void Silence(string why) {
+    this.detail = why;
+    this.alignPending = false;
+    if(this.held is not null) {
+      this.held = null;
+      this.sink.Withdraw();
+    }
+
+    this.WithdrawPhrases();
+  }
+
+  /// <summary>What a track's analysis files hold for the follower, why there are no phrases when there are none, and whether they are worth reading again.</summary>
+  private readonly record struct TrackFiles(IReadOnlyList<AnlzBeat>? Grid, AnlzPhraseList? Phrases, string? PhraseNote, bool Incomplete);
+
+  /// <summary>One deck's playhead over the last reads: where it was, and since when it has been moving.</summary>
+  private struct DeckMotion {
+    public DeckMotion() {
+    }
+
+    public long? Position { get; set; }
+
+    public double MovedAt { get; set; } = double.NegativeInfinity;
+
+    public double PlayingSince { get; set; }
+
+    /// <summary>Moving recently enough to count as playing, by the same test the followed deck is held to.</summary>
+    public readonly bool IsPlaying(double now) => now - this.MovedAt <= StoppedAfterMicros;
+  }
+}

@@ -143,7 +143,9 @@ public static class WebHostExtensions {
 
     app.UseWebSockets();
     app.UseDefaultFiles();
-    app.UseStaticFiles();
+    app.UseStaticFiles(new StaticFileOptions {
+      OnPrepareResponse = file => file.Context.Response.Headers.CacheControl = CacheControlFor(file.Context.Request.Path),
+    });
 
     app.Map("/ws", async (HttpContext context, SocketHub hub, IHostApplicationLifetime lifetime) => {
       if(!context.WebSockets.IsWebSocketRequest) {
@@ -207,6 +209,24 @@ public static class WebHostExtensions {
           + "Otherwise another program is using it: set Web:Port in appsettings.json to a free port.",
         ex);
     }
+  }
+
+  /// <summary>
+  /// How long a served file may be reused without asking, by what it is.
+  ///
+  /// <b>Said rather than left to the browser</b>, which is the bug this fixes: with no
+  /// header at all Chromium - and so the desktop window's WebView2 - reuses a file for
+  /// a tenth of the time since it last changed, so after a rebuild the window went on
+  /// showing the previous page and its previous bundle, with nothing on screen to say
+  /// so. The page itself is therefore always checked with the server (the ETag makes
+  /// that a 304 when nothing changed), and the bundle under <c>/assets/</c> is kept
+  /// for good, because its name carries a hash of its content and a new build is a
+  /// new name.
+  /// </summary>
+  internal static string CacheControlFor(PathString path) {
+    return path.StartsWithSegments("/assets", StringComparison.OrdinalIgnoreCase)
+      ? "public, max-age=31536000, immutable"
+      : "no-cache";
   }
 
   /// <summary>

@@ -109,6 +109,18 @@ namespace Flux.Hue;
 /// On Hue that reads as energetic pulsing rather than as a club strobe. The value is
 /// honoured regardless; the bulbs simply stop resolving it.
 /// </param>
+/// <param name="FollowPhrases">
+/// Whether a phrase starting changes the colour and restarts the
+/// <paramref name="ColorChangeBars"/> count, when the track playing has phrases.
+///
+/// Flux's own, since the scene had no phrases to follow, and on by default because the
+/// count it corrects is usually wrong without it: the count runs from the bar anchor,
+/// which rekordbox sets at the downbeat nearest the playhead whenever a track loads, the
+/// master changes or the playhead jumps, so it rarely starts where a phrase does, and a
+/// chorus gets its colour a bar or three late. Inside a phrase the count runs as before.
+/// Off, or with nothing offering phrases - Link or audio alone, a track whose phrases do
+/// not fit its grid - the colours change exactly as they did before phrases existed.
+/// </param>
 public sealed record LightSettings(
   LightPalette Palette,
   int ColorChangeBars,
@@ -118,7 +130,8 @@ public sealed record LightSettings(
   int ColorCount = 1,
   LightColorLayout ColorLayout = LightColorLayout.Radial,
   bool Strobe = false,
-  int StrobeCycle = 50) {
+  int StrobeCycle = 50,
+  bool FollowPhrases = true) {
   /// <summary>
   /// The most colours the room can be in at once.
   ///

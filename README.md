@@ -3,26 +3,38 @@
 Music in, light out.
 
 Flux is a standalone Windows app being built, in phases, to drive Philips Hue
-Entertainment lights from music with proper beat sync. It finds the beat,
-either from an Ableton Link session or by listening to the music itself, and
-drives a Hue entertainment area from it at 50 frames a second. What it found
+Entertainment lights from music with proper beat sync. It finds the beat -
+from rekordbox itself, from an Ableton Link session, or by listening to the
+music - and drives a Hue entertainment area from it at 50 frames a second. What it found
 stays visible in any browser on the LAN, phone included, which is still the
 only way to tell that a beat grid is right - and now also the only way to
 tune the light against it, because the lag between a beat and a bulb is
 measured by somebody standing in the room watching both.
 
-## What works in 0.5.0
+## What works in 0.6.0
 
-- Finds the beat two independent ways, and either one drives the same grid.
-  **Ableton Link** (rekordbox, Ableton Live, or any Link peer) is followed
-  passively: Flux listens without joining, so it never appears as a peer and
-  never influences the session. **Audio** analyses the sound itself, which is
-  the only source that reports what is actually coming out of the speakers.
+- Finds the beat three independent ways, and any one drives the same grid.
+  **rekordbox** is read directly: Flux follows the master deck's tempo and
+  playhead from rekordbox's memory, read-only, and takes bar 1 from the track's
+  own beatgrid, so the bar is right without a tap and follows a deck switch.
+  That read is tied to one rekordbox version at a time (7.2.19 so far, see
+  [docs/rekordbox-chains.md](docs/rekordbox-chains.md)); on any other the source
+  says so and stays silent. **Ableton Link** (rekordbox, Ableton Live, or any
+  Link peer) is followed passively: Flux listens without joining, so it never
+  appears as a peer and never influences the session. **Audio** analyses the
+  sound itself, which is the only source that reports what is actually coming
+  out of the speakers.
 - Switches between the sources live, from the page, without a restart. Each
-  one reports its own tempo, confidence and health, so the two can be compared
+  one reports its own tempo, confidence and health, so they can be compared
   rather than trusted in turn.
-- Anchors bar 1 from a tap on the page or a cue press on a DDJ-FLX10. Neither
-  source transmits a downbeat, so somebody has to say where the bar starts; a
+- Follows rekordbox's phrases: a phrase starting (an Intro, a Chorus, a Down)
+  changes the colour and restarts the colour count, so changes land on the
+  track's structure instead of a bar or three off it. The phrase playing is named
+  under the beat dots. It holds under Link as well, and a switch turns it off.
+- Anchors bar 1 from a tap on the page or a cue press on a DDJ-FLX10, where the
+  source does not already know it. Link and audio transmit no downbeat, so
+  somebody has to say where the bar starts; under rekordbox the page offers to
+  move the grid's downbeat a beat instead, for a track whose grid is off. A
   cue press is only accepted from a deck whose channel fader says it is
   audible, because previewing the next track in headphones must not move the
   grid. Under the manual source a tap is also a tempo press, so a separate
@@ -52,10 +64,10 @@ measured by somebody standing in the room watching both.
   corners, and each band is read against its own recent behaviour rather than
   against the others - otherwise the kick wins every comparison on every frame and
   the room is a fixed gradient. A beat with no kick under it does not pulse at all,
-  which is what leaves a breakdown to the bands that are still playing. The room
-  also breathes with the section: a passage running hotter than the room has been
-  lifts what the lights fall back to between beats, so a drop and a verse no
-  longer look the same.
+  which is what leaves a breakdown to the bands that are still playing. Whether a
+  kick is playing is judged against the track's own kick, so a drop pulses at full
+  height even where the bassline buries its kicks, and a build of vocals and strings
+  does not pulse on the strings' low end.
 - Eight palettes to draw from, one to three colours at once and how to spread them
   across the room, a brightness ceiling, a pulse length, how far the light drops
   between beats, and a latency offset to line the light up against the music - all
@@ -77,7 +89,9 @@ measured by somebody standing in the room watching both.
 - Shows the look before the room is lit: with light sync off the visualizer is
   drawn in the colours the light engine would send, laid out as the selected
   room's lights, so palettes and colour splits can be judged with the bulbs off
-  or with no bridge at all. The stage says so while it is a preview.
+  or with no bridge at all. The stage says so while it is a preview, and the
+  notice that says so is also the switch: it starts light sync, and while the
+  lights are live the same place stops it.
 - Streams state, beats, spectrum and bridge status over a WebSocket. The wire
   contract is [docs/protocol.md](docs/protocol.md).
 
@@ -146,8 +160,8 @@ backend.
 | Key | Default | Meaning |
 |---|---|---|
 | `Web:Port` | `5050` | HTTP and WebSocket port for the UI |
-| `Beat:DefaultSource` | `link` | Which sync source is selected at startup: `link`, `audio` or `manual`. Only where a source has never been chosen on the page: one chosen there is remembered and outranks this from then on. A name this build does not have falls back to the first source registered |
-| `Beat:Quantum` | `4` | Beats in a bar: what the 1-2-3-4 readout counts against, and how long a bar is when the light engine changes colour every few bars. Neither source transmits a meter, so nothing confirms or contradicts it; an anchor moves where the bar starts, never how long it is |
+| `Beat:DefaultSource` | `link` | Which sync source is selected at startup: `link`, `audio`, `manual` or `rekordbox`. Only where a source has never been chosen on the page: one chosen there is remembered and outranks this from then on. A name this build does not have falls back to the first source registered |
+| `Beat:Quantum` | `4` | Beats in a bar: what the 1-2-3-4 readout counts against, and how long a bar is when the light engine changes colour every few bars. Link and the audio carry no meter, so nothing confirms it; rekordbox counts bars of four, and any other value is logged as a warning at startup, since the downbeat and phrases it sets would not line up. An anchor moves where the bar starts, never how long it is |
 | `Link:InterfaceAddress` | `null` | IP address of the network adapter to listen for Link on; `null` picks one automatically |
 | `Audio:DeviceId` | `null` | Exact endpoint id of the audio device to capture; `null` goes by name instead. Only where a device has never been picked on the page: a device chosen there is remembered and outranks this from then on |
 | `Audio:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the audio device to capture, inputs before outputs; empty captures nothing until one is picked. Still the fallback when the remembered or configured id names a device that is not plugged in |
@@ -156,6 +170,7 @@ backend.
 | `Audio:RecordAudioPath` | `null` | File to write the captured audio to as a mono WAVE recording, for questions about the analyzer itself rather than the detector; about 11 MB a minute, off unless set |
 | `Midi:Enabled` | `true` | Whether to watch a MIDI controller, so a cue press on an audible deck can anchor the bar; observation is read-only and does not disturb rekordbox |
 | `Midi:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the MIDI input to watch; empty watches nothing, because the notes Flux reads were measured on one controller |
+| `Rekordbox:Enabled` | `true` | Whether to read rekordbox's memory and analysis files for the master deck's tempo, beat and bar. Read-only, and on whichever source is selected: with Link selected, rekordbox still sets bar 1. A rekordbox that is not running, or is a version Flux has no chains for, is a source that says why on the page |
 | `Hue:Enabled` | `true` | Whether Flux contacts a Hue bridge at all. Off gives the beat lab back unchanged, for the sessions where the question is the grid rather than the show |
 | `Hue:BridgeAddress` | `null` | The bridge's address, when discovery should not be asked; `null` discovers it. Discovery tries mDNS and SSDP together, then a local network scan, then the rate-limited cloud lookup, and remembers where the bridge last answered - so this is for the network none of that can cross, never a shortcut, since DHCP moves a bridge |
 | `Hue:StreamHz` | `50` | Frames a second sent to the bridge while streaming, 10 to 60. 50 is the official guidance; a bulb renders roughly 25 updates a second over Zigbee regardless, so raising this cannot make the lights smoother |
@@ -202,7 +217,8 @@ An `appsettings.local.json` beside it overrides any of these and is not
 committed, which is what the recording keys above are usually set from: a
 recording path is a fact about one machine, and the diagnostic settings worth
 turning on while investigating something are rarely worth turning on for
-everyone.
+everyone. The command line overrides both, for one run: `-- --Audio:RecordFramesPath=take-01.jsonl`
+after `dotnet run` records without editing either file.
 
 ## Tests
 
@@ -214,6 +230,8 @@ dotnet run --project tests/Flux.Audio.Tests
 dotnet run --project tests/Flux.Midi.Tests
 dotnet run --project tests/Flux.Web.Server.Tests
 dotnet run --project tests/Flux.Hue.Tests
+dotnet run --project tests/Flux.Rekordbox.Tests
+dotnet run --project tests/Flux.Rekordbox.ChainFinder.Tests
 dotnet run --project tests/Flux.App.Tests
 ```
 
@@ -232,10 +250,14 @@ npm test
 | `src/Flux.Audio` | WASAPI capture, audio device catalog, level meter, spectrum analyzer, beat detector |
 | `src/Flux.Audio.Contract` | What audio looks like to the rest of Flux: the device list, its levels, a spectrum frame, the band energies the light engine follows, and how many columns the visualizer wants it in |
 | `src/Flux.Midi` | Read-only FLX-10 observer: MIDI message parsing, per-deck audibility, a cue press as a downbeat |
+| `src/Flux.Rekordbox` | Read-only access to a running rekordbox: finds the process, opens it for reading only, and reads each deck's tempo, playhead, analysis file and the master deck through a table of pointer chains per rekordbox version (7.2.19 so far), and each track's beatgrid and phrases from its analysis files; and the `rekordbox` sync source built on them, which follows the master deck and sets bar 1 from its grid |
 | `src/Flux.Hue` | Bridge discovery, pairing, entertainment rooms, the 50 Hz light stream, the light engine that turns beats into a colour per light, the preview that runs it while nothing streams, the room-to-frequency mapping behind it, and the encrypted store the bridge keys live in |
 | `src/Flux.Web.Server` | WebSocket hub, beat, spectrum, device, bridge and stage broadcasters, the stage's own settings and their store, web hosting |
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable and its desktop shell: the window, the tray icon, one running copy, and the log file |
 | `assets/branding` | The Flux mark as SVG, one cut per size band, and the script that builds `flux.ico` from them |
+| `tools/Flux.Rekordbox.ChainFinder` | A desk tool that finds the pointer chains for a rekordbox version and appends its entry to `chains.json`, or for a version already there replaces what no longer reads, on a yes; see `docs/rekordbox-chains.md` |
 | `docs/protocol.md` | The WebSocket wire contract; where it and anything else disagree, it wins |
+| `docs/rekordbox-chains.md` | The rekordbox chain table's rules, format and evidence per version, and the checks a new version's entry has to pass |
+| `docs/rekordbox-anlz.md` | The layout of the rekordbox analysis files Flux reads, the beatgrid and the phrases, and what checking it against a real library found |
 | `docs/audio-constants.md` | Every number audio beat detection runs on, where it came from, and how the frequency bands are derived |

@@ -112,7 +112,7 @@ public sealed class HueMessagesTests {
     Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
     await rig.SkipGreetingAsync(socket);
 
-    socket.Client("""{"type":"setLightSettings","data":{"palette":"neon","colorChangeBars":8,"pulseMs":300,"brightness":60,"pulseDepth":40,"colorCount":2,"colorLayout":"alternating","strobe":true,"strobeCycle":25}}""");
+    socket.Client("""{"type":"setLightSettings","data":{"palette":"neon","colorChangeBars":8,"pulseMs":300,"brightness":60,"pulseDepth":40,"colorCount":2,"colorLayout":"alternating","strobe":true,"strobeCycle":25,"followPhrases":false}}""");
 
     using JsonDocument hue = JsonDocument.Parse(await socket.NextAsync());
     JsonElement engine = hue.RootElement.GetProperty("data").GetProperty("engine");
@@ -126,7 +126,8 @@ public sealed class HueMessagesTests {
     Assert.Equal("alternating", engine.GetProperty("colorLayout").GetString());
     Assert.True(engine.GetProperty("strobe").GetBoolean());
     Assert.Equal(25, engine.GetProperty("strobeCycle").GetInt32());
-    Assert.Equal(new LightSettings(LightPalette.Neon, 8, 300, 60, 40, 2, LightColorLayout.Alternating, Strobe: true, StrobeCycle: 25), rig.Bridge.Connection.Light);
+    Assert.False(engine.GetProperty("followPhrases").GetBoolean());
+    Assert.Equal(new LightSettings(LightPalette.Neon, 8, 300, 60, 40, 2, LightColorLayout.Alternating, Strobe: true, StrobeCycle: 25, FollowPhrases: false), rig.Bridge.Connection.Light);
 
     socket.ClientClose();
     await serving;
@@ -144,7 +145,7 @@ public sealed class HueMessagesTests {
     Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
     await rig.SkipGreetingAsync(socket);
 
-    socket.Client("""{"type":"setLightSettings","data":{"palette":"beige","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}}""");
+    socket.Client("""{"type":"setLightSettings","data":{"palette":"beige","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50,"followPhrases":true}}""");
 
     using JsonDocument error = JsonDocument.Parse(await socket.NextAsync());
     JsonElement data = error.RootElement.GetProperty("data");
@@ -178,7 +179,7 @@ public sealed class HueMessagesTests {
 
     // The palette last so that no interpolation is followed by a run of closing braces,
     // which a raw literal cannot tell from the end of an interpolation.
-    string engine = $$"""{"colorChangeBars":{{bars}},"pulseMs":{{pulseMs}},"brightness":{{brightness}},"pulseDepth":{{depth}},"colorCount":{{colors}},"strobeCycle":{{strobeCycle}},"colorLayout":"radial","strobe":false,"palette":"warm"}""";
+    string engine = $$"""{"colorChangeBars":{{bars}},"pulseMs":{{pulseMs}},"brightness":{{brightness}},"pulseDepth":{{depth}},"colorCount":{{colors}},"strobeCycle":{{strobeCycle}},"colorLayout":"radial","strobe":false,"followPhrases":true,"palette":"warm"}""";
 
     socket.Client($$"""{"type":"setLightSettings","data":{{engine}}}""");
 
@@ -196,18 +197,20 @@ public sealed class HueMessagesTests {
   /// could send a palette alone would rely on the server to supply the rest.
   /// </summary>
   [Theory]
-  [InlineData("""{"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
-  [InlineData("""{"palette":"warm","pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"strobe":false,"strobeCycle":50}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"strobe":false,"strobeCycle":50}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":12.5,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
-  [InlineData("""{"palette":4,"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobeCycle":50}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false}""")]
-  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":"off","strobeCycle":50}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50,"followPhrases":"yes"}""")]
+  [InlineData("""{"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50,"followPhrases":true}""")]
+  [InlineData("""{"palette":"warm","pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50,"followPhrases":true}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50,"followPhrases":true}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50,"followPhrases":true}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50,"followPhrases":true}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"strobe":false,"strobeCycle":50,"followPhrases":true}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"strobe":false,"strobeCycle":50,"followPhrases":true}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":12.5,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50,"followPhrases":true}""")]
+  [InlineData("""{"palette":4,"colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"strobeCycle":50,"followPhrases":true}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobeCycle":50,"followPhrases":true}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":false,"followPhrases":true}""")]
+  [InlineData("""{"palette":"warm","colorChangeBars":4,"pulseMs":240,"brightness":100,"pulseDepth":85,"colorCount":1,"colorLayout":"radial","strobe":"off","strobeCycle":50,"followPhrases":true}""")]
   public async Task AnIncompleteStatementOfTheLookIsABugRatherThanARefusal(string data) {
     Rig rig = new Rig();
     FakeWebSocket socket = new FakeWebSocket();
@@ -417,6 +420,7 @@ public sealed class HueMessagesTests {
     Assert.Equal("radial", light.GetProperty("colorLayout").GetString());
     Assert.False(light.GetProperty("strobe").GetBoolean());
     Assert.Equal(50, light.GetProperty("strobeCycle").GetInt32());
+    Assert.True(light.GetProperty("followPhrases").GetBoolean());
 
     JsonElement area = data.GetProperty("areas")[0];
     Assert.Equal(Booth.Id, area.GetProperty("id").GetGuid());

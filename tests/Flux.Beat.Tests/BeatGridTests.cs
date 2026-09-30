@@ -262,6 +262,72 @@ public class BeatGridTests {
   }
 
   /// <summary>
+  /// rekordbox knows where a downbeat falls without anyone pressing at it, and the one it
+  /// can name is usually not the beat sounding now. The anchor goes on the timeline's beat
+  /// nearest the named instant, so a downbeat read a few milliseconds off Link's beat
+  /// lands on that beat.
+  /// </summary>
+  [Fact]
+  public void AlignsTheBeatNearestANamedInstantRatherThanNow() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+    List<double> reported = [];
+    grid.BarAligned += reported.Add;
+
+    grid.Apply(AtOneTwenty);
+    clock.Advance(TimeSpan.FromSeconds(2.5));
+
+    // Now is beat 5; the instant named is 12 ms after beat 7.
+    Assert.True(grid.TryAlignBarAt(BarAlignmentMethod.Rekordbox, 3_512_000));
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(3, snapshot.PositionInBar);
+    Assert.Equal(BarAlignmentMethod.Rekordbox, snapshot.AlignmentMethod);
+    Assert.Equal(1, grid.PositionOf(7).PositionInBar);
+    Assert.Equal([3_500_000.0], reported);
+  }
+
+  [Fact]
+  public void CannotAlignAtAnInstantBeforeAnyTimeline() {
+    Assert.False(NewGrid(new FakeClock()).TryAlignBarAt(BarAlignmentMethod.Rekordbox, 0));
+  }
+
+  /// <summary>
+  /// A whole-beat shift moves bar one and keeps what put it there: the correction to a
+  /// grid a beat off is still rekordbox's downbeat, one later.
+  /// </summary>
+  [Fact]
+  public void ShiftsTheDownbeatByWholeBeatsKeepingItsMethod() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+    List<double> reported = [];
+
+    grid.Apply(AtOneTwenty);
+    Assert.True(grid.TryAlignBarAt(BarAlignmentMethod.Rekordbox, 2_000_000));
+    grid.BarAligned += reported.Add;
+
+    Assert.True(grid.TryShiftBar(1, out BarAlignmentMethod shifted));
+    Assert.Equal(BarAlignmentMethod.Rekordbox, shifted);
+    Assert.Equal(1, grid.PositionOf(5).PositionInBar);
+    Assert.True(grid.TryShiftBar(-2, out _));
+    Assert.Equal(1, grid.PositionOf(3).PositionInBar);
+
+    Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
+    Assert.Equal(BarAlignmentMethod.Rekordbox, snapshot.AlignmentMethod);
+    Assert.Equal([2_500_000.0, 1_500_000.0], reported);
+  }
+
+  [Fact]
+  public void CannotShiftABarThatHasNoAnchor() {
+    FakeClock clock = new FakeClock();
+    BeatGrid grid = NewGrid(clock);
+    Assert.False(grid.TryShiftBar(1, out _));
+
+    grid.Apply(AtOneTwenty);
+    Assert.False(grid.TryShiftBar(1, out _));
+  }
+
+  /// <summary>
   /// The light engine answers a press on the beat it was meant for, and a press usually
   /// lands after that beat has fired, so the grid says where the new downbeat falls
   /// rather than leaving it to be noticed on the next one.

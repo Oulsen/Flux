@@ -543,6 +543,48 @@ public sealed class SocketHubTests {
     await serving;
   }
 
+  /// <summary>
+  /// The correction for a downbeat a beat off: it moves bar one and keeps what put it
+  /// there, and it is refused out loud when there is no bar one to move, because a
+  /// shift button that did nothing and said nothing would look broken.
+  /// </summary>
+  [Fact]
+  public async Task AShiftMovesTheDownbeatByWholeBeatsOnceThereIsOne() {
+    FakeWebSocket socket = new FakeWebSocket();
+    Rig rig = NewRig();
+
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await SkipOpeningAsync(socket);
+
+    await SettleAsync(socket, """{"type":"setBpm","data":{"bpm":120.0}}""");
+    await SettleAsync(socket, """{"type":"anchor","data":{}}""");
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot before));
+    long downbeat = before.BeatIndex + (before.PositionInBar == 1 ? 0 : 5 - before.PositionInBar);
+
+    await SettleAsync(socket, """{"type":"shiftBar","data":{"beats":1}}""");
+
+    Assert.Equal(1, rig.Grid.PositionOf(downbeat + 1).PositionInBar);
+    Assert.True(rig.Grid.TryGetSnapshot(out BeatGridSnapshot after));
+    Assert.Equal(BarAlignmentMethod.Tap, after.AlignmentMethod);
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  [Fact]
+  public async Task RefusesAShiftWithNoDownbeatToMove() {
+    await AssertErrorAsync("""{"type":"shiftBar","data":{"beats":1}}""", "rejected");
+  }
+
+  [Theory]
+  [InlineData("""{"type":"shiftBar","data":{}}""")]
+  [InlineData("""{"type":"shiftBar","data":{"beats":0}}""")]
+  [InlineData("""{"type":"shiftBar","data":{"beats":4}}""")]
+  [InlineData("""{"type":"shiftBar","data":{"beats":1.5}}""")]
+  public async Task RefusesAShiftThatIsNotAWholeBeatWithinThree(string message) {
+    await AssertErrorAsync(message, "invalid_data");
+  }
+
   [Fact]
   public async Task SetsAndClearsTheManualTempo() {
     FakeWebSocket socket = new FakeWebSocket();

@@ -52,6 +52,18 @@ public readonly record struct SyncSourceStatus(
 /// <param name="LastBeatAgoMs">Audio: milliseconds since the last accepted beat.</param>
 /// <param name="Taps">Manual: taps in the current sequence.</param>
 /// <param name="LastTapAgoMs">Manual: milliseconds since the last tap.</param>
+/// <param name="Deck">rekordbox: the master deck, counted from 1 as rekordbox shows it.</param>
+/// <param name="Detail">
+/// rekordbox: why it is not following a playing deck, in words - rekordbox not running, a
+/// version with no chains, a track with no beatgrid, the deck stopped. Null while it is.
+/// The other sources can say what is wrong with a number; this one's failures are all
+/// different kinds, and a count would not tell them apart.
+/// </param>
+/// <param name="Phrase">
+/// rekordbox: the phrase playing on the deck followed, as rekordbox labels it ("Chorus 2"),
+/// or why there is none, in words - the track has no phrase analysis, or its phrases do not
+/// fit its beatgrid. Null while no deck is followed.
+/// </param>
 public readonly record struct SyncSourceDiagnostics(
   long? Packets = null,
   double? Fps = null,
@@ -59,7 +71,10 @@ public readonly record struct SyncSourceDiagnostics(
   bool? BpmLocked = null,
   double? LastBeatAgoMs = null,
   int? Taps = null,
-  double? LastTapAgoMs = null);
+  double? LastTapAgoMs = null,
+  int? Deck = null,
+  string? Detail = null,
+  string? Phrase = null);
 
 /// <summary>
 /// One way of knowing where the beat is: an Ableton Link session, audio
@@ -143,4 +158,23 @@ public interface ITimelineSink {
   /// the argument is on <see cref="BeatGrid.TryAlignBar"/>.
   /// </param>
   void AlignBar(BarAlignmentMethod method, bool snapToBar = false);
+
+  /// <summary>
+  /// Marks the beat nearest to <paramref name="atMicros"/> as the downbeat, for a
+  /// source that knows where one falls rather than when one is heard - see
+  /// <see cref="BeatGrid.TryAlignBarAt"/>. Not gated on this source being active, for
+  /// the reason <see cref="AlignBar"/> gives.
+  /// </summary>
+  /// <returns>
+  /// False when no timeline is known yet. Unlike a tap, a source can simply try again,
+  /// and needs to know that it has to.
+  /// </returns>
+  bool AlignBarAt(BarAlignmentMethod method, double atMicros);
+
+  /// <summary>
+  /// Offers the phrases of the track playing, or null when there are none to offer any
+  /// more. Not gated on this source being active, for the reason <see cref="AlignBar"/>
+  /// gives: a phrase is a statement about the music, true whoever is timing it.
+  /// </summary>
+  void PublishPhrases(PhraseMap? phrases);
 }

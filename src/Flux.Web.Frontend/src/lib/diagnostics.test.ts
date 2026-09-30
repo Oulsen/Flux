@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { sourceRows } from './diagnostics.ts';
+import { sourceRows, stagePhrase } from './diagnostics.ts';
 import { UNKNOWN } from './format.ts';
 import type { DiagnosticsData } from './protocol.ts';
 
@@ -19,6 +19,24 @@ test('each source is asked only for the counters it keeps', () => {
   assert.deepEqual(labels('link', GRID), ['packets']);
   assert.deepEqual(labels('audio', GRID), ['fps', 'beats', 'bpm lock', 'last beat']);
   assert.deepEqual(labels('manual', GRID), ['taps', 'last tap']);
+  assert.deepEqual(labels('rekordbox', GRID), ['deck', 'status', 'phrase']);
+});
+
+test('rekordbox says in words why it is not following, and nothing when it is', () => {
+  const stopped: DiagnosticsData = { reanchorMaxBeats: 0, deck: 2, detail: 'deck 2 is stopped' };
+  assert.equal(valueOf('rekordbox', stopped, 'deck'), '2');
+  assert.equal(valueOf('rekordbox', stopped, 'status'), 'deck 2 is stopped');
+  assert.equal(valueOf('rekordbox', { reanchorMaxBeats: 0, deck: 1 }, 'status'), 'following');
+  assert.equal(valueOf('rekordbox', GRID, 'deck'), UNKNOWN);
+});
+
+test('rekordbox names the phrase playing, or why there is none, as the server words it', () => {
+  assert.equal(valueOf('rekordbox', { reanchorMaxBeats: 0, deck: 1, phrase: 'Chorus 2' }, 'phrase'), 'Chorus 2');
+  assert.equal(
+    valueOf('rekordbox', { reanchorMaxBeats: 0, deck: 1, phrase: 'none: the phrases do not fit the beatgrid' }, 'phrase'),
+    'none: the phrases do not fit the beatgrid',
+  );
+  assert.equal(valueOf('rekordbox', GRID, 'phrase'), UNKNOWN);
 });
 
 test('no source is offered another source\'s counter', () => {
@@ -77,4 +95,15 @@ test('an elapsed time leaves milliseconds behind once they stop meaning anything
   // noise in a cell sized for three.
   assert.equal(valueOf('manual', { ...GRID, lastTapAgoMs: 940 }, 'last tap'), '940 ms');
   assert.equal(valueOf('manual', { ...GRID, lastTapAgoMs: 62_500 }, 'last tap'), '62.5 s');
+});
+
+test('the stage names a phrase and never the reason there is none', () => {
+  assert.equal(stagePhrase('rekordbox', { reanchorMaxBeats: 0, deck: 1, phrase: 'Chorus 2' }), 'Chorus 2');
+  assert.equal(stagePhrase('rekordbox', { reanchorMaxBeats: 0, deck: 1, phrase: 'none: the phrases do not fit the beatgrid' }), null);
+  assert.equal(stagePhrase('rekordbox', GRID), null);
+  assert.equal(stagePhrase('rekordbox', null), null);
+});
+
+test('the stage names no phrase for a source that does not offer them', () => {
+  assert.equal(stagePhrase('link', { reanchorMaxBeats: 0, phrase: 'Chorus 2' }), null);
 });

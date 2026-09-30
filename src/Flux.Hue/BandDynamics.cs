@@ -97,35 +97,38 @@ internal sealed class BandDynamics {
   private const double LoudEnoughFraction = 0.6;
 
   /// <summary>
-  /// How long the room's typical loudness looks back, which is what running hot is
-  /// measured against.
+  /// Below this fraction of the track's own kick, the kick band counts as not playing
+  /// a kick at all.
   ///
-  /// Twenty seconds is eight to ten bars at 120 to 130 BPM, and both ends of that are
-  /// doing a job. Shorter and a drop becomes its own background while it is still
-  /// playing, so the lift dies under the section it announces. Longer and the other
-  /// complaint returns: a track quieter than the one before it reads as subdued for
-  /// minutes, when the difference is mastering rather than music. At twenty, an
-  /// eight-bar drop holds its lift for most of its length and a new track's level is
-  /// the room's new normal inside half a minute.
+  /// <b>What sizes the beat's pulse, replacing two measures that each failed at one end,
+  /// found on 2026-09-30 by replaying frames recorded at the desk.</b> The first asked
+  /// how far the kick stood out from its own last second, which reads a fifth in a drop,
+  /// where the bassline fills the band and the kicks barely stand out. The patch for that
+  /// let the room's running-hot energy vouch for the beat, which then pulsed a vocal and
+  /// strings build at full on every beat, because a build is running hot by definition.
+  /// What separates the three passages is simpler than either: whether the kick band is
+  /// at the level this track's kick plays at. The recording read about the whole of it
+  /// in the drop, between a fifth and a half in the build - the strings' low end, never
+  /// a kick - and nothing in a break.
   ///
-  /// <b>Flux's own and never listened to</b>, like the two windows above, and paired
-  /// with <see cref="EnergyAtRatio"/>: this decides when the room breathes, that
-  /// decides how easily.
+  /// Two fifths, so the build's residue stays below or barely over it; with
+  /// <see cref="KickPresentAt"/> this is a ramp and not a switch, so a light kick coming
+  /// in under a build still gets a small pulse rather than none. <b>Flux's own, reasoned
+  /// from one recording and then listened to once</b>, and the first thing to move if a
+  /// build pulses too much or a soft kick too little.
   /// </summary>
-  private const double RoomTypicalSeconds = 20.0;
+  private const double KickPresentFrom = 0.4;
 
   /// <summary>
-  /// How far above its own typical the room has to run to count as fully elevated.
+  /// The fraction of the track's own kick at which the beat counts in full.
   ///
-  /// A quarter again, and deliberately smaller than <see cref="TransientAtRatio"/>:
-  /// the band levels are means of squared display bytes, a scale that compresses level
-  /// differences, so a six-decibel rise across the whole room - a real drop - lands
-  /// near a quarter on this ratio rather than near a half. Demanding half again here
-  /// would make the lift something only the hardest drop of the night ever reaches.
-  ///
-  /// Unlistened to, and open to argument like everything else in this file.
+  /// Four fifths rather than all of it, for the reason <see cref="LoudEnoughFraction"/>
+  /// gives: the kick's reference is the loudest it has been in the last minute, which
+  /// ordinary kicks sit a little under, and a gate reaching one only at the loudest kick
+  /// would dim every other beat of the drop. Flux's own and reasoned, like
+  /// <see cref="KickPresentFrom"/>, and open to moving with it.
   /// </summary>
-  private const double EnergyAtRatio = 1.25;
+  private const double KickPresentAt = 0.8;
 
   /// <summary>
   /// How long a band's running average looks back, which is what a transient is measured
@@ -161,11 +164,11 @@ internal sealed class BandDynamics {
   private double midsPeak;
   private double highsPeak;
   private double roomPeak;
+  private double kickLoudest;
 
   private double kickMean;
   private double midsMean;
   private double highsMean;
-  private double roomTypical;
   private bool heardAnything;
 
   /// <summary>
@@ -192,6 +195,11 @@ internal sealed class BandDynamics {
     double loudest = heard.Peak;
     this.roomPeak = Math.Max(loudest, this.roomPeak * roomFall);
 
+    // On the room's minute and not the band's two bars: the band's peak falls far
+    // enough inside a four-second break for the strings' low end to read as a whole
+    // kick, which is precisely what this has to tell apart.
+    this.kickLoudest = Math.Max(heard.Kick, this.kickLoudest * roomFall);
+
     // The room's own reference and not the three band ones: a track with no hats leaves
     // the highs reference under the floor all night, and that is a fact about the track
     // rather than a reason to stop measuring the room.
@@ -207,16 +215,12 @@ internal sealed class BandDynamics {
       this.kickMean = heard.Kick;
       this.midsMean = heard.Mids;
       this.highsMean = heard.Highs;
-      this.roomTypical = loudest;
     } else {
       double approach = 1 - Math.Exp(-elapsed / BandAverageSeconds);
 
       this.kickMean += (heard.Kick - this.kickMean) * approach;
       this.midsMean += (heard.Mids - this.midsMean) * approach;
       this.highsMean += (heard.Highs - this.highsMean) * approach;
-
-      double roomApproach = 1 - Math.Exp(-elapsed / RoomTypicalSeconds);
-      this.roomTypical += (loudest - this.roomTypical) * roomApproach;
     }
 
     SpectrumLevels drive = new SpectrumLevels(
@@ -229,19 +233,15 @@ internal sealed class BandDynamics {
       Above(heard.Mids, this.midsMean),
       Above(heard.Highs, this.highsMean));
 
-    // The transient's shape applied to the room over bars rather than beats: how far
-    // the level runs above what has been typical lately, and zero for a room merely at
-    // its own level. Seeded at the first frame like the means, so the first note of the
-    // night is a note rather than a drop.
-    double energy = this.roomTypical < SilentBelow
+    double kickPresence = this.kickLoudest < SilentBelow
       ? 0
-      : Math.Clamp(((loudest / this.roomTypical) - 1) / (EnergyAtRatio - 1), 0, 1);
+      : Math.Clamp(((heard.Kick / this.kickLoudest) - KickPresentFrom) / (KickPresentAt - KickPresentFrom), 0, 1);
 
     return new RoomSound(
       drive,
       transient,
       Math.Clamp(loudest / (this.roomPeak * LoudEnoughFraction), 0, 1),
-      energy);
+      kickPresence);
   }
 
   /// <summary>
@@ -325,20 +325,12 @@ internal sealed class BandDynamics {
 /// of the last minute, so it dimmed every beat of every track instead of only the quiet
 /// ones. See <see cref="BandDynamics.LoudEnoughFraction"/>.
 /// </param>
-/// <param name="Energy">
-/// How hot the room is running against its own recent typical, 0 to 1.
+/// <param name="KickPresence">
+/// Whether the kick band is playing a kick at this track's own level, 0 to 1.
 ///
-/// The intra-track measure the other three are not. <paramref name="Loudness"/> gates:
-/// it saturates well below the room's loudest precisely so that ordinary playing counts
-/// as simply playing, which is right for the pulse and discards the difference between
-/// a verse and a drop on purpose. This keeps that difference. A section running hotter
-/// than the passage before it reads high for about as long as the typical takes to
-/// catch up, and a steady passage at any level reads as nothing - by then it is the
-/// typical, and a room merely at its own level is not a drop.
-///
-/// Against a running typical rather than the decaying peak, because the peak cannot
-/// answer this question: steady playing sits at its own recent maximum by construction,
-/// so "how close to the loudest" reads full for a quiet verse exactly as it does for
-/// the drop. Zero is the ordinary state here, not a fault.
+/// What a beat's pulse is sized by. Against the loudest the kick has been in the last
+/// minute, ramped between <see cref="BandDynamics"/>'s two kick fractions, so a drop
+/// whose kicks are buried in its bassline still reads as fully present, a build's low
+/// strings read as little or nothing, and a break as nothing at all.
 /// </param>
-internal readonly record struct RoomSound(SpectrumLevels Drive, SpectrumLevels Transient, double Loudness, double Energy);
+internal readonly record struct RoomSound(SpectrumLevels Drive, SpectrumLevels Transient, double Loudness, double KickPresence);

@@ -70,9 +70,12 @@ public class LightEngineTests {
   public void AKickThatLandsAfterTheBeatIsConsumedStillCountsForThePulse() {
     Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
 
-    // A background for the kick to stand out from, and a beat consumed on a frame where
-    // the kick band is doing nothing unusual: the gate reads it as no hit at all.
-    harness.Heard.Bands = new SpectrumLevels(Kick: 0.4, Mids: 0.3, Highs: 0.3);
+    // The track's own kick first, and then a beat consumed in the gap before the next
+    // one lands, where the kick band is at a fraction of it: the gate reads no kick.
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 0.3, Highs: 0.3);
+    harness.Engine.Render();
+    harness.Clock.Advance(TimeSpan.FromSeconds(1));
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 0.3, Highs: 0.3);
     harness.BeatNow(index: 0);
     Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
 
@@ -84,14 +87,18 @@ public class LightEngineTests {
 
   /// <summary>
   /// The other half of the ratchet's contract: it can only pass a hit along, never
-  /// invent one. A beat in a passage where the kick band sits flat stays gated shut
+  /// invent one. A beat in a passage where the kick band sits well under the track's
+  /// own kick stays gated shut
   /// however long the pulse waits, which is what keeps a breakdown dark.
   /// </summary>
   [Fact]
   public void AKickThatNeverArrivesLeavesThePulseGatedShut() {
     Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
 
-    harness.Heard.Bands = new SpectrumLevels(Kick: 0.4, Mids: 0.3, Highs: 0.3);
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 0.3, Highs: 0.3);
+    harness.Engine.Render();
+    harness.Clock.Advance(TimeSpan.FromSeconds(1));
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 0.3, Highs: 0.3);
     harness.BeatNow(index: 0);
     harness.Engine.Render();
 
@@ -276,6 +283,66 @@ public class LightEngineTests {
 
       Assert.Equal(index == 8, changed);
     }
+  }
+
+  /// <summary>
+  /// A phrase starting on a downbeat the bar count would pass over - beat 12 is bar 3,
+  /// and the count changes on even bars - takes a colour, and the count runs on from it:
+  /// two bars after the phrase, not two after the anchor.
+  /// </summary>
+  [Fact]
+  public void APhraseStartChangesTheColourAndRestartsTheBarCount() {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
+    harness.OfferPhrases(endIndex: 400, 0, 12);
+
+    Assert.Equal([8, 12, 20, 28], harness.ChangesOnTime(32));
+  }
+
+  /// <summary>
+  /// A phrase starting off the downbeat takes its colour on its first beat, and the bar
+  /// it starts in is its bar zero: every second bar from there is 20 and 28 wherever in
+  /// bar 12's bar it began. Rounding beats to bars counted a start on beat 14 as 0, 2, 2,
+  /// 4, 4 and changed on every downbeat, and a pickup on 15 changed again a beat later.
+  /// </summary>
+  [Theory]
+  [InlineData(13)]
+  [InlineData(14)]
+  [InlineData(15)]
+  public void APhraseStartingOffTheDownbeatCountsFromTheBarItStartsIn(int start) {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
+    harness.OfferPhrases(endIndex: 400, 0, start);
+
+    Assert.Equal([8, start, 20, 28], harness.ChangesOnTime(32));
+  }
+
+  [Fact]
+  public void WithPhrasesSwitchedOffTheBarCountRunsAsItAlwaysHas() {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0, FollowPhrases: false));
+    harness.OfferPhrases(endIndex: 400, 0, 12);
+
+    Assert.Equal([8, 16, 24], harness.ChangesOnTime(32));
+  }
+
+  [Fact]
+  public void PastTheLastPhraseTheBarCountTakesOverAgain() {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
+    harness.OfferPhrases(endIndex: 20, 0, 12);
+
+    Assert.Equal([8, 12, 24], harness.ChangesOnTime(32));
+  }
+
+  /// <summary>
+  /// The phrases are rekordbox's and the beats may be Link's, a few milliseconds apart, so
+  /// a phrase start either side of its beat has to be that beat's.
+  /// </summary>
+  [Theory]
+  [InlineData(-0.06)]
+  [InlineData(0.06)]
+  public void APhraseStartAHairOffItsBeatStillBelongsToIt(double offBeats) {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
+    harness.OfferPhrases(endIndex: 400, 0, 12 + offBeats);
+
+    Assert.Equal([8, 12, 20, 28], harness.ChangesOnTime(32));
   }
 
   /// <summary>
@@ -862,11 +929,10 @@ public class LightEngineTests {
     Assert.Equal(1.0, Brightness(lights[0]), 3);
     Assert.Equal(0.575, Brightness(lights[1]), 3);
 
-    // The edge light's band is nearly silent, so its cut of the beat is nothing - what
-    // holds it up on a frame this much hotter than the history is the room's own energy,
-    // which lifts every light alike and reads here as the resting level rather than as a
-    // share of the pulse.
-    Assert.Equal(0.49, Brightness(lights[2]), 3);
+    // The edge light's band is at a tenth of its own recent loudest, so it takes a tenth
+    // of the beat. Nothing holds every light up alike between beats any more, so a
+    // band that is not playing leaves its light near the floor.
+    Assert.Equal(0.235, Brightness(lights[2]), 3);
 
     // The room's own colour is the full pulse, not the average of the three: it is what
     // the engine decided this beat was worth before any light's position was consulted.
@@ -1022,40 +1088,46 @@ public class LightEngineTests {
   }
 
   /// <summary>
-  /// A section running hotter than the room has been lifts the resting level between
-  /// beats, which is the difference the loudness gate discards on purpose: it saturates
-  /// so that ordinary playing counts as playing, so a verse and a drop pulse alike, and
-  /// before this the room answered them identically everywhere else too.
+  /// <b>A drop pulses at full height even when its kick does not stand out</b>, and a
+  /// build whose kick band holds only the low end of its strings does not pulse.
   ///
-  /// Measured a second after the beat so the pulse is spent and no kick is hitting:
-  /// whatever holds the room up is its energy and nothing else. And the lift is not
-  /// forever - held long enough, the drop is the room's own level and the rest returns
-  /// to the floor, because a room merely at its own level is not a drop.
+  /// Both cases were watched failing on 2026-09-30, one after the fix for the other. In
+  /// a drop the bassline fills the kick band, so its kicks barely rise above their own
+  /// last second, and a pulse sized by that sat at a fifth. The patch - letting the
+  /// room's running-hot energy vouch for the beat - then pulsed a vocal and strings
+  /// build at full, since a build runs hot by definition. What tells them apart is the
+  /// kick band against this track's own kick, which is what is asserted: flat against
+  /// its own second in the drop and still at the track's level, and at a third of it
+  /// in the build while the rest of the room swells.
   /// </summary>
   [Fact]
-  public void ASectionRunningHotterThanTheRoomHasBeenLiftsTheRestingLevel() {
+  public void ADropPulsesFullyEvenWhenItsKickDoesNotStandOut() {
     Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
 
-    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 0.3, Highs: 0.3);
+    // The track's kick, held flat: nothing for a beat to stand out from.
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.9, Mids: 0.6, Highs: 0.6);
+    harness.Engine.Render();
+    harness.Clock.Advance(TimeSpan.FromSeconds(1));
     harness.BeatNow(index: 0);
+    Assert.Equal(1.0, Brightness(harness.Engine.Render()), 3);
+
+    // A second later the pulse is spent, and nothing holds the room up.
+    harness.Clock.Advance(TimeSpan.FromSeconds(1));
     Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
 
-    // The drop arrives: three times what the room has been. The pulse is long spent, so
-    // the lift is the energy's claim on the resting level and nothing else.
+    // The build: the kick band at a third of the track's kick, the strings swelling.
     harness.Clock.Advance(TimeSpan.FromSeconds(1));
-    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 1, Highs: 1);
-    Assert.Equal(0.49, Brightness(harness.Engine.Render()), 3);
-
-    // Two minutes into the same level it is the room's typical, and the rest settles.
-    harness.Clock.Advance(TimeSpan.FromSeconds(120));
-    double settled = Brightness(harness.Engine.Render());
-    Assert.True(settled < 0.2, $"A level held for two minutes still lifts the rest to {settled:F3}, so the room never settles.");
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 0.9, Highs: 0.8);
+    harness.Engine.Render();
+    harness.BeatNow(index: 1);
+    double build = Brightness(harness.Engine.Render());
+    Assert.True(build < 0.5, $"The build pulsed to {build:F3} on a kick band at a third of the track's kick.");
   }
 
+
   /// <summary>
-  /// The counterpart that keeps the energy honest: a room playing steadily at any level
-  /// is its own typical, so the rest stays on the floor. Without this the measure would
-  /// be reading loudness rather than change, which is the gate's job and already taken.
+  /// Between beats a room playing steadily rests on the floor: nothing but the pulse and
+  /// a band doing something right now lifts a light, and a steady band is doing nothing.
   /// </summary>
   [Fact]
   public void ARoomHoldingItsUsualLevelRestsOnTheFloor() {
@@ -1356,12 +1428,11 @@ public class LightEngineTests {
 
       // A real scheduler, never started. The engine needs one to subscribe to and the
       // tests hand it beats directly, so nothing here runs a thread or invents a tempo.
-      BeatScheduler scheduler = new BeatScheduler(
-        new BeatGrid(Clock, quantum, TimeSpan.FromSeconds(2)),
-        Clock,
-        NullLogger<BeatScheduler>.Instance);
+      Grid = new BeatGrid(Clock, quantum, TimeSpan.FromSeconds(2));
+      BeatScheduler scheduler = new BeatScheduler(Grid, Clock, NullLogger<BeatScheduler>.Instance);
 
       Quantum = quantum;
+      Start = Clock.NowMicros;
 
       Engine = new LightEngine(
         scheduler,
@@ -1382,6 +1453,12 @@ public class LightEngineTests {
     internal HueBridgeService Bridge { get; }
 
     internal LightEngine Engine { get; }
+
+    /// <summary>The grid behind the scheduler, which is where a source's phrases land.</summary>
+    internal BeatGrid Grid { get; }
+
+    /// <summary>When the harness was built, which is where <see cref="MomentOf"/> puts beat 0.</summary>
+    internal double Start { get; }
 
     /// <summary>Beats to the bar, which the grid and the engine are both built on.</summary>
     internal int Quantum { get; }
@@ -1449,6 +1526,44 @@ public class LightEngineTests {
       Clock.Advance(TimeSpan.FromSeconds(2));
 
       return HueOf(Engine.Render());
+    }
+
+    /// <summary>
+    /// The moment beat <paramref name="index"/> falls on at the 120 BPM every beat is
+    /// stamped with, for tests where the beats' moments have to agree with their tempo -
+    /// a phrase is counted from in time, and <see cref="SettledHue"/> spaces beats two
+    /// seconds apart.
+    /// </summary>
+    internal double MomentOf(double index) => Start + (index * 500_000);
+
+    /// <summary>The hue after beat <paramref name="index"/> arrives at <see cref="MomentOf"/> and settles.</summary>
+    internal double SettledHueOnTime(long index) {
+      Engine.OnBeat(BeatAt(index, MomentOf(index)));
+
+      return Settle();
+    }
+
+    /// <summary>Phrases starting at the moments of the given beats, the last one ending at <paramref name="endIndex"/>'s.</summary>
+    internal void OfferPhrases(double endIndex, params double[] starts) {
+      Grid.SetPhrases(new PhraseMap(
+        [.. starts.Select(start => new PhraseMark(PhraseKind.Verse, 0, MomentOf(start)))],
+        MomentOf(endIndex)));
+    }
+
+    /// <summary>Which of beats 0 to <paramref name="count"/> - 1 changed the colour, each arriving on time.</summary>
+    internal List<long> ChangesOnTime(int count) {
+      List<long> changes = [];
+      double previous = SettledHueOnTime(0);
+      for(long index = 1; index < count; index++) {
+        double hue = SettledHueOnTime(index);
+        if(Separation(hue, previous) > HueTolerance) {
+          changes.Add(index);
+        }
+
+        previous = hue;
+      }
+
+      return changes;
     }
 
     private static long FloorMod(long value, long divisor) {

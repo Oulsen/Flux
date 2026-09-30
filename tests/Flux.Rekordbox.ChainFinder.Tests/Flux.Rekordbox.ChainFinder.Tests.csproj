@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The tool's pure parts: the chain searches against memory laid out like rekordbox,
+       and the table writer. The memory sweep against a real process and the console
+       prompts are exercised at the desk, not here. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\Flux.Rekordbox.ChainFinder\Flux.Rekordbox.ChainFinder.csproj" />
+  </ItemGroup>
+
+</Project>

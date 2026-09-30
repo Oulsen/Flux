@@ -15,9 +15,11 @@
   import StrobeButton from './components/StrobeButton.svelte';
   import StagePanel from './components/StagePanel.svelte';
   import AnchorPad from './components/AnchorPad.svelte';
+  import BarShift from './components/BarShift.svelte';
+  import { stagePhrase } from './lib/diagnostics.ts';
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
-  import type { HueEngineData, StageData } from './lib/protocol.ts';
+  import type { DiagnosticsData, HueEngineData, StageData } from './lib/protocol.ts';
   import { bridgeNeedsSetup, colorChangeLabel, showsRooms } from './lib/hue.ts';
   import {
     DRAWER_TABS,
@@ -212,6 +214,21 @@
     socket?.send({ type: 'anchor', data: {} });
   }
 
+  /* The source's reason in words while it has one, and which deck it follows while it
+     does not - diagnostics carry only the active source's fields, which is rekordbox
+     whenever this is shown. */
+  function rekordboxStatus(diagnostics: DiagnosticsData): string | null {
+    if (diagnostics.detail !== undefined) {
+      return diagnostics.detail;
+    }
+
+    return diagnostics.deck !== undefined ? `following deck ${diagnostics.deck}` : null;
+  }
+
+  function shiftBar(beats: number): void {
+    socket?.send({ type: 'shiftBar', data: { beats } });
+  }
+
   function setBpm(bpm: number | null): void {
     socket?.send({ type: 'setBpm', data: { bpm } });
   }
@@ -368,10 +385,24 @@
     </button>
   </div>
 
-  {#if lightsOff}
-    <p class="lights-off">
+  <!-- The reading is also the switch, where there is a room to start: saying the lights
+       are off and then sending somebody into the drawer to change it is two steps for
+       the one thing they glanced at the page to do. Without a room it stays a reading,
+       since a start would be refused. Stopping is offered in the same place, so the
+       switch does not move between the two states - and only there, rather than as a
+       standing "on" notice, since a lit room already says it is on. -->
+  {#if lightsOff && store.hue?.selectedAreaId != null}
+    <button type="button" class="sync switch" onclick={startStream}>
+      light sync off{store.preview !== null ? ' · showing a preview' : ''} · <span class="go">start</span>
+    </button>
+  {:else if lightsOff}
+    <p class="sync">
       light sync off{store.preview !== null ? ' · showing a preview' : ''}
     </p>
+  {:else if store.hue !== null && store.light !== null && !store.protocolMismatch}
+    <button type="button" class="sync switch" onclick={stopStream}>
+      light sync on · <span class="go">stop</span>
+    </button>
   {/if}
 
   {#if store.protocolMismatch}
@@ -409,7 +440,14 @@
         painting of a button - no hover, no press, and no tap on a phone.
       -->
       <div class="control">
-        <AnchorButton manual={store.source === 'manual'} {tap} />
+        {#if store.source === 'rekordbox'}
+          <BarShift shift={shiftBar} />
+        {:else}
+          <AnchorButton manual={store.source === 'manual'} {tap} />
+          {#if store.alignment.method === 'rekordbox'}
+            <BarShift shift={shiftBar} />
+          {/if}
+        {/if}
 
         <!-- Only where there is a room to strobe. Offered without one, the press would
              be refused by a build with no bridge and would light nothing in one with. -->
@@ -419,7 +457,12 @@
       </div>
 
       <div class="cluster">
-        <BeatIndicator quantum={store.quantum} position={store.positionInBar} tick={store.beatTick} />
+        <BeatIndicator
+          quantum={store.quantum}
+          position={store.positionInBar}
+          tick={store.beatTick}
+          phrase={stagePhrase(store.source, store.diagnostics)}
+        />
         <AlignmentBadge aligned={store.alignment.aligned} method={store.alignment.method} />
       </div>
     </div>
@@ -477,7 +520,20 @@
         pending={store.pendingSource}
         select={selectSource}
       />
-      <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {anchor} {setBpm} />
+      <!-- rekordbox reads bar one from the track, so a tap there is a second opinion it
+           overrules at the next seek; what it offers instead is a correction to its grid.
+           It reads bar one under another source's tempo too, and there the correction is
+           offered beside the tap rather than in its place: the tap is still the only fix
+           for a bar that nothing else set, and rekordbox going quiet leaves its last
+           downbeat labelled as its own. -->
+      {#if store.source === 'rekordbox'}
+        <BarShift shift={shiftBar} captions status={rekordboxStatus(store.diagnostics)} />
+      {:else}
+        <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {anchor} {setBpm} />
+        {#if store.alignment.method === 'rekordbox'}
+          <BarShift shift={shiftBar} captions />
+        {/if}
+      {/if}
     </section>
 
     <!--
@@ -923,9 +979,9 @@
   }
 
   /* The mismatch warning's slot, which it never shares: the two are exclusive by the
-     condition above. Quiet rather than alarmed, because lights being off is a state
+     condition above. Quiet rather than alarmed, because lights being off or on is a state
      somebody chose, not a fault. */
-  .lights-off {
+  .sync {
     grid-row: 2;
     align-self: start;
     justify-self: center;
@@ -938,6 +994,23 @@
     font-size: 0.75rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+
+  .switch {
+    /* Taken back from the sheet of glass, like the other controls on it. */
+    pointer-events: auto;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .switch:hover,
+  .switch:focus-visible {
+    border-color: var(--accent);
+    color: var(--ink);
+  }
+
+  .go {
+    color: var(--accent);
   }
 
   .mismatch {

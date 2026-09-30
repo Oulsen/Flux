@@ -2,6 +2,7 @@ using Flux.Audio;
 using Flux.Beat;
 using Flux.Hue;
 using Flux.Midi;
+using Flux.Rekordbox;
 using Flux.Web.Server;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
@@ -178,7 +179,12 @@ internal static class Program {
       ContentRootPath = AppContext.BaseDirectory,
     });
 
+    // The command line again after the local file, so that it still has the last word.
+    // The host reads it before this line, and a local file that spells out a setting -
+    // even as null, which is how the recording paths are written there - would
+    // otherwise quietly overrule what somebody typed for this one run.
     builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
+    builder.Configuration.AddCommandLine(launch.HostArguments);
 
     // The file always, the console only when there is one. The provider is owned by
     // Main rather than by the container, so the last lines of a shutdown are flushed
@@ -217,6 +223,12 @@ internal static class Program {
     // registers nothing with the manager and has no opinion about tempo, it only says
     // where a bar starts - so it goes after the sources rather than among them.
     builder.Services.AddFlxObserver(builder.Configuration);
+
+    // rekordbox, read-only from its memory and analysis files. A source like any other,
+    // and also the downbeat whichever source is selected, since the bar it reads is the
+    // track's own. Last among the sources, so the one that starts reading another
+    // program's memory is the one a startup problem is least likely to be blamed on.
+    builder.Services.AddRekordboxSource(builder.Configuration);
 
     // The lights. Settings and the credential store only, for now: nothing here starts
     // a bridge conversation, and registering it this early is what makes a bad Hue

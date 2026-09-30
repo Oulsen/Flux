@@ -138,6 +138,28 @@ public static class Frames {
     return TryReadString(data, "source", out source);
   }
 
+  /// <summary>
+  /// The furthest a single <c>shiftBar</c> may move the downbeat. Sized for a bar of
+  /// four, rekordbox's bar and the one a shift exists to correct: every distinct
+  /// correction is within three of where it is, and four would restart the bar count
+  /// and change nothing that can be seen in a position. The shift works on a bar of
+  /// <c>Beat:Quantum</c> whatever it is, and three reaches every downbeat in one press
+  /// up to a quantum of seven; at a quantum of three a shift of three moves nothing,
+  /// and above seven a far downbeat takes two presses.
+  /// </summary>
+  public const int MaxBarShift = 3;
+
+  /// <summary>Reads a <c>shiftBar</c> payload: a whole, non-zero number of beats within <see cref="MaxBarShift"/>.</summary>
+  public static bool TryReadShiftBar(JsonElement data, out int beats) {
+    beats = 0;
+    return data.ValueKind == JsonValueKind.Object
+      && data.TryGetProperty("beats", out JsonElement value)
+      && value.ValueKind == JsonValueKind.Number
+      && value.TryGetInt32(out beats)
+      && beats != 0
+      && Math.Abs(beats) <= MaxBarShift;
+  }
+
   /// <summary>Reads the device id out of a <c>selectAudioDevice</c> payload.</summary>
   public static bool TryReadDeviceId(JsonElement data, out string deviceId) {
     return TryReadString(data, "deviceId", out deviceId);
@@ -219,7 +241,7 @@ public static class Frames {
   /// with the name quoted - which this cannot produce and the caller can.
   /// </summary>
   public static bool TryReadLightSettings(JsonElement data, out HueEngineData engine) {
-    engine = new HueEngineData(string.Empty, 0, 0, 0, 0, 1, string.Empty, false, 0);
+    engine = new HueEngineData(string.Empty, 0, 0, 0, 0, 1, string.Empty, false, 0, false);
 
     if(data.ValueKind != JsonValueKind.Object
       || !TryReadString(data, "palette", out string palette)
@@ -230,11 +252,12 @@ public static class Frames {
       || !TryReadInt(data, "colorCount", out int colorCount)
       || !TryReadString(data, "colorLayout", out string colorLayout)
       || !TryReadBool(data, "strobe", out bool strobe)
-      || !TryReadInt(data, "strobeCycle", out int strobeCycle)) {
+      || !TryReadInt(data, "strobeCycle", out int strobeCycle)
+      || !TryReadBool(data, "followPhrases", out bool followPhrases)) {
       return false;
     }
 
-    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth, colorCount, colorLayout, strobe, strobeCycle);
+    engine = new HueEngineData(palette, bars, pulseMs, brightness, pulseDepth, colorCount, colorLayout, strobe, strobeCycle, followPhrases);
     return true;
   }
 

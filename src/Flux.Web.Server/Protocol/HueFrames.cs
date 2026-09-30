@@ -84,7 +84,8 @@ internal static class HueFrames {
       light.ColorCount,
       LayoutName(light.ColorLayout),
       light.Strobe,
-      light.StrobeCycle);
+      light.StrobeCycle,
+      light.FollowPhrases);
   }
 
   /// <summary>A switch with no default arm, for the reason <see cref="PaletteName"/> is one.</summary>

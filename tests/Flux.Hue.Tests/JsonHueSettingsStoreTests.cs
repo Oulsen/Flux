@@ -110,6 +110,20 @@ public sealed class JsonHueSettingsStoreTests: IDisposable {
     Assert.True(light?.IsValid());
   }
 
+  /// <summary>
+  /// Following phrases is on by default, and a bool that did not exist when the file was
+  /// written would read as false - switching it off for everybody who upgrades.
+  /// </summary>
+  [Fact]
+  public void AFileFromBeforePhrasesExistedComesBackFollowingThem() {
+    Directory.CreateDirectory(_directory);
+    File.WriteAllText(
+      Path.Combine(_directory, "hue-settings.json"),
+      """{ "Light": { "Palette": "Warm", "ColorChangeBars": 2, "PulseMs": 300, "Strobe": false, "StrobeCycle": 50 } }""");
+
+    Assert.True(Store().Load().Light?.FollowPhrases);
+  }
+
   private JsonHueSettingsStore Store() {
     return new JsonHueSettingsStore(_directory, NullLogger<JsonHueSettingsStore>.Instance);
   }

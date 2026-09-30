@@ -60,8 +60,13 @@
 </div>
 
 <style>
+  /* A grid that wraps rather than a row that cannot: four names side by side need
+     about 380px, the drawer leaves about 350, and the last button - rekordbox, the one
+     usually active - was cut off at the drawer's edge. Two by two in the drawer, four
+     across wherever there is room for them. */
   .selector {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
     gap: 0.5rem;
   }
 
@@ -73,7 +78,7 @@
   }
 
   .option {
-    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;

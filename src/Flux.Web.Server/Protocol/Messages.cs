@@ -45,7 +45,7 @@ public sealed record GridData(double Bpm, double Beat, long BeatIndex, int Posit
 /// to show: which sources have a signal right now. The alternative is a user
 /// discovering that audio was hearing nothing by switching to it mid-set.
 /// </summary>
-/// <param name="Name">The source's protocol name: "link", "audio" or "manual".</param>
+/// <param name="Name">The source's protocol name: "link", "audio", "manual" or "rekordbox".</param>
 /// <param name="State">"waiting", "live" or "quiet".</param>
 /// <param name="Confidence">0 to 1. Only meaningful for a source that estimates the tempo rather than being told it.</param>
 public sealed record SourceReportData(string Name, string State, double Confidence);
@@ -54,7 +54,7 @@ public sealed record SourceReportData(string Name, string State, double Confiden
 /// Whether the bar has been anchored, and by what.
 /// </summary>
 /// <param name="Aligned">Whether the bar position means anything musically.</param>
-/// <param name="Method">"cue", "tap" or "drop"; null exactly when <paramref name="Aligned"/> is false.</param>
+/// <param name="Method">"cue", "tap", "drop" or "rekordbox"; null exactly when <paramref name="Aligned"/> is false.</param>
 public sealed record AlignmentData(bool Aligned, string? Method);
 
 /// <summary>
@@ -76,6 +76,9 @@ public sealed record AlignmentData(bool Aligned, string? Method);
 /// <param name="LastBeatAgoMs">Audio: milliseconds since the last accepted beat.</param>
 /// <param name="Taps">Manual: taps in the current sequence.</param>
 /// <param name="LastTapAgoMs">Manual: milliseconds since the last tap.</param>
+/// <param name="Deck">rekordbox: the master deck, from 1.</param>
+/// <param name="Detail">rekordbox: why it is not following a playing deck, in words; absent while it is.</param>
+/// <param name="Phrase">rekordbox: the phrase playing as rekordbox labels it, or why there is none, in words; absent while no deck is followed.</param>
 public sealed record DiagnosticsData(
   double ReanchorMaxBeats,
   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Packets = null,
@@ -84,7 +87,10 @@ public sealed record DiagnosticsData(
   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? BpmLocked = null,
   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? LastBeatAgoMs = null,
   [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Taps = null,
-  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? LastTapAgoMs = null);
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? LastTapAgoMs = null,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Deck = null,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Detail = null,
+  [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Phrase = null);
 
 /// <summary>
 /// The continuous picture, sent at a fixed rate whether or not anything moved.
@@ -268,7 +274,8 @@ public sealed record HueData(
 /// <param name="ColorLayout">How the room is divided between those colours: "radial", "alternating" or "random". A no-op at one colour.</param>
 /// <param name="Strobe">Whether the room strobes white on the beat grid until switched off. Off by default. Holding the strobe button is a separate message and never shows here.</param>
 /// <param name="StrobeCycle">How long one strobe cycle is, 10 to 100 per cent of a beat, white for the first quarter of each. Applies to a held strobe as well as a switched-on one.</param>
-public sealed record HueEngineData(string Palette, int ColorChangeBars, int PulseMs, int Brightness, int PulseDepth, int ColorCount, string ColorLayout, bool Strobe, int StrobeCycle);
+/// <param name="FollowPhrases">Whether a phrase starting changes the colour and restarts the bar count, when the track playing has phrases. On by default.</param>
+public sealed record HueEngineData(string Palette, int ColorChangeBars, int PulseMs, int Brightness, int PulseDepth, int ColorCount, string ColorLayout, bool Strobe, int StrobeCycle, bool FollowPhrases);
 
 /// <summary>
 /// One analyzer frame, for the visualiser.

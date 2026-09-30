@@ -96,6 +96,12 @@ public sealed class BeatScheduler: IHostedService, IDisposable {
     remove => this.grid.BarAligned -= value;
   }
 
+  /// <summary>The grid's <see cref="BeatGrid.Phrases"/>, passed through for the same reason as <see cref="BarAligned"/>.</summary>
+  public PhraseMap? Phrases => this.grid.Phrases;
+
+  /// <summary>The grid's <see cref="BeatGrid.Quantum"/>, passed through for the same reason as <see cref="BarAligned"/>.</summary>
+  public int Quantum => this.grid.Quantum;
+
   public Task StartAsync(CancellationToken cancellationToken) {
     this.thread = new Thread(this.Run) {
       Name = "Flux beat scheduler",

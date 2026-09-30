@@ -1,6 +1,6 @@
 # Flux WebSocket protocol
 
-**Protocol version 1.**
+**Protocol version 2.**
 
 Flux keeps all state on the server. Browsers are dumb terminals: they render what
 arrives and send control messages back. This document is the contract between
@@ -131,6 +131,21 @@ refusal and the misreading the version exists to prevent. Making the fields opti
 instead would have broken the rule that message stands on: that it is one complete
 statement of the look, never a patch.
 
+Version 2 grew again in Phase 6 without breaking. rekordbox arrived as a fourth
+source, `"rekordbox"`, and as a fourth way of anchoring the bar, also `"rekordbox"`;
+`diagnostics` gained its `deck` and `detail`; and `shiftBar` is a new inbound type.
+The two new values in existing fields are the part to argue. This document has always
+told a client to expect a source it does not know and to degrade rather than fail,
+and an older page does exactly that: it names the source as the server does, shows
+no diagnostics rows under it, and reads the alignment as a bar anchored by something
+it cannot name. The bar position it draws is still right, which is the difference
+between a degradation and a misreading.
+
+Phase 6 then gave the light engine rekordbox's phrases: `setLightSettings` gained
+`followPhrases` as a **required** field, the way `strobe` arrived, and `diagnostics`
+gained `phrase`. The required field is loud for the reason given above, and `phrase`
+is one more rekordbox row that an older page does not draw.
+
 Phase 2's lesson about `devices` is worth repeating rather than filing, because
 this document is once again describing messages before anything produces them.
 Where that left a field's honesty uncertain the field is nullable rather than
@@ -171,8 +186,8 @@ Sent once, immediately after the socket opens, before anything else.
 
 ```json
 { "type": "hello", "data": {
-  "protocol": 1,
-  "app": "0.5.0",
+  "protocol": 2,
+  "app": "0.6.0",
   "quantum": 4,
   "stateHz": 20,
   "spectrumHz": 30,
@@ -232,7 +247,7 @@ changed. It is a snapshot and is never a delta.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `source` | string | The sync source driving the grid: `"link"`, `"audio"` or `"manual"`. `"none"` when a build has no sources at all, which is also the only case where `sources` is empty |
+| `source` | string | The sync source driving the grid: `"link"`, `"audio"`, `"manual"` or `"rekordbox"`. `"none"` when a build has no sources at all, which is also the only case where `sources` is empty |
 | `sourceState` | string | `"waiting"`, `"live"` or `"quiet"`, for `source` |
 | `sources` | array | Every source this build has, whether or not it is the active one |
 | `grid` | object or **null** | Null exactly when `sourceState` is `"waiting"` |
@@ -273,7 +288,7 @@ to ask.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `name` | string | `"link"`, `"audio"` or `"manual"` |
+| `name` | string | `"link"`, `"audio"`, `"manual"` or `"rekordbox"` |
 | `state` | string | `"waiting"`, `"live"` or `"quiet"`, as above |
 | `confidence` | number | 0 to 1, how much the source trusts its own tempo |
 
@@ -296,18 +311,33 @@ nobody has changed their mind.
 | Field | Type | Meaning |
 |---|---|---|
 | `aligned` | bool | Whether `positionInBar` means anything musically. Same value as `grid.barAligned` |
-| `method` | string or **null** | `"cue"`, `"tap"` or `"drop"`; null exactly when `aligned` is false |
+| `method` | string or **null** | `"cue"`, `"tap"`, `"drop"` or `"rekordbox"`; null exactly when `aligned` is false |
 
-No source transmits a downbeat, so bar 1 comes from a cue press on an audible
-deck, a tap in the web UI, or the detector deciding a drop landed. The three are
-not equally trustworthy and only the user can judge which applies, so the method
-travels with the alignment: showing what aligned the bar is what lets a wrong
+Only one source knows where a bar starts: rekordbox, which reads it from the track's
+own beatgrid. It sets the bar whichever source is keeping time, so with Link selected
+the tempo is Link's and bar 1 is rekordbox's. Otherwise bar 1 comes from a cue press
+on an audible deck, a tap in the web UI, or the detector deciding a drop landed.
+These are not equally trustworthy and only the user can judge which applies, so the
+method travels with the alignment: showing what aligned the bar is what lets a wrong
 one be recognised as wrong.
 
-An alignment is a beat index, so anything that renumbers the beat - a tempo
-change, a session change, a source switch, a tap - clears it and it has to be
-made again. That is a property of the beat numbering rather than a shortcoming
-of the anchor: see `beat` below.
+When rekordbox names no master deck, or the master cannot be read, the deck that is
+playing stands in for the master deck: the one on air while the next is started, and the next once the first
+stops.
+
+rekordbox sets the bar when there is a new reason to read it - a new track on the
+master deck, a different master, playback starting, a jump in the track - and not in
+between, so a tap holds until the next of those. A grid whose downbeat is a beat off
+is corrected with `shiftBar`, which rekordbox keeps for the rest of the track when
+rekordbox set the bar.
+
+An alignment is a beat index, and the beat number is not a stable identity: a
+tempo change, a session change or a source switch renumbers it wholesale. The
+anchor survives that. The grid knows how far the numbering moved and moves the
+anchor with it, rounded to the nearest beat, so bar 1 stays where it was in the
+music rather than at the number it had. What does clear it is the grid having no
+timeline at all - switching to a source with nothing to show yet, or the active
+source withdrawing its tempo - since then there is no beat for an anchor to be.
 
 ### `state.light`
 
@@ -352,11 +382,12 @@ is a fact about each band on its own: a hat pattern under a held chord lifts the
 lights whether or not anything is louder elsewhere. That is the difference between a
 room the music moves through and a set of simultaneous flashes at different heights.
 
-**The pulse answers the music and not only the grid**, and it does so in three ways at
-once because they are three different questions.
+**The pulse answers the music and not only the grid**, and it does so in two ways at
+once because they are two different questions.
 
-*How hard did this beat hit* is the kick band's jump above its own recent average,
-read as the beat lands and allowed to rise - never fall - while the pulse is alive.
+*Is a kick playing on this beat* is the kick band against the loudest this track's
+kick has been over about the last minute, ramped so that under two fifths of it is no
+kick and four fifths or more is a whole one, read as the beat lands and allowed to rise - never fall - while the pulse is alive.
 It may rise because the light path runs deliberately ahead of the audio, so the kick a
 beat announces has usually not reached the analyzer at the moment the beat is consumed;
 it never falls, so the fade is not cut off by the gap after the kick that caused it.
@@ -367,8 +398,11 @@ and it is the unison rather than the brightness that gives it away. What carries
 break instead is the per-band response above: with the pulse out of the way the lights
 follow their own bands, so hats lift the outer lights and a stab lifts the middle.
 There is no break mode; this is what the room already does once the pulse stops
-sitting on top of it. The measure is the transient and not the level, because a
-breakdown often still has bass in it and what it lacks is a kick landing.
+sitting on top of it. The measure is against the track's own kick and not against
+the band's last second, which is what it was until 2026-09-30: a drop's bassline fills
+the band, so its kicks barely stand out from their own second and the drop pulsed at a
+fifth, while the bass left under a break or a build of strings sits well under what
+the track's kick does and reads as little or nothing.
 
 *Is anything playing at all* is how loud the room is now against the loudest it has
 been over about the last minute, applied continuously rather than captured, so a
@@ -380,18 +414,7 @@ average looks back over, and longer than the two bars its level is measured agai
 breakdown runs sixteen to thirty-two bars, and a reference that forgot inside one
 would decide halfway through the break that the break is now normal.
 
-*Is this section loud for this track* is how hot the room runs against its own typical
-of about the last twenty seconds, and it is spent on the resting level rather than on
-the pulse: a drop lifts what the lights fall back to between beats, and a steady
-passage rests on the floor as it always did, because by then it is the typical. This
-is the difference the loudness measure discards on purpose - it saturates well below
-the room's loudest precisely so that ordinary playing counts as simply playing, which
-means it cannot also say how loud - and it is what makes a verse and a drop read as
-two different rooms rather than one. It is also why a track quieter than the one
-before it reads as subdued only for its first half minute rather than for its whole
-length: its level becomes the room's typical, and the room breathes around that.
-
-**None of the three reaches the floor itself.** All of them spend the range above it,
+**Neither reaches the floor itself.** Both spend the range above it,
 and the floor is never zero while a stream is open - a light that goes out is
 indistinguishable from one that has stopped receiving anything. A `brightness` of 0
 is still black, because that is a blackout and somebody asking for no light should
@@ -535,6 +558,9 @@ nothing rather than a number that means nothing.
 | `lastBeatAgoMs` | number | audio | Milliseconds since the last accepted beat |
 | `taps` | int | manual | Taps in the current sequence, up to the eight the estimate uses |
 | `lastTapAgoMs` | number | manual | Milliseconds since the last tap |
+| `deck` | int | rekordbox | The deck being followed, counted from 1 as rekordbox shows it: the master deck, or when rekordbox names none or the master cannot be read, the deck that is playing. Absent until rekordbox has been read |
+| `detail` | string | rekordbox | Why it is not following a playing deck, in words: rekordbox not running, running as administrator, a version Flux has no chains for, a track with no beatgrid, a deck whose tempo or playhead cannot be read for a moment, the deck stopped, no deck playing while rekordbox names no master. **Absent while it is following one**, so its absence is the good state |
+| `phrase` | string | rekordbox | The phrase playing on the deck followed as rekordbox labels it, such as `"Chorus 2"` or `"Down"`, or why there is none, in words beginning `"none: "`: no phrase analysis, phrases that do not fit the beatgrid, before the first phrase or past the last. Display text, not an enumeration. Absent while no deck is followed |
 
 `reanchorMaxBeats` is the grid's own metric rather than any source's, which is
 why it is always present: it measures whether extrapolating the current timeline
@@ -709,7 +735,7 @@ immediately after `hello`, and then **only when something changes**.
   "selectedAreaId": "6f3a1c58-0c1e-4f1a-9b7d-2f8e5a0d4c11",
   "pairingSecondsRemaining": null,
   "latencyOffsetMs": 90,
-  "engine": { "palette": "random", "colorChangeBars": 4, "pulseMs": 240, "brightness": 100, "pulseDepth": 85, "colorCount": 1, "colorLayout": "radial", "strobe": false, "strobeCycle": 50 },
+  "engine": { "palette": "random", "colorChangeBars": 4, "pulseMs": 240, "brightness": 100, "pulseDepth": 85, "colorCount": 1, "colorLayout": "radial", "strobe": false, "strobeCycle": 50, "followPhrases": true },
   "message": null
 }}
 ```
@@ -781,6 +807,7 @@ documents the ranges and what each value does; this is what is in force now.
 | `colorLayout` | string | How the room is divided between them: `radial`, `alternating` or `random` |
 | `strobe` | bool | Whether the strobe is switched on. **A held strobe button never shows here** |
 | `strobeCycle` | int | How long one strobe cycle is, 10 to 100 per cent of a beat |
+| `followPhrases` | bool | Whether a phrase starting changes the colour and restarts the bar count, when the track has phrases |
 
 **Named `engine` and not `light`, because `state.light` already exists and means
 something else** - what the stream is achieving, as a measurement. These are
@@ -1003,7 +1030,9 @@ that lights its own button on click will keep lying about it after a rejection.
 Switching adopts that source's last known timeline immediately, so a manual
 tempo set two minutes ago is still there when Manual is selected. The beat
 numbering is rebased by the switch, exactly as a Link session change rebases it,
-so the bar alignment clears and has to be made again.
+and the bar alignment is carried across the rebase, so the downbeat stays where it
+was in the music. Switching to a source that has not published yet leaves the grid
+with nothing, and the alignment goes with it.
 
 ### `selectAudioDevice`
 
@@ -1067,6 +1096,34 @@ side that is what it is: a human press saying where bar one starts.
 
 Like `tap`, it works whatever the active source, on the same argument. With no
 timeline on the grid there is no beat to anchor, and the press does nothing.
+
+### `shiftBar`
+
+```json
+{ "type": "shiftBar", "data": { "beats": 1 } }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `beats` | int | Whole beats to move bar 1 by, from -3 to 3 and not 0. Positive is later |
+
+Moves the downbeat and keeps what set it, so a bar anchored by rekordbox and moved a
+beat still reads back as `"rekordbox"`. It exists for a track whose rekordbox
+beatgrid has the downbeat in the wrong place: a tap would fix that only until the next
+seek, when rekordbox reads the bar from the grid again, while a shift is kept as a
+correction and applied every time rekordbox reads the bar for the rest of the track.
+A new track on the master starts from its own grid again.
+
+Works on a bar anchored any way, not only by rekordbox, but only a shift of a bar
+rekordbox set is kept as its correction. A bar a cue press or a tap set is moved and
+nothing more: the press replaced rekordbox's downbeat until the next seek, and a shift
+correcting it says nothing about the track's grid. Past 3 is refused rather than
+wrapped: at rekordbox's four beats to the bar, four is a whole bar and moves nothing a
+position can show. The range is sized for that bar; at another quantum a shift moves
+by the beats given all the same, so a bar of eight takes two presses to reach its
+furthest downbeat. With no
+anchored bar there is nothing to move, and that is `rejected` rather than ignored,
+because a button that does nothing and says nothing looks broken.
 
 ### `setBpm`
 
@@ -1313,7 +1370,8 @@ is `invalid_data`.
   "colorCount": 1,
   "colorLayout": "radial",
   "strobe": false,
-  "strobeCycle": 50
+  "strobeCycle": 50,
+  "followPhrases": true
 }}
 ```
 
@@ -1328,6 +1386,7 @@ is `invalid_data`.
 | `colorLayout` | string | How the room is divided between them: `radial`, `alternating` or `random`. A no-op at one colour |
 | `strobe` | bool | Whether the room strobes white on the beat grid until this is switched off. **Off by default** |
 | `strobeCycle` | int | How long one strobe cycle is, 10 to 100 per cent of a beat. **Smaller is faster**: 50 flashes twice a beat, 100 once |
+| `followPhrases` | bool | Whether a phrase starting changes the colour and restarts the `colorChangeBars` count, when the track playing has phrases. **On by default** |
 
 Sets how beats become colour. **Every field is required**: this is one complete
 statement of how the lights should look, not a patch, for the reason `subscribe`
@@ -1358,6 +1417,20 @@ frame carries - four by default, and the engine has no separate opinion about it
 Where no downbeat is known - `alignment.method` of `none` - it falls back to every
 `quantum x n`-th beat from wherever the numbering starts, because changing on a
 guessed phase is worth more than not changing at all.
+
+**With `followPhrases` on, a phrase restarts the count.** rekordbox reads the phrases
+of the track on its master deck - intro, verse, up, down, chorus, bridge, outro - and
+a phrase starting always takes a colour, with the count running on from there: every
+`colorChangeBars` bars from the phrase start rather than from the anchor. The anchor
+still puts the changes on downbeats, but it does not say which downbeat the count
+should run from. rekordbox sets it at the downbeat nearest the playhead on every load,
+master change and jump, which is rarely where a phrase begins, and then every change
+lands a bar or three off the track's structure. The phrases hold whichever source keeps
+time, as rekordbox's downbeat does. A track whose phrases do not fit its beatgrid - a
+few whose grid was set to half or double tempo after rekordbox found the phrases -
+offers none, and neither do Link, audio or a typed tempo on their own. Without phrases,
+or with the setting off, the count runs from the anchor exactly as above. The
+`diagnostics` field `phrase` shows which phrase is playing, or why there is none.
 
 **`colorCount` splits the room along the frequency axis**, which is the same axis
 that already decides how hard each light is hit: at two, the lights listening to the

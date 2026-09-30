@@ -6,11 +6,13 @@
     position: number;
     /** Increments once per beat, which is what retriggers the flash. */
     tick: number;
+    /** The phrase playing, as rekordbox labels it, or null when there is none to name. */
+    phrase: string | null;
   }
 
   // Whether the bar is anchored, and by what, is `AlignmentBadge`'s to say. Two
   // components rendering the same fact is how they end up disagreeing about it.
-  const { quantum, position, tick }: Props = $props();
+  const { quantum, position, tick, phrase }: Props = $props();
 
   const slots = $derived(Array.from({ length: Math.max(1, quantum) }, (_, index) => index + 1));
 </script>
@@ -29,6 +31,15 @@
       {/each}
     </div>
   {/key}
+
+  <!-- Under the beat because a phrase is the beat counted larger: the dots are the
+       bar, this is the section the bars belong to. The line is always there, empty
+       when there is nothing to name, so the dots do not jump when a phrase appears. -->
+  <p class="phrase">
+    {#key phrase}
+      <span class="name">{phrase ?? ''}</span>
+    {/key}
+  </p>
 </div>
 
 <style>
@@ -56,6 +67,32 @@
     background: var(--accent);
     border-color: var(--accent);
     animation: strike 320ms ease-out;
+  }
+
+  /* The badge's register, since it sits directly beneath it over the same stage. */
+  .phrase {
+    margin: 0;
+    min-height: 1.2em;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    color: var(--ink-dim);
+    text-align: center;
+  }
+
+  /* A phrase starting is the moment the colour changes, so the name arrives with
+     a brief accent rather than silently swapping. */
+  .name {
+    animation: arrive 900ms ease-out;
+  }
+
+  @keyframes arrive {
+    from {
+      color: var(--accent);
+    }
+
+    to {
+      color: var(--ink-dim);
+    }
   }
 
   @keyframes strike {

@@ -281,7 +281,10 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
       source.BpmLocked,
       source.LastBeatAgoMs,
       source.Taps,
-      source.LastTapAgoMs);
+      source.LastTapAgoMs,
+      source.Deck,
+      source.Detail,
+      source.Phrase);
   }
 
   /// <summary>
@@ -305,6 +308,7 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
       BarAlignmentMethod.Cue => "cue",
       BarAlignmentMethod.Tap => "tap",
       BarAlignmentMethod.Drop => "drop",
+      BarAlignmentMethod.Rekordbox => "rekordbox",
       _ => null,
     };
   }

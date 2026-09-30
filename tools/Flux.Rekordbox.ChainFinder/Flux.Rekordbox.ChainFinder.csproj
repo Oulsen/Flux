@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A desk tool, not shipped. CI builds it and runs its searches against laid-out
+       memory in Flux.Rekordbox.ChainFinder.Tests, but the tool itself is only ever run
+       at the desk against a live rekordbox. It reads rekordbox the same read-only way
+       Flux does, reusing Flux.Rekordbox's process access and PointerChain, and sweeps
+       memory to find the chains a new rekordbox version needs. Its output is a block
+       appended to src/Flux.Rekordbox/chains.json. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Flux.Rekordbox.ChainFinder.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Flux.Rekordbox\Flux.Rekordbox.csproj" />
+  </ItemGroup>
+
+</Project>
