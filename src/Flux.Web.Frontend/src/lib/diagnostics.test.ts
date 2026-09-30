@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { sourceRows } from './diagnostics.ts';
+import { sourceRows, stagePhrase } from './diagnostics.ts';
 import { UNKNOWN } from './format.ts';
 import type { DiagnosticsData } from './protocol.ts';
 
@@ -95,4 +95,15 @@ test('an elapsed time leaves milliseconds behind once they stop meaning anything
   // noise in a cell sized for three.
   assert.equal(valueOf('manual', { ...GRID, lastTapAgoMs: 940 }, 'last tap'), '940 ms');
   assert.equal(valueOf('manual', { ...GRID, lastTapAgoMs: 62_500 }, 'last tap'), '62.5 s');
+});
+
+test('the stage names a phrase and never the reason there is none', () => {
+  assert.equal(stagePhrase('rekordbox', { reanchorMaxBeats: 0, deck: 1, phrase: 'Chorus 2' }), 'Chorus 2');
+  assert.equal(stagePhrase('rekordbox', { reanchorMaxBeats: 0, deck: 1, phrase: 'none: the phrases do not fit the beatgrid' }), null);
+  assert.equal(stagePhrase('rekordbox', GRID), null);
+  assert.equal(stagePhrase('rekordbox', null), null);
+});
+
+test('the stage names no phrase for a source that does not offer them', () => {
+  assert.equal(stagePhrase('link', { reanchorMaxBeats: 0, phrase: 'Chorus 2' }), null);
 });

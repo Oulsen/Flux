@@ -179,7 +179,12 @@ internal static class Program {
       ContentRootPath = AppContext.BaseDirectory,
     });
 
+    // The command line again after the local file, so that it still has the last word.
+    // The host reads it before this line, and a local file that spells out a setting -
+    // even as null, which is how the recording paths are written there - would
+    // otherwise quietly overrule what somebody typed for this one run.
     builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
+    builder.Configuration.AddCommandLine(launch.HostArguments);
 
     // The file always, the console only when there is one. The provider is owned by
     // Main rather than by the container, so the last lines of a shutdown are flushed

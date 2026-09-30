@@ -16,6 +16,7 @@
   import StagePanel from './components/StagePanel.svelte';
   import AnchorPad from './components/AnchorPad.svelte';
   import BarShift from './components/BarShift.svelte';
+  import { stagePhrase } from './lib/diagnostics.ts';
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
   import type { DiagnosticsData, HueEngineData, StageData } from './lib/protocol.ts';
@@ -384,10 +385,24 @@
     </button>
   </div>
 
-  {#if lightsOff}
-    <p class="lights-off">
+  <!-- The reading is also the switch, where there is a room to start: saying the lights
+       are off and then sending somebody into the drawer to change it is two steps for
+       the one thing they glanced at the page to do. Without a room it stays a reading,
+       since a start would be refused. Stopping is offered in the same place, so the
+       switch does not move between the two states - and only there, rather than as a
+       standing "on" notice, since a lit room already says it is on. -->
+  {#if lightsOff && store.hue?.selectedAreaId != null}
+    <button type="button" class="sync switch" onclick={startStream}>
+      light sync off{store.preview !== null ? ' · showing a preview' : ''} · <span class="go">start</span>
+    </button>
+  {:else if lightsOff}
+    <p class="sync">
       light sync off{store.preview !== null ? ' · showing a preview' : ''}
     </p>
+  {:else if store.hue !== null && store.light !== null && !store.protocolMismatch}
+    <button type="button" class="sync switch" onclick={stopStream}>
+      light sync on · <span class="go">stop</span>
+    </button>
   {/if}
 
   {#if store.protocolMismatch}
@@ -439,7 +454,12 @@
       </div>
 
       <div class="cluster">
-        <BeatIndicator quantum={store.quantum} position={store.positionInBar} tick={store.beatTick} />
+        <BeatIndicator
+          quantum={store.quantum}
+          position={store.positionInBar}
+          tick={store.beatTick}
+          phrase={stagePhrase(store.source, store.diagnostics)}
+        />
         <AlignmentBadge aligned={store.alignment.aligned} method={store.alignment.method} />
       </div>
     </div>
@@ -949,9 +969,9 @@
   }
 
   /* The mismatch warning's slot, which it never shares: the two are exclusive by the
-     condition above. Quiet rather than alarmed, because lights being off is a state
+     condition above. Quiet rather than alarmed, because lights being off or on is a state
      somebody chose, not a fault. */
-  .lights-off {
+  .sync {
     grid-row: 2;
     align-self: start;
     justify-self: center;
@@ -964,6 +984,23 @@
     font-size: 0.75rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+
+  .switch {
+    /* Taken back from the sheet of glass, like the other controls on it. */
+    pointer-events: auto;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .switch:hover,
+  .switch:focus-visible {
+    border-color: var(--accent);
+    color: var(--ink);
+  }
+
+  .go {
+    color: var(--accent);
   }
 
   .mismatch {

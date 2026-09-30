@@ -78,3 +78,19 @@ export function sourceRows(source: string, diagnostics: DiagnosticsData): Diagno
       return [];
   }
 }
+
+/**
+ * The phrase to name on the stage, beside the beat, or null for none.
+ *
+ * Only a phrase and never the reason there is none. The drawer's `phrase` row
+ * gives the reason, which is advice for somebody fixing things; on the stage it
+ * would be a sentence of small print sitting under the beat for the whole of a
+ * track without phrases. The `"none: "` prefix is the protocol's own marker for
+ * that case, documented as such, so testing it is reading the contract rather
+ * than guessing at display text.
+ */
+export function stagePhrase(source: string, diagnostics: DiagnosticsData | null): string | null {
+  const phrase = source === 'rekordbox' ? diagnostics?.phrase : undefined;
+
+  return phrase === undefined || phrase.startsWith('none: ') ? null : phrase;
+}

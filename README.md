@@ -77,7 +77,9 @@ measured by somebody standing in the room watching both.
 - Shows the look before the room is lit: with light sync off the visualizer is
   drawn in the colours the light engine would send, laid out as the selected
   room's lights, so palettes and colour splits can be judged with the bulbs off
-  or with no bridge at all. The stage says so while it is a preview.
+  or with no bridge at all. The stage says so while it is a preview, and the
+  notice that says so is also the switch: it starts light sync, and while the
+  lights are live the same place stops it.
 - Streams state, beats, spectrum and bridge status over a WebSocket. The wire
   contract is [docs/protocol.md](docs/protocol.md).
 
@@ -203,7 +205,8 @@ An `appsettings.local.json` beside it overrides any of these and is not
 committed, which is what the recording keys above are usually set from: a
 recording path is a fact about one machine, and the diagnostic settings worth
 turning on while investigating something are rarely worth turning on for
-everyone.
+everyone. The command line overrides both, for one run: `-- --Audio:RecordFramesPath=take-01.jsonl`
+after `dotnet run` records without editing either file.
 
 ## Tests
 
