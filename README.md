@@ -161,7 +161,7 @@ backend.
 |---|---|---|
 | `Web:Port` | `5050` | HTTP and WebSocket port for the UI |
 | `Beat:DefaultSource` | `link` | Which sync source is selected at startup: `link`, `audio`, `manual` or `rekordbox`. Only where a source has never been chosen on the page: one chosen there is remembered and outranks this from then on. A name this build does not have falls back to the first source registered |
-| `Beat:Quantum` | `4` | Beats in a bar: what the 1-2-3-4 readout counts against, and how long a bar is when the light engine changes colour every few bars. Neither source transmits a meter, so nothing confirms or contradicts it; an anchor moves where the bar starts, never how long it is |
+| `Beat:Quantum` | `4` | Beats in a bar: what the 1-2-3-4 readout counts against, and how long a bar is when the light engine changes colour every few bars. Link and the audio carry no meter, so nothing confirms it; rekordbox counts bars of four, and any other value is logged as a warning at startup, since the downbeat and phrases it sets would not line up. An anchor moves where the bar starts, never how long it is |
 | `Link:InterfaceAddress` | `null` | IP address of the network adapter to listen for Link on; `null` picks one automatically |
 | `Audio:DeviceId` | `null` | Exact endpoint id of the audio device to capture; `null` goes by name instead. Only where a device has never been picked on the page: a device chosen there is remembered and outranks this from then on |
 | `Audio:PreferDeviceNamed` | `DDJ-FLX10` | Part of the name of the audio device to capture, inputs before outputs; empty captures nothing until one is picked. Still the fallback when the remembered or configured id names a device that is not plugged in |

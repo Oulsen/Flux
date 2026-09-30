@@ -224,6 +224,11 @@ internal sealed class RekordboxFollower {
   /// rekordbox's downbeat until the next seek, and a shift correcting that press says
   /// nothing about the track's grid: kept, it would move every phrase off the track's
   /// structure and outlast the press it was correcting.
+  ///
+  /// The bar is read again on the next fresh read. The grid moved before this heard of
+  /// it, outside this lock, so a read in between can have put rekordbox's downbeat back
+  /// with the shift it had before; reading it again with this one puts the downbeat
+  /// where the phrases are about to be laid.
   /// </summary>
   internal void Shift(int beats, BarAlignmentMethod method) {
     if(method != BarAlignmentMethod.Rekordbox) {
@@ -234,6 +239,7 @@ internal sealed class RekordboxFollower {
       if(this.trackPath is not null) {
         const int bar = BeatgridPosition.BeatsPerBar;
         this.shift = ((((this.shift + beats) % bar) + bar + (bar / 2)) % bar) - (bar / 2);
+        this.alignPending = true;
       }
     }
   }

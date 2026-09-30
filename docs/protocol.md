@@ -328,7 +328,8 @@ stops.
 rekordbox sets the bar when there is a new reason to read it - a new track on the
 master deck, a different master, playback starting, a jump in the track - and not in
 between, so a tap holds until the next of those. A grid whose downbeat is a beat off
-is corrected with `shiftBar`, which rekordbox keeps for the rest of the track.
+is corrected with `shiftBar`, which rekordbox keeps for the rest of the track when
+rekordbox set the bar.
 
 An alignment is a beat index, and the beat number is not a stable identity: a
 tempo change, a session change or a source switch renumbers it wholesale. The

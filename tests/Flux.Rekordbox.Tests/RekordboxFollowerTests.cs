@@ -360,6 +360,76 @@ public class RekordboxFollowerTests {
   }
 
   [Fact]
+  public void KeepsTheShiftWithinABarAcrossPresses() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, phrases: Song(endBeat: 400));
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+    double before = rig.Grid.Phrases!.Phrases[1].StartMicros;
+
+    Assert.True(rig.Manager.ShiftBar(1));
+    Assert.True(rig.Manager.ShiftBar(1));
+    Assert.True(rig.Manager.ShiftBar(1));
+    rig.Play(deck: 0, fromMs: 1055, forMs: 300);
+
+    Assert.Equal(before - 500_000, rig.Grid.Phrases!.Phrases[1].StartMicros, tolerance: 10);
+  }
+
+  /// <summary>
+  /// With Link keeping the tempo the downbeat is still rekordbox's, so a shift of it is
+  /// still a correction to the track's grid and outlasts a seek.
+  /// </summary>
+  [Fact]
+  public void KeepsTheShiftOfRekordboxsBarWhileAnotherSourceKeepsTheTempo() {
+    using var rig = new Rig(active: "link", firstBeatInBar: 1);
+    rig.Clock.Set(1_000_000);
+    rig.Link.Publish(BeatTimeline.FromBpm(120, beat: 1001, atMicros: rig.Clock.NowMicros + 8_000));
+    rig.Play(deck: 0, fromMs: 500, forMs: 50);
+
+    Assert.True(rig.Manager.ShiftBar(1));
+    Assert.Equal(1, rig.Grid.PositionOf(1001).PositionInBar);
+
+    // Two bars on, so rekordbox's own downbeat would land where it was before the shift.
+    rig.Play(deck: 0, fromMs: 4_555, forMs: 50);
+
+    Assert.Equal(1, rig.Grid.PositionOf(1001).PositionInBar);
+    Assert.Equal(1, rig.Grid.PositionOf(1005).PositionInBar);
+  }
+
+  [Fact]
+  public void MovesThePhrasesWithTheUsersShiftWhileAnotherSourceKeepsTheTempo() {
+    using var rig = new Rig(active: "link", firstBeatInBar: 1, phrases: Song(endBeat: 400));
+    rig.Clock.Set(1_000_000);
+    rig.Link.Publish(BeatTimeline.FromBpm(120, beat: 1001, atMicros: rig.Clock.NowMicros + 8_000));
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+    double before = rig.Grid.Phrases!.Phrases[1].StartMicros;
+
+    Assert.True(rig.Manager.ShiftBar(1));
+    rig.Play(deck: 0, fromMs: 1055, forMs: 300);
+
+    Assert.Equal(before + 500_000, rig.Grid.Phrases!.Phrases[1].StartMicros, tolerance: 10);
+  }
+
+  /// <summary>
+  /// The grid moves before the follower hears of it, so a read in between puts
+  /// rekordbox's downbeat back without the shift. Once the shift arrives the bar is read
+  /// again with it, rather than left a beat from the phrases until the next seek.
+  /// </summary>
+  [Fact]
+  public void ReadsTheBarAgainWithAShiftThatArrivedAfterARead() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+    rig.Manager.BarShifted -= rig.Follower.Shift;
+
+    Assert.True(rig.Manager.ShiftBar(1));
+    rig.Play(deck: 0, fromMs: 4_000, forMs: 5);
+    Assert.Equal(1, rig.Grid.PositionOf(8).PositionInBar);
+
+    rig.Follower.Shift(1, BarAlignmentMethod.Rekordbox);
+    rig.Play(deck: 0, fromMs: 4_010, forMs: 50);
+
+    Assert.Equal(1, rig.Grid.PositionOf(9).PositionInBar);
+  }
+
+  [Fact]
   public void WithdrawsThePhrasesWhenTheDeckStops() {
     using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, phrases: Song(endBeat: 400));
     rig.Play(deck: 0, fromMs: 1000, forMs: 50);

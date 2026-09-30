@@ -336,8 +336,11 @@ public sealed class BeatGrid {
   /// position comes out the same either way, and the difference never reaches the bar
   /// count: the next time rekordbox reads the bar it anchors at the downbeat nearest the
   /// playhead, a whole number of bars from wherever the anchor was, so the colour count
-  /// restarts there whichever of the two it was.
+  /// restarts there whichever of the two it was. That holds while <see cref="Quantum"/>
+  /// is rekordbox's four: the follower wraps its shift at rekordbox's bar, and at any
+  /// other quantum the two would disagree about where the downbeat went.
   /// </summary>
+  /// <param name="beats">Whole beats to move position 1 by; positive is later.</param>
   /// <param name="method">
   /// What supplied the downbeat that moved, read under the same lock as the move, so a
   /// listener keeping the shift as a correction to one source's bar can tell whether it

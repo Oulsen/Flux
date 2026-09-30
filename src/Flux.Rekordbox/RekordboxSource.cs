@@ -38,6 +38,7 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
   private readonly IMonotonicClock clock;
   private readonly SyncSourceManager sources;
   private readonly double staleAfterMicros;
+  private readonly int quantum;
   private readonly ILogger<RekordboxSource> log;
   private readonly RekordboxFollower follower;
 
@@ -57,6 +58,7 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
     this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
     this.options = options.Value;
     this.staleAfterMicros = beat.Value.StaleAfter.TotalMilliseconds * 1000.0;
+    this.quantum = beat.Value.Quantum;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
 
     // Registered last, as every source is, so Status() finds a complete object.
@@ -98,6 +100,15 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
     if(!this.options.Enabled) {
       this.log.LogInformation("rekordbox source is off (Rekordbox:Enabled).");
       return;
+    }
+
+    // Said once rather than refused: the tempo and the beat are right at any quantum, and
+    // only the downbeat and the phrases, which count rekordbox's bars of four, are not.
+    if(this.quantum != BeatgridPosition.BeatsPerBar) {
+      this.log.LogWarning(
+        "Beat:Quantum is {Quantum}, but rekordbox counts bars of {BeatsPerBar}; the downbeat and phrases it sets, and any bar shift of them, will not line up.",
+        this.quantum,
+        BeatgridPosition.BeatsPerBar);
     }
 
     while(!stoppingToken.IsCancellationRequested) {
