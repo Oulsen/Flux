@@ -193,19 +193,42 @@ internal sealed class RekordboxFollower {
       && phrases.EndBeat >= gridBeats * PhraseCoverage;
   }
 
-  /// <summary>One read of rekordbox, taken at <paramref name="nowMicros"/>.</summary>
+  /// <summary>
+  /// One read of rekordbox, taken at <paramref name="nowMicros"/>.
+  ///
+  /// Only the poll loop calls this and <see cref="Lose"/>, so which deck and track are
+  /// followed is changed by that one thread alone and can be settled before the lock,
+  /// with a new track's files read there too: the page's status waits on the lock, and
+  /// would otherwise wait on the disk.
+  /// </summary>
   internal void Follow(RekordboxReading reading, double nowMicros) {
     ArgumentNullException.ThrowIfNull(reading);
+    this.Watch(reading, nowMicros);
+
+    // No master deck: the byte holds no deck, as the first 7.2.19 chain's did with LINK on,
+    // or cannot be read at all when its chain has moved. Either way the deck playing stands
+    // in for the master, and the message does not guess which cause it was.
+    int? deck = reading.MasterDeck ?? this.PlayingDeck(reading.Decks.Count, nowMicros);
+    TrackFiles? switching = null;
+    if(deck is { } followed && TrackPath(reading.Decks[followed]) is { } path && (followed != this.master || path != this.trackPath)) {
+      switching = this.Load(path);
+    }
+
     lock(this.gate) {
-      this.FollowWhileLocked(reading, nowMicros);
+      this.FollowWhileLocked(reading, nowMicros, deck, switching);
     }
   }
 
-  /// <summary>rekordbox cannot be read at all; <paramref name="why"/> says what to do about it.</summary>
+  /// <summary>
+  /// rekordbox cannot be read at all; <paramref name="why"/> says what to do about it.
+  ///
+  /// The track is kept, and its shift with it, so a moment in which rekordbox cannot be
+  /// read does not cost the user a correction. With no master left to match, the next
+  /// read loads the track's files again, and keeps the shift only if it is the same track.
+  /// </summary>
   internal void Lose(string why) {
     lock(this.gate) {
       this.master = null;
-      this.ForgetTrack();
       this.Silence(why);
     }
   }
@@ -244,20 +267,16 @@ internal sealed class RekordboxFollower {
     }
   }
 
-  private void FollowWhileLocked(RekordboxReading reading, double now) {
-    this.Watch(reading, now);
-
-    // No master deck: the byte holds no deck, as the first 7.2.19 chain's did with LINK on,
-    // or cannot be read at all when its chain has moved. Either way the deck playing stands
-    // in for the master, and the message does not guess which cause it was. Silenced rather
-    // than lost when nothing plays, so a paused track keeps its shift for when it plays again.
-    if(reading.MasterDeck is not { } deck) {
-      if(this.PlayingDeck(reading.Decks.Count, now) is not { } playing) {
-        this.Silence("no deck is playing");
-        return;
-      }
-
-      deck = playing;
+  /// <summary>
+  /// The read, with the deck <see cref="Follow"/> chose to follow - null when none is
+  /// playing - and the files it read when that deck or its track is a new one.
+  /// </summary>
+  private void FollowWhileLocked(RekordboxReading reading, double now, int? followed, TrackFiles? switching) {
+    // Silenced rather than lost when nothing plays, so a paused track keeps its shift for
+    // when it plays again.
+    if(followed is not { } deck) {
+      this.Silence("no deck is playing");
+      return;
     }
 
     DeckReading read = reading.Decks[deck];
@@ -266,12 +285,22 @@ internal sealed class RekordboxFollower {
       return;
     }
 
+    if(!AnlzFile.IsLocalDat(path)) {
+      this.Forget(deck, $"deck {deck + 1} names an analysis file that is not a .DAT on this computer, so it is not opened; the chains for this rekordbox may have moved");
+      return;
+    }
+
     if(deck != this.master || path != this.trackPath) {
       bool sameTrack = path == this.trackPath;
+      TrackFiles files = switching ?? this.Load(path);
       this.master = deck;
       this.trackPath = path;
-      this.grid = this.loadGrid(path);
-      this.LoadPhrases(path);
+      this.grid = files.Grid;
+      this.phrases = files.Phrases;
+      this.phraseNote = files.PhraseNote;
+
+      // The ones on offer belong to the track before, and the next publish lays these.
+      this.WithdrawPhrases();
       this.shift = sameTrack ? this.shift : 0;
       this.lastPosition = position;
       this.lastMovedMicros = now;
@@ -302,8 +331,10 @@ internal sealed class RekordboxFollower {
 
     if(!moved) {
       // Nothing new in this read. The timeline in force is still the best statement of
-      // where the beat is; repeat it now and then so it does not read as gone.
-      if(this.held is { } steady && now - this.lastPublishedMicros > HeartbeatMicros) {
+      // where the beat is; repeat it now and then so it does not read as gone. Not while a
+      // new master waits for its first fresh read, though: the timeline in force is still
+      // the deck before's, and the publish would lay the new track's phrases on it.
+      if(!this.rebase && this.held is { } steady && now - this.lastPublishedMicros > HeartbeatMicros) {
         this.Publish(steady, now, newSession: false);
       }
 
@@ -343,6 +374,12 @@ internal sealed class RekordboxFollower {
     if(this.alignPending) {
       long downbeat = BeatgridPosition.NearestDownbeat(beats, beat) + this.shift;
       this.alignPending = !this.sink.AlignBarAt(BarAlignmentMethod.Rekordbox, observed.MicrosOfBeat(downbeat));
+
+      // A shift moves the phrases with the downbeat, on this read rather than whenever
+      // the timeline is next published.
+      if(this.held is { } laidOn) {
+        this.OfferPhrases(laidOn);
+      }
     }
   }
 
@@ -435,22 +472,26 @@ internal sealed class RekordboxFollower {
     }
   }
 
-  /// <summary>Reads the phrases for the track at <paramref name="path"/>, keeping them only when they fit its grid.</summary>
-  private void LoadPhrases(string path) {
+  /// <summary>The deck's analysis file, when the deck has a track to follow and names a file that may be opened.</summary>
+  private static string? TrackPath(DeckReading read) {
+    return read.AnlzPath is { Length: > 0 } path && read.Bpm is > 0 && read.SamplePosition is not null && AnlzFile.IsLocalDat(path)
+      ? path
+      : null;
+  }
+
+  /// <summary>Reads the grid and phrases of the track at <paramref name="path"/>, keeping the phrases only when they fit the grid.</summary>
+  private TrackFiles Load(string path) {
+    IReadOnlyList<AnlzBeat>? grid = this.loadGrid(path);
     AnlzPhraseList? read = this.loadPhrases(path);
     if(read is null) {
-      this.phrases = null;
-      this.phraseNote = "none: rekordbox has no phrase analysis for this track";
-    } else if(this.grid is not { Count: > 0 } beats || !Fits(read, beats.Count)) {
-      this.phrases = null;
-      this.phraseNote = "none: the phrases do not fit the beatgrid";
-    } else {
-      this.phrases = read;
-      this.phraseNote = null;
+      return new TrackFiles(grid, null, "none: rekordbox has no phrase analysis for this track");
     }
 
-    // The ones on offer belong to the track before, and the next publish lays these.
-    this.WithdrawPhrases();
+    if(grid is not { Count: > 0 } beats || !Fits(read, beats.Count)) {
+      return new TrackFiles(grid, null, "none: the phrases do not fit the beatgrid");
+    }
+
+    return new TrackFiles(grid, read, null);
   }
 
   /// <summary>The phrase at the last fresh read, the reason there is none, or null while no track is followed.</summary>
@@ -511,6 +552,9 @@ internal sealed class RekordboxFollower {
 
     this.WithdrawPhrases();
   }
+
+  /// <summary>What a track's analysis files hold for the follower, and why there are no phrases when there are none.</summary>
+  private readonly record struct TrackFiles(IReadOnlyList<AnlzBeat>? Grid, AnlzPhraseList? Phrases, string? PhraseNote);
 
   /// <summary>One deck's playhead over the last reads: where it was, and since when it has been moving.</summary>
   private struct DeckMotion {

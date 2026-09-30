@@ -1118,7 +1118,10 @@ Works on a bar anchored any way, not only by rekordbox, but only a shift of a ba
 rekordbox set is kept as its correction. A bar a cue press or a tap set is moved and
 nothing more: the press replaced rekordbox's downbeat until the next seek, and a shift
 correcting it says nothing about the track's grid. Past 3 is refused rather than
-wrapped: four beats is a whole bar and moves nothing a position can show. With no
+wrapped: at rekordbox's four beats to the bar, four is a whole bar and moves nothing a
+position can show. The range is sized for that bar; at another quantum a shift moves
+by the beats given all the same, so a bar of eight takes two presses to reach its
+furthest downbeat. With no
 anchored bar there is nothing to move, and that is `rejected` rather than ignored,
 because a button that does nothing and says nothing looks broken.
 

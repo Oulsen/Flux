@@ -449,6 +449,87 @@ public class RekordboxFollowerTests {
     Assert.Equal(fits, RekordboxFollower.Fits(Song(endBeat), gridBeats: 400));
   }
 
+  /// <summary>
+  /// A new master that has not been seen playing yet leaves the old timeline in force,
+  /// and a heartbeat of it would lay the new track's phrases at the old deck's moments.
+  /// </summary>
+  [Fact]
+  public void LaysNoPhrasesOnTheOldTimelineWhileANewMasterIsStill() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, phrases: Song(endBeat: 400));
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+    Assert.NotNull(rig.Grid.Phrases);
+
+    // Past a heartbeat since the last publish, short of the deck counting as stopped.
+    rig.Hold(deck: 1, atMs: 20_000, forMs: 240, path: TrackB);
+
+    Assert.True(rig.Grid.TryGetSnapshot(out _));
+    Assert.Null(rig.Grid.Phrases);
+  }
+
+  [Fact]
+  public void MovesThePhrasesOnTheReadAfterAShift() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, phrases: Song(endBeat: 400));
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+    double before = rig.Grid.Phrases!.Phrases[1].StartMicros;
+
+    Assert.True(rig.Manager.ShiftBar(1));
+    rig.Play(deck: 0, fromMs: 1055, forMs: 0);
+
+    Assert.Equal(before + 500_000, rig.Grid.Phrases!.Phrases[1].StartMicros, tolerance: 10);
+  }
+
+  [Fact]
+  public void KeepsTheShiftWhenRekordboxIsLostForAMoment() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+    Assert.True(rig.Manager.ShiftBar(1));
+
+    rig.Follower.Lose("reading rekordbox failed; see the log");
+    rig.Play(deck: 0, fromMs: 4_000, forMs: 50);
+
+    Assert.Equal(1, rig.Grid.PositionOf(9).PositionInBar);
+  }
+
+  [Fact]
+  public void ForgetsTheShiftWhenRekordboxComesBackWithAnotherTrack() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+    Assert.True(rig.Manager.ShiftBar(1));
+
+    rig.Follower.Lose("rekordbox closed");
+    rig.Play(deck: 0, fromMs: 4_000, forMs: 50, path: TrackB);
+
+    Assert.Equal(1, rig.Grid.PositionOf(8).PositionInBar);
+  }
+
+  [Theory]
+  [InlineData(@"\\host\share\USBANLZ\a\ANLZ0000.DAT")]
+  [InlineData("//host/share/USBANLZ/a/ANLZ0000.DAT")]
+  [InlineData("USBANLZ/a/ANLZ0000.DAT")]
+  [InlineData("C:/rb/USBANLZ/a/ANLZ0000.EXT")]
+  public void OpensNoAnalysisFileThatIsNotALocalDat(string path) {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50, path: path);
+
+    Assert.Equal(0, rig.Loads);
+    Assert.False(rig.Grid.TryGetSnapshot(out _));
+    Assert.Contains("not a .DAT on this computer", rig.Follower.Describe().Detail);
+  }
+
+  /// <summary>The page's status asks for the follower's state while a new track's files are read, and is not held up by the disk.</summary>
+  [Fact]
+  public void ReadsANewTracksFilesWithoutHoldingUpTheStatus() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    bool answered = false;
+    rig.DuringLoad = () => answered = Task.Run(() => rig.Follower.Describe()).Wait(TimeSpan.FromSeconds(5));
+
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+
+    Assert.Equal(1, rig.Loads);
+    Assert.True(answered);
+  }
+
   [Fact]
   public void WithdrawsAndSaysWhyWhenRekordboxIsLost() {
     using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
@@ -497,6 +578,12 @@ public class RekordboxFollowerTests {
 
     internal int TempoChanges { get; private set; }
 
+    /// <summary>How many times a track's grid has been read.</summary>
+    internal int Loads { get; private set; }
+
+    /// <summary>Run while a track's grid is being read, as the disk would be.</summary>
+    internal Action? DuringLoad { get; set; }
+
     /// <summary>The deck playing: a read every 5 ms, the playhead moving with the clock.</summary>
     internal void Play(int deck, double fromMs, double forMs, float bpm = 120f, string path = TrackA) {
       for(double ms = 0; ms <= forMs; ms += 5) {
@@ -506,9 +593,9 @@ public class RekordboxFollowerTests {
     }
 
     /// <summary>The deck standing still at one place.</summary>
-    internal void Hold(int deck, double atMs, double forMs) {
+    internal void Hold(int deck, double atMs, double forMs, string path = TrackA) {
       for(double ms = 0; ms <= forMs; ms += 5) {
-        this.Read(deck, atMs);
+        this.Read(deck, atMs, path: path);
         this.Clock.Advance(5_000);
       }
     }
@@ -542,6 +629,8 @@ public class RekordboxFollowerTests {
 
     /// <summary>A long steady 120 BPM grid from 0 ms: beat n at n * 500 ms, the first on the track's own first beat in bar.</summary>
     private IReadOnlyList<AnlzBeat>? Load(string path) {
+      this.Loads++;
+      this.DuringLoad?.Invoke();
       int first = path == TrackB ? this.trackBFirstBeatInBar : this.firstBeatInBar;
       return this.withGrid
         ? [.. Enumerable.Range(0, 400).Select(n => new AnlzBeat(((first - 1 + n) % 4) + 1, 120f, n * 500))]

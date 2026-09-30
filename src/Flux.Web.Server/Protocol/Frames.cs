@@ -139,9 +139,13 @@ public static class Frames {
   }
 
   /// <summary>
-  /// The furthest a single <c>shiftBar</c> may move the downbeat. A bar is four beats,
-  /// so every distinct correction is within three of where it is; four would restart
-  /// the bar count and change nothing that can be seen in a position.
+  /// The furthest a single <c>shiftBar</c> may move the downbeat. Sized for a bar of
+  /// four, rekordbox's bar and the one a shift exists to correct: every distinct
+  /// correction is within three of where it is, and four would restart the bar count
+  /// and change nothing that can be seen in a position. The shift works on a bar of
+  /// <c>Beat:Quantum</c> whatever it is, and three reaches every downbeat in one press
+  /// up to a quantum of seven; at a quantum of three a shift of three moves nothing,
+  /// and above seven a far downbeat takes two presses.
   /// </summary>
   public const int MaxBarShift = 3;
 
