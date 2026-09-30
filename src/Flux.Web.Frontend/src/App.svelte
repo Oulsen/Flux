@@ -444,6 +444,9 @@
           <BarShift shift={shiftBar} />
         {:else}
           <AnchorButton manual={store.source === 'manual'} {tap} />
+          {#if store.alignment.method === 'rekordbox'}
+            <BarShift shift={shiftBar} />
+          {/if}
         {/if}
 
         <!-- Only where there is a room to strobe. Offered without one, the press would
@@ -518,11 +521,18 @@
         select={selectSource}
       />
       <!-- rekordbox reads bar one from the track, so a tap there is a second opinion it
-           overrules at the next seek; what it offers instead is a correction to its grid. -->
+           overrules at the next seek; what it offers instead is a correction to its grid.
+           It reads bar one under another source's tempo too, and there the correction is
+           offered beside the tap rather than in its place: the tap is still the only fix
+           for a bar that nothing else set, and rekordbox going quiet leaves its last
+           downbeat labelled as its own. -->
       {#if store.source === 'rekordbox'}
         <BarShift shift={shiftBar} captions status={rekordboxStatus(store.diagnostics)} />
       {:else}
         <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {anchor} {setBpm} />
+        {#if store.alignment.method === 'rekordbox'}
+          <BarShift shift={shiftBar} captions />
+        {/if}
       {/if}
     </section>
 

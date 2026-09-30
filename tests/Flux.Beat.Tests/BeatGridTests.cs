@@ -306,9 +306,10 @@ public class BeatGridTests {
     Assert.True(grid.TryAlignBarAt(BarAlignmentMethod.Rekordbox, 2_000_000));
     grid.BarAligned += reported.Add;
 
-    Assert.True(grid.TryShiftBar(1));
+    Assert.True(grid.TryShiftBar(1, out BarAlignmentMethod shifted));
+    Assert.Equal(BarAlignmentMethod.Rekordbox, shifted);
     Assert.Equal(1, grid.PositionOf(5).PositionInBar);
-    Assert.True(grid.TryShiftBar(-2));
+    Assert.True(grid.TryShiftBar(-2, out _));
     Assert.Equal(1, grid.PositionOf(3).PositionInBar);
 
     Assert.True(grid.TryGetSnapshot(out BeatGridSnapshot snapshot));
@@ -320,10 +321,10 @@ public class BeatGridTests {
   public void CannotShiftABarThatHasNoAnchor() {
     FakeClock clock = new FakeClock();
     BeatGrid grid = NewGrid(clock);
-    Assert.False(grid.TryShiftBar(1));
+    Assert.False(grid.TryShiftBar(1, out _));
 
     grid.Apply(AtOneTwenty);
-    Assert.False(grid.TryShiftBar(1));
+    Assert.False(grid.TryShiftBar(1, out _));
   }
 
   /// <summary>

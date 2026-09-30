@@ -330,12 +330,25 @@ public sealed class BeatGrid {
   /// rekordbox put a beat off, which a tap would not fix because the next thing
   /// rekordbox says would put it back. Relative on purpose: it says "one later than
   /// that", which stays true whoever set "that".
+  ///
+  /// The anchor moves by the shift as given, so three beats later lands three beats on
+  /// where a rekordbox follower keeps the same correction as one beat earlier. Every
+  /// position comes out the same either way, and the difference never reaches the bar
+  /// count: the next time rekordbox reads the bar it anchors at the downbeat nearest the
+  /// playhead, a whole number of bars from wherever the anchor was, so the colour count
+  /// restarts there whichever of the two it was.
   /// </summary>
+  /// <param name="method">
+  /// What supplied the downbeat that moved, read under the same lock as the move, so a
+  /// listener keeping the shift as a correction to one source's bar can tell whether it
+  /// was that source's bar that moved.
+  /// </param>
   /// <returns>False when the bar has no anchor to move.</returns>
-  public bool TryShiftBar(int beats) {
+  public bool TryShiftBar(int beats, out BarAlignmentMethod method) {
     double? movedTo;
 
     lock(this.gate) {
+      method = this.alignmentMethod;
       if(this.timeline is not BeatTimeline known || this.barAnchorBeat is not { } anchor) {
         return false;
       }

@@ -177,9 +177,16 @@ internal sealed class RekordboxProcess: IScannableMemory, IDisposable {
       return new(RekordboxAttachState.Denied, null);
     }
 
-    FileVersionInfo info = FileVersionInfo.GetVersionInfo(path);
-    var version = new Version(info.FileMajorPart, info.FileMinorPart, info.FileBuildPart, info.FilePrivatePart);
-    return new(RekordboxAttachState.Attached, new RekordboxProcess(handle, processId, moduleBase, path, version));
+    // The handle is ours until the process object owns it, and the version read can throw
+    // - an update replacing the file, say - on an attach retried every two seconds.
+    try {
+      FileVersionInfo info = FileVersionInfo.GetVersionInfo(path);
+      var version = new Version(info.FileMajorPart, info.FileMinorPart, info.FileBuildPart, info.FilePrivatePart);
+      return new(RekordboxAttachState.Attached, new RekordboxProcess(handle, processId, moduleBase, path, version));
+    } catch {
+      handle.Dispose();
+      throw;
+    }
   }
 
   /// <summary>

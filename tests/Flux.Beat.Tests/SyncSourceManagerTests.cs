@@ -396,8 +396,8 @@ public class SyncSourceManagerTests {
     BeatGrid grid = NewGrid(new FakeClock());
     SyncSourceManager manager = NewManager(grid, defaultSource: "link");
     ITimelineSink link = manager.Register(new FakeSource("link"));
-    List<int> shifted = [];
-    manager.BarShifted += shifted.Add;
+    List<(int, BarAlignmentMethod)> shifted = [];
+    manager.BarShifted += (beats, method) => shifted.Add((beats, method));
 
     link.Publish(AtOneTwenty);
     Assert.False(manager.ShiftBar(1));
@@ -405,7 +405,7 @@ public class SyncSourceManagerTests {
     Assert.True(link.AlignBarAt(BarAlignmentMethod.Rekordbox, 0));
     Assert.True(manager.ShiftBar(-1));
 
-    Assert.Equal([-1], shifted);
+    Assert.Equal([(-1, BarAlignmentMethod.Rekordbox)], shifted);
   }
 
   private static BeatGrid NewGrid(IMonotonicClock clock) {

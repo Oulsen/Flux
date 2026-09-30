@@ -163,6 +163,22 @@ public class RekordboxFollowerTests {
     Assert.Equal(1, rig.Grid.PositionOf(9).PositionInBar);
   }
 
+  /// <summary>
+  /// A shift correcting a cue press corrects the press, not the track's grid, so the next
+  /// read of the bar is rekordbox's own downbeat rather than one moved by it.
+  /// </summary>
+  [Fact]
+  public void KeepsNoShiftOfABarSomethingElseSet() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 0, forMs: 100);
+
+    Assert.True(rig.Manager.AlignBar(BarAlignmentMethod.Cue));
+    Assert.True(rig.Manager.ShiftBar(1));
+    rig.Play(deck: 0, fromMs: 4_000, forMs: 50);
+
+    Assert.Equal(1, rig.Grid.PositionOf(8).PositionInBar);
+  }
+
   [Fact]
   public void ForgetsTheShiftWithTheTrack() {
     using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);

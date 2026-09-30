@@ -236,8 +236,13 @@ public sealed class SyncSourceManager {
   /// For a source that sets the downbeat itself and will set it again: rekordbox
   /// re-reads the bar on every jump in the track, and without hearing about a
   /// correction it would put back the downbeat the user just moved off.
+  ///
+  /// Carries what supplied the downbeat that moved. A bar a cue press or a tap set is
+  /// not the source's bar, and a listener that kept a shift of it as a correction to its
+  /// own would lay every phrase off by that shift and put it back into the track's
+  /// downbeat at the next seek.
   /// </summary>
-  public event Action<int>? BarShifted;
+  public event Action<int, BarAlignmentMethod>? BarShifted;
 
   /// <summary>
   /// Moves the downbeat by <paramref name="beats"/> whole beats - see
@@ -245,11 +250,11 @@ public sealed class SyncSourceManager {
   /// </summary>
   /// <returns>False when the bar has no anchor to move.</returns>
   public bool ShiftBar(int beats) {
-    if(!this.grid.TryShiftBar(beats)) {
+    if(!this.grid.TryShiftBar(beats, out BarAlignmentMethod method)) {
       return false;
     }
 
-    this.BarShifted?.Invoke(beats);
+    this.BarShifted?.Invoke(beats, method);
     return true;
   }
 

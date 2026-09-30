@@ -1113,7 +1113,10 @@ seek, when rekordbox reads the bar from the grid again, while a shift is kept as
 correction and applied every time rekordbox reads the bar for the rest of the track.
 A new track on the master starts from its own grid again.
 
-Works on a bar anchored any way, not only by rekordbox. Past 3 is refused rather than
+Works on a bar anchored any way, not only by rekordbox, but only a shift of a bar
+rekordbox set is kept as its correction. A bar a cue press or a tap set is moved and
+nothing more: the press replaced rekordbox's downbeat until the next seek, and a shift
+correcting it says nothing about the track's grid. Past 3 is refused rather than
 wrapped: four beats is a whole bar and moves nothing a position can show. With no
 anchored bar there is nothing to move, and that is `rejected` rather than ignored,
 because a button that does nothing and says nothing looks broken.

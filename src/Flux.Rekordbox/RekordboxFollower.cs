@@ -219,8 +219,17 @@ internal sealed class RekordboxFollower {
   /// the same place. The downbeat cannot tell three beats forward from one back, but
   /// the phrases can: they move by the shift itself, so three presses of "beat ›" would
   /// land every phrase a bar after the downbeat it belongs on.
+  ///
+  /// Only a shift of a bar rekordbox set is kept. A cue press or a tap replaces
+  /// rekordbox's downbeat until the next seek, and a shift correcting that press says
+  /// nothing about the track's grid: kept, it would move every phrase off the track's
+  /// structure and outlast the press it was correcting.
   /// </summary>
-  internal void Shift(int beats) {
+  internal void Shift(int beats, BarAlignmentMethod method) {
+    if(method != BarAlignmentMethod.Rekordbox) {
+      return;
+    }
+
     lock(this.gate) {
       if(this.trackPath is not null) {
         const int bar = BeatgridPosition.BeatsPerBar;
