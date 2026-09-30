@@ -526,11 +526,8 @@ public sealed class SocketHub {
   }
 
   /// <summary>
-  /// Sets or clears the manual tempo.
-  ///
-  /// An out-of-range tempo is refused rather than clamped. The values just
-  /// outside 20..200 are typos, and clamping a typo produces a plausible wrong
-  /// answer, which is worse than a rejection the user can see.
+  /// Moves the downbeat by whole beats, for a bar that is anchored but a beat or three
+  /// off. Bounded to a bar either way, since four beats is the same downbeat.
   /// </summary>
   private void ShiftBar(Client client, JsonElement data) {
     if(!Frames.TryReadShiftBar(data, out int beats)) {
@@ -547,6 +544,13 @@ public sealed class SocketHub {
     }
   }
 
+  /// <summary>
+  /// Sets or clears the manual tempo.
+  ///
+  /// An out-of-range tempo is refused rather than clamped. The values just
+  /// outside 20..200 are typos, and clamping a typo produces a plausible wrong
+  /// answer, which is worse than a rejection the user can see.
+  /// </summary>
   private void SetBpm(Client client, JsonElement data) {
     if(!Frames.TryReadSetBpm(data, out double? bpm)) {
       client.Enqueue(Frames.Error("invalid_data", "Setting a tempo needs 'data.bpm' as a number or null."));

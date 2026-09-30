@@ -186,7 +186,7 @@ Sent once, immediately after the socket opens, before anything else.
 
 ```json
 { "type": "hello", "data": {
-  "protocol": 1,
+  "protocol": 2,
   "app": "0.6.0",
   "quantum": 4,
   "stateHz": 20,

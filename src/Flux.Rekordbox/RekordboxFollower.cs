@@ -214,11 +214,17 @@ internal sealed class RekordboxFollower {
   /// The user moved the downbeat by <paramref name="beats"/>. Kept for the track on the
   /// master, so the next time the bar is read from its grid - after a jump, say - it is
   /// read with the correction rather than without it.
+  ///
+  /// Kept within a bar of zero, at the nearest of the shifts that put the downbeat in
+  /// the same place. The downbeat cannot tell three beats forward from one back, but
+  /// the phrases can: they move by the shift itself, so three presses of "beat ›" would
+  /// land every phrase a bar after the downbeat it belongs on.
   /// </summary>
   internal void Shift(int beats) {
     lock(this.gate) {
       if(this.trackPath is not null) {
-        this.shift += beats;
+        const int bar = BeatgridPosition.BeatsPerBar;
+        this.shift = ((((this.shift + beats) % bar) + bar + (bar / 2)) % bar) - (bar / 2);
       }
     }
   }

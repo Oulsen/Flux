@@ -772,8 +772,11 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// time from the phrase's own moment, because the phrase is rekordbox's while the beats
   /// may be Link's, and rounded to whole beats and bars, which a timeline a few
   /// milliseconds from rekordbox's cannot move. A phrase starting off the downbeat - about
-  /// one in twelve does - still takes its colour on its first beat; the bars after it
-  /// round to the downbeats either side.
+  /// one in twelve does - still takes its colour on its first beat, and the bar it starts
+  /// in counts as its bar zero, so the count runs from the next downbeat as bar one.
+  /// Counting downbeats rather than rounding beats to bars is what keeps that regular:
+  /// rounded, a start two beats before a downbeat sat halfway between bars, and rounding
+  /// halves to even counted 0, 2, 2, 4, 4 and changed the colour twice in a row.
   /// </summary>
   private bool ShouldChangeColor(BeatEvent beat, int bars, PhraseMap? phrases) {
     // Looked up half a beat ahead, so the beat a phrase starts on belongs to that phrase
@@ -786,7 +789,10 @@ internal sealed class LightEngine: ILightSource, IHostedService {
         return true;
       }
 
-      long barsIn = (long)Math.Round(beatsIn / (double)this.scheduler.Quantum);
+      // The downbeats since the start, which is what a bar count on a downbeat is. The
+      // lookup half a beat ahead leaves beatsIn above zero here.
+      int quantum = this.scheduler.Quantum;
+      long barsIn = (beatsIn + quantum - 1) / quantum;
       return beat.PositionInBar == 1 && FloorMod(barsIn, bars) == 0;
     }
 

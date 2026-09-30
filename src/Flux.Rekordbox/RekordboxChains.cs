@@ -25,8 +25,11 @@ internal sealed record RekordboxReading(IReadOnlyList<DeckReading> Decks, int? M
 /// new version gets its own entry once its chains are found and have survived a
 /// restart; <c>docs/rekordbox-chains.md</c> says how, and what each entry rests on.
 ///
-/// The table is checked when it loads, so a malformed entry stops Flux at start with
-/// the version and field named, rather than reading from the wrong place later.
+/// The table is checked when it loads, which for the built-in one is the first attach
+/// to rekordbox, and a malformed entry throws with the version and field named rather
+/// than reading from the wrong place. The tests load the built-in table, so such an
+/// entry fails them before it ships; at run time it would only be logged on every
+/// attach, since the load is not retried.
 /// </summary>
 internal sealed class RekordboxChains {
   private const string ResourceName = "Flux.Rekordbox.chains.json";

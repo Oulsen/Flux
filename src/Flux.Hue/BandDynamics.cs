@@ -125,7 +125,8 @@ internal sealed class BandDynamics {
   /// Four fifths rather than all of it, for the reason <see cref="LoudEnoughFraction"/>
   /// gives: the kick's reference is the loudest it has been in the last minute, which
   /// ordinary kicks sit a little under, and a gate reaching one only at the loudest kick
-  /// would dim every other beat of the drop.
+  /// would dim every other beat of the drop. Flux's own and reasoned, like
+  /// <see cref="KickPresentFrom"/>, and open to moving with it.
   /// </summary>
   private const double KickPresentAt = 0.8;
 

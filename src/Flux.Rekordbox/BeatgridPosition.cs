@@ -15,6 +15,9 @@ namespace Flux.Rekordbox;
 /// millisecond - the nearest beat's own tempo carries the count on.
 /// </summary>
 internal static class BeatgridPosition {
+  /// <summary>How many beats a bar in a rekordbox grid holds: always four, which is what the grid's bar positions count to.</summary>
+  internal const int BeatsPerBar = 4;
+
   /// <summary>The fractional beat at <paramref name="trackMs"/>, milliseconds into the track at its normal speed.</summary>
   internal static double BeatAt(IReadOnlyList<AnlzBeat> grid, double trackMs) {
     ArgumentOutOfRangeException.ThrowIfZero(grid.Count);
@@ -51,8 +54,8 @@ internal static class BeatgridPosition {
   /// <summary>The bar position rekordbox gives beat <paramref name="index"/>, counted on past the grid's ends.</summary>
   private static int BeatInBar(IReadOnlyList<AnlzBeat> grid, long index) {
     int edge = (int)Math.Clamp(index, 0, grid.Count - 1);
-    long position = (grid[edge].BeatInBar - 1 + (index - edge)) % 4;
-    return (int)(position < 0 ? position + 4 : position) + 1;
+    long position = (grid[edge].BeatInBar - 1 + (index - edge)) % BeatsPerBar;
+    return (int)(position < 0 ? position + BeatsPerBar : position) + 1;
   }
 
   /// <summary>How long beat <paramref name="index"/> lasts in the track: to the next beat, or at its own tempo where there is none after it.</summary>

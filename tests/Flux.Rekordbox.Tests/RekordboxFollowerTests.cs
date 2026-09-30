@@ -327,6 +327,22 @@ public class RekordboxFollowerTests {
     Assert.Equal(before + 500_000, rig.Grid.Phrases!.Phrases[1].StartMicros, tolerance: 10);
   }
 
+  /// <summary>
+  /// Three beats forward puts the downbeat where one back does, and the phrases have to
+  /// follow it there rather than land a bar after it.
+  /// </summary>
+  [Fact]
+  public void MovesThePhrasesByTheNearestShiftThatPutsTheDownbeatThere() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, phrases: Song(endBeat: 400));
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+    double before = rig.Grid.Phrases!.Phrases[1].StartMicros;
+
+    Assert.True(rig.Manager.ShiftBar(3));
+    rig.Play(deck: 0, fromMs: 1055, forMs: 300);
+
+    Assert.Equal(before - 500_000, rig.Grid.Phrases!.Phrases[1].StartMicros, tolerance: 10);
+  }
+
   [Fact]
   public void WithdrawsThePhrasesWhenTheDeckStops() {
     using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, phrases: Song(endBeat: 400));

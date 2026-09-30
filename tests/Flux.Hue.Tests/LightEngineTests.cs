@@ -298,6 +298,23 @@ public class LightEngineTests {
     Assert.Equal([8, 12, 20, 28], harness.ChangesOnTime(32));
   }
 
+  /// <summary>
+  /// A phrase starting off the downbeat takes its colour on its first beat, and the bar
+  /// it starts in is its bar zero: every second bar from there is 20 and 28 wherever in
+  /// bar 12's bar it began. Rounding beats to bars counted a start on beat 14 as 0, 2, 2,
+  /// 4, 4 and changed on every downbeat, and a pickup on 15 changed again a beat later.
+  /// </summary>
+  [Theory]
+  [InlineData(13)]
+  [InlineData(14)]
+  [InlineData(15)]
+  public void APhraseStartingOffTheDownbeatCountsFromTheBarItStartsIn(int start) {
+    Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0));
+    harness.OfferPhrases(endIndex: 400, 0, start);
+
+    Assert.Equal([8, start, 20, 28], harness.ChangesOnTime(32));
+  }
+
   [Fact]
   public void WithPhrasesSwitchedOffTheBarCountRunsAsItAlwaysHas() {
     Harness harness = new Harness(new LightSettings(LightPalette.Random, ColorChangeBars: 2, PulseMs: 0, FollowPhrases: false));
