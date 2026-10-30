@@ -73,25 +73,25 @@
   .lights {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--space-2);
   }
 
   .stream {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .action {
-    min-height: 2.5rem;
+    min-height: var(--control);
     padding: 0.5rem 0.7rem;
     background: none;
     border: 1px solid var(--edge);
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     cursor: pointer;
   }
@@ -108,8 +108,8 @@
 
   .rate {
     margin: 0;
-    font-size: 0.7rem;
-    color: var(--ink-faint);
+    font-size: var(--text-sm);
+    color: var(--ink-dim);
     font-variant-numeric: tabular-nums;
   }
 </style>

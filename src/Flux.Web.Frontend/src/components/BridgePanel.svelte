@@ -120,12 +120,12 @@
   .bridge {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .status {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     line-height: 1.5;
     color: var(--ink-dim);
   }
@@ -145,23 +145,23 @@
   .areas {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-2);
   }
 
   .row {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.2rem;
+    gap: var(--space-1);
     /* Thumb-sized: this gets pressed on a phone, in the dark, while walking. */
-    min-height: 3rem;
+    min-height: var(--control-lg);
     padding: 0.6rem 0.7rem;
     background: var(--panel);
     border: 1px solid var(--edge);
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     text-align: left;
     cursor: pointer;
   }
@@ -181,8 +181,8 @@
   }
 
   .detail {
-    font-size: 0.7rem;
-    color: var(--ink-faint);
+    font-size: var(--text-sm);
+    color: var(--ink-dim);
   }
 
   /* The one detail worth spotting before pressing start, since the alternative is a
@@ -192,15 +192,15 @@
   }
 
   .action {
-    min-height: 2.5rem;
+    min-height: var(--control);
     padding: 0.5rem 0.7rem;
     background: none;
     border: 1px solid var(--edge);
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     cursor: pointer;
   }
@@ -211,13 +211,13 @@
   }
 
   .quiet {
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 
   .empty {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     letter-spacing: 0.08em;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 </style>

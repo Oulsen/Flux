@@ -130,7 +130,7 @@
   .setting {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   label {
@@ -138,13 +138,14 @@
     align-items: baseline;
     justify-content: space-between;
     gap: var(--gap);
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
   }
 
   .name {
-    letter-spacing: 0.08em;
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
+    font-size: var(--text-xs);
   }
 
   .value {
@@ -154,14 +155,15 @@
 
   input {
     width: 100%;
-    /* Thumb-sized, because this gets dragged on a phone in a dark booth. */
-    min-height: 2.25rem;
+    /* Thumb-sized on touch, because this gets dragged on a phone in a dark booth. A
+       mouse gets less, which `--chip` explains. */
+    min-height: var(--chip);
     accent-color: var(--accent);
   }
 
   .note {
     margin: 0;
-    font-size: 0.7rem;
+    font-size: var(--text-sm);
     color: var(--ink-dim);
     font-variant-numeric: tabular-nums;
   }
@@ -174,8 +176,8 @@
 
   .hint {
     margin: 0;
-    font-size: 0.7rem;
+    font-size: var(--text-sm);
     line-height: 1.5;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 </style>

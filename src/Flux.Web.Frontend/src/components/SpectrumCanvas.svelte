@@ -651,8 +651,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     letter-spacing: 0.08em;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 </style>

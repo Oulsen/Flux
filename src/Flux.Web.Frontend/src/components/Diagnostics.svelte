@@ -54,19 +54,19 @@
     margin: 0;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
-    gap: 0.75rem 1rem;
+    gap: var(--space-3) var(--space-4);
   }
 
   dt {
-    font-size: 0.7rem;
-    letter-spacing: 0.12em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 
   dd {
     margin: 0.15rem 0 0;
-    font-size: 1rem;
+    font-size: var(--text-md);
     color: var(--ink-dim);
   }
 </style>

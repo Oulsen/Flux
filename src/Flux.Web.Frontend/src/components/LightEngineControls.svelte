@@ -280,38 +280,39 @@
   .engine {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--space-2);
   }
 
   .choice {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .name {
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 
   .options {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .chip {
-    /* Thumb-sized: this gets pressed on a phone, in the dark, mid-set. */
-    min-height: 2.25rem;
+    /* Thumb-sized on touch: this gets pressed on a phone, in the dark, mid-set. A mouse
+       gets less, which `--chip` explains. */
+    min-height: var(--chip);
     padding: 0.4rem 0.6rem;
     background: var(--panel);
     border: 1px solid var(--edge);
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     cursor: pointer;
   }
 

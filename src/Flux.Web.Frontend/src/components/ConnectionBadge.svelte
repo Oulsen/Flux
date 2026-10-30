@@ -50,12 +50,12 @@
   .badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     padding: 0.25rem 0.7rem;
     border: 1px solid var(--edge);
     border-radius: 999px;
-    font-size: 0.8rem;
-    letter-spacing: 0.06em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     color: var(--ink-dim);
     white-space: nowrap;

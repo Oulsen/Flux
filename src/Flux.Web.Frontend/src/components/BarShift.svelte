@@ -47,20 +47,20 @@
   .bar-shift {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: start;
   }
 
   .buttons {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   button {
     /* Sized as the anchor-only button beside the tempo box is: a thumb target that is
        visibly a correction rather than the page's main control. */
     min-width: var(--shift-size, 5rem);
-    height: 3rem;
+    height: var(--control-lg);
     padding: 0 0.9rem;
     border: 1px solid var(--accent);
     border-radius: var(--radius);
@@ -69,8 +69,8 @@
     background: var(--panel);
     color: var(--accent);
     font: inherit;
-    font-size: 0.8rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     cursor: pointer;
     touch-action: manipulation;
@@ -85,14 +85,14 @@
 
   .status {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
     color: var(--ink-dim);
   }
 
   .caption {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     letter-spacing: 0.06em;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 </style>

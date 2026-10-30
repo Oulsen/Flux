@@ -107,7 +107,7 @@
     background: var(--panel);
     color: var(--ink-dim);
     font: inherit;
-    font-size: calc(var(--anchor-size, 5rem) * 0.19);
+    font-size: max(var(--text-xs), calc(var(--anchor-size, 5rem) * 0.19));
     padding: 0;
     letter-spacing: 0.08em;
     text-transform: uppercase;

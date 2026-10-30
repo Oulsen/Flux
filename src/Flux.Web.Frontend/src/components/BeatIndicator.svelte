@@ -47,12 +47,12 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.9rem;
+    gap: var(--space-3);
   }
 
   .slots {
     display: flex;
-    gap: 0.9rem;
+    gap: var(--space-3);
   }
 
   .slot {
@@ -73,7 +73,7 @@
   .phrase {
     margin: 0;
     min-height: 1.2em;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     letter-spacing: 0.08em;
     color: var(--ink-dim);
     text-align: center;

@@ -179,38 +179,39 @@
   .stage-settings {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--space-2);
   }
 
   .choice {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .name {
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 
   .options {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .chip {
-    /* Thumb-sized: this gets pressed on a phone, in the dark, mid-set. */
-    min-height: 2.25rem;
+    /* Thumb-sized on touch: this gets pressed on a phone, in the dark, mid-set. A mouse
+       gets less, which `--chip` explains. */
+    min-height: var(--chip);
     padding: 0.4rem 0.6rem;
     background: var(--panel);
     border: 1px solid var(--edge);
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     cursor: pointer;
   }
 
@@ -222,7 +223,7 @@
   .disclosure {
     width: 100%;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: var(--gap);
     padding: 0;
@@ -230,28 +231,29 @@
     border: none;
     font: inherit;
     cursor: pointer;
+    min-height: var(--control);
   }
 
   .heading {
     margin: 0;
-    font-size: 0.7rem;
-    letter-spacing: 0.12em;
+    font-size: var(--text-sm);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink);
     font-weight: 600;
   }
 
   .toggle {
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     color: var(--ink-dim);
   }
 
   .hint {
     margin: 0;
-    font-size: 0.7rem;
+    font-size: var(--text-sm);
     line-height: 1.5;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 </style>

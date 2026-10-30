@@ -143,7 +143,7 @@
   .header {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
     padding: var(--gap) var(--gap) 0.75rem;
     border-bottom: 1px solid var(--edge);
   }

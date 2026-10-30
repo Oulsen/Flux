@@ -41,7 +41,7 @@
      background that is no longer behind it. */
   .unit {
     margin-top: 0.35rem;
-    font-size: 0.7rem;
+    font-size: var(--text-xs);
     letter-spacing: 0.3em;
     text-indent: 0.3em;
     color: var(--ink-dim);

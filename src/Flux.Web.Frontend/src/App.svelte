@@ -788,7 +788,7 @@
   .cluster {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     padding: 0.6rem 0.9rem;
     border-radius: var(--radius);
     background: rgb(7 9 13 / 88%);
@@ -799,7 +799,7 @@
   .top .cluster {
     flex-direction: row;
     align-items: center;
-    gap: 0.9rem;
+    gap: var(--space-3);
 
     /* Lets the badge inside give way before the settings button does. */
     min-width: 0;
@@ -811,7 +811,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--space-2);
 
     /* Smaller than the drawer's, because the drawer has room for a thumb target beside
        a caption and this sits above the beat dots in the middle of a picture. */
@@ -827,7 +827,7 @@
   .control {
     pointer-events: auto;
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   /* Sized to their contents and pushed to their own edges. A grid stretches its
@@ -862,7 +862,7 @@
 
   h1 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--text-md);
     font-weight: 600;
     letter-spacing: 0.4em;
     text-indent: 0.4em;
@@ -874,13 +874,13 @@
      screenshot of this layout showed. */
   .reading {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     letter-spacing: 0.06em;
     color: var(--ink);
   }
 
   .reading.dim {
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
     color: var(--ink-dim);
   }
 
@@ -890,7 +890,7 @@
 
     /* Never the thing that shrinks: the badge beside it ellipsizes instead. */
     flex: none;
-    padding: 0.4rem 0.9rem;
+    padding: 0 var(--space-4);
 
     /* Opaque, unlike the readings around it. A control needs a findable edge, and the
        scrim bands are a gradient - at the top of a tall window this button sits in the
@@ -900,10 +900,11 @@
     border-radius: 999px;
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.75rem;
-    letter-spacing: 0.12em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     cursor: pointer;
+    min-height: var(--control);
   }
 
   /* Nothing works until a bridge is chosen, and the drawer only prompts once. After
@@ -921,6 +922,12 @@
     gap: var(--gap);
   }
 
+  /* The drawer's title out-ranks the section headings inside it, which share its
+     element and so would otherwise share its size. */
+  .drawer-head .heading {
+    font-size: var(--text-lg);
+  }
+
   .drawer-head .settings {
     background: none;
   }
@@ -932,7 +939,7 @@
    */
   .tabs {
     display: flex;
-    gap: 0.4rem;
+    gap: var(--space-2);
   }
 
   .tab {
@@ -943,13 +950,14 @@
     border-radius: 999px;
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.75rem;
-    letter-spacing: 0.12em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     cursor: pointer;
     transition:
       background 120ms ease,
       color 120ms ease;
+    min-height: var(--control);
   }
 
   .tab:hover {
@@ -990,7 +998,7 @@
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
     text-align: left;
     cursor: pointer;
   }
@@ -1012,17 +1020,17 @@
   h2,
   .heading {
     margin: 0;
-    font-size: 0.7rem;
-    letter-spacing: 0.12em;
+    font-size: var(--text-sm);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink);
     font-weight: 600;
   }
 
   .disclosure {
     width: 100%;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: var(--gap);
     padding: 0;
@@ -1030,11 +1038,12 @@
     border: none;
     font: inherit;
     cursor: pointer;
+    min-height: var(--control);
   }
 
   .toggle {
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     color: var(--ink-dim);
   }
@@ -1052,13 +1061,14 @@
     border-radius: 999px;
     background: rgb(11 13 18 / 70%);
     color: var(--ink-dim);
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
 
     /* Wraps inside the window rather than running off it on a phone. */
     max-width: 100%;
     text-align: center;
+    min-height: var(--control);
   }
 
   .switch {
@@ -1088,14 +1098,14 @@
     border-radius: var(--radius);
     background: rgb(11 13 18 / 80%);
     color: var(--alarm);
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     max-width: 40rem;
   }
 
   .version {
     margin: 0;
-    font-size: 0.75rem;
-    color: var(--ink-faint);
+    font-size: var(--text-xs);
+    color: var(--ink-dim);
     text-align: center;
   }
 
