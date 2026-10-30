@@ -14,6 +14,56 @@ by somebody standing in the room.
 
 Flux is being built in phases; this README describes what works now.
 
+## Install
+
+Download `Flux-win-Setup.exe` from the latest
+[release](https://github.com/Oulsen/Flux/releases) and run it. It installs for the
+current user, into `%LOCALAPPDATA%\Flux`, without asking for administrator rights,
+and adds Flux to the Start menu.
+
+- **SmartScreen.** The installer is not code-signed, so Windows warns about it the
+  first time: choose "More info", then "Run anyway".
+- **Firewall.** On the first start Windows asks whether Flux may use the network.
+  Allow it on private networks: that is how a phone reaches the page and how Flux
+  hears an Ableton Link session.
+- **WebView2.** The window needs the Microsoft Edge WebView2 Runtime, which Windows
+  11 ships with. Without it Flux opens the page in the default browser and runs
+  from the tray.
+
+You also need:
+
+- Windows 10 version 2004 (build 19041) or newer, or Windows 11. That floor comes
+  from the WinRT MIDI API the controller observer uses.
+- A beat to follow, any one of: rekordbox 7.2.19 on the same machine, an Ableton
+  Link peer on the network (such as rekordbox with LINK on), or an audio input
+  carrying the music (such as a DJ controller's master return).
+- A Philips Hue bridge on the network with at least one entertainment area,
+  created in the Hue app. Without one, set `Hue:Enabled` to `false` (see
+  [Configuration](#configuration)) and the beat side runs on its own.
+
+## First run
+
+1. Pick a beat source on the page: enable LINK in rekordbox, or pick an audio
+   device and switch to Audio. The choice is remembered.
+2. Find the bridge, press its link button while the countdown runs, and pick an
+   entertainment area. Pairing survives restarts.
+3. Start light sync.
+
+To control Flux from a phone, open `http://<this PC's address>:5050` on the same
+network. The log lists the addresses to try.
+
+## Updates
+
+Flux looks for a newer release a minute after start and every two hours after
+that, and downloads it in the background. The drawer then offers to restart into
+it, which stops the lights for a few seconds. If nobody does, it is applied the
+next time Flux quits. `Updates:Enabled` turns this off.
+
+To uninstall, use Windows Settings, Apps. Settings in `%APPDATA%\Flux` stay
+behind; delete that folder as well for a clean slate.
+
+**Logs** are in `%LOCALAPPDATA%\Flux\logs`, one file a day, kept two weeks.
+
 ## What works in 0.6.0
 
 ### Finding the beat
@@ -90,81 +140,20 @@ Flux runs as a desktop window with a tray icon.
   second copy.
 - F11 puts the stage on the whole screen.
 - Links to anything other than Flux's own page open in the default browser.
-- An installed copy looks for a newer release a minute after start and every two
-  hours after that. Once one is downloaded, the drawer offers to restart into it;
-  otherwise it is applied the next time Flux quits.
-
-## Install
-
-Download `Flux-win-Setup.exe` from the latest
-[release](https://github.com/Oulsen/Flux/releases) and run it. It installs for the
-current user, into `%LOCALAPPDATA%\Flux`, without asking for administrator rights.
-
-The installer is not code-signed, so Windows SmartScreen warns about it the first
-time: choose "More info", then "Run anyway".
-
-Settings are kept in `%APPDATA%\Flux`, outside the install, so updating or
-reinstalling keeps them.
-
-## Requirements
-
-- Windows 10 version 2004 (build 19041) or newer, or Windows 11. That floor
-  comes from the WinRT MIDI API the controller observer uses.
-- To build from source: the [.NET SDK](https://dotnet.microsoft.com/download),
-  version pinned in `global.json`, and [Node.js](https://nodejs.org/) 22 or newer
-  for the frontend.
-- A beat to follow, any one of: rekordbox 7.2.19 on the same machine, an Ableton
-  Link peer on the network (such as rekordbox with LINK on), or an audio input
-  carrying the music (such as a DJ controller's master return).
-- A Philips Hue bridge on the network with at least one entertainment area,
-  created in the Hue app. Without one, set `Hue:Enabled` to `false` and the beat
-  side runs on its own.
-
-## Build and run
-
-The frontend builds into the backend's `wwwroot`, so build it first:
-
-```
-cd src/Flux.Web.Frontend
-npm install
-npm run build
-cd ../..
-dotnet run --project src/Flux.App
-```
-
-A window opens on the page. It needs the Microsoft Edge WebView2 Runtime, which
-Windows 11 ships with; without it Flux opens the page in the default browser and
-runs from the tray.
-
-**First run:**
-
-1. Pick a beat source on the page: enable LINK in rekordbox, or pick an audio
-   device and switch to Audio. The choice is remembered.
-2. Find the bridge, press its link button while the countdown runs, and pick an
-   entertainment area. Pairing survives restarts.
-3. Start light sync.
-
-**Logs** are in `%LOCALAPPDATA%\Flux\logs`, one file a day, kept two weeks. They
-include the address to type on a phone. `dotnet run --project src/Flux.App --
---console` prints the log to the terminal as well.
-
-**A build run from source is kept apart from an installed Flux.** It is called
-"Flux (dev)", keeps its settings and bridge key in `%APPDATA%\Flux-dev` and its
-log in `%LOCALAPPDATA%\Flux-dev\logs`, and serves the page on port 5051. Both can
-run at once, but only one can stream to the bridge, and a development build has
-to be paired once on its own.
-
-**Frontend work with hot reload:** keep the backend running and run `npm run
-dev` in `src/Flux.Web.Frontend`; Vite proxies the WebSocket through.
 
 ## Configuration
 
-### appsettings.json
+Installation settings come from `appsettings.json` beside the executable, and
+from an `appsettings.local.json` that overrides it. Put that file in
+`%APPDATA%\Flux`, beside the settings the page saves: an update replaces the
+install folder, and a file kept there would go with it. The command line
+overrides both for one run, for example `--Hue:Enabled=false`.
 
-Installation settings live in `src/Flux.App/appsettings.json`. An
-`appsettings.local.json` beside it overrides them and is not committed, and the
-command line overrides both for one run, for example
-`dotnet run --project src/Flux.App -- --Audio:RecordFramesPath=take-01.jsonl`.
+```json
+{
+  "Hue": { "Enabled": false }
+}
+```
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -190,9 +179,8 @@ command line overrides both for one run, for example
 
 ### Saved from the page
 
-What is tuned while the music plays belongs to the page, not to
-`appsettings.json`, and is saved in `%APPDATA%\Flux\`, or `%APPDATA%\Flux-dev\` for a
-build run from source:
+What is tuned while the music plays belongs to the page rather than to a settings
+file, and is saved in the same folder, `%APPDATA%\Flux\`:
 
 | File | Holds |
 |---|---|
@@ -217,7 +205,37 @@ It does not modify rekordbox, does not open its encrypted library database, and
 gets around no protection. It needs nothing from the network. `Rekordbox:Enabled`
 turns it off.
 
-## Tests
+## Development
+
+Building needs the [.NET SDK](https://dotnet.microsoft.com/download), version
+pinned in `global.json`, and [Node.js](https://nodejs.org/) 22 or newer for the
+frontend. The frontend builds into the backend's `wwwroot`, so build it first:
+
+```
+cd src/Flux.Web.Frontend
+npm install
+npm run build
+cd ../..
+dotnet run --project src/Flux.App
+```
+
+**A build run from source is kept apart from an installed Flux.** It is called
+"Flux (dev)", keeps its settings, bridge key and `appsettings.local.json` in
+`%APPDATA%\Flux-dev` and its log in `%LOCALAPPDATA%\Flux-dev\logs`, and serves
+the page on port 5051. Both can run at once, but only one can stream to the
+bridge, and a development build has to be paired once on its own. An
+`appsettings.local.json` beside `src/Flux.App/appsettings.json` works too.
+
+`dotnet run --project src/Flux.App -- --console` prints the log to the terminal
+as well.
+
+**Frontend work with hot reload:** keep the backend running and run `npm run
+dev` in `src/Flux.Web.Frontend`; Vite proxies the WebSocket through.
+
+**Releases** are drafted by `.github/workflows/release.yml` from a version tag,
+using `tools/publish-release.ps1`, which also builds the installer locally.
+
+### Tests
 
 ```
 dotnet run --project tests/Flux.Beat.Tests
@@ -238,7 +256,7 @@ npm run check
 npm test
 ```
 
-## Layout
+### Layout
 
 | Path | Holds |
 |---|---|
