@@ -234,3 +234,7 @@ npm test
 | `docs/rekordbox-chains.md` | The chain table's rules, format and per-version evidence |
 | `docs/rekordbox-anlz.md` | The analysis-file layout Flux reads, checked against a real library |
 | `docs/audio-constants.md` | Every number audio beat detection runs on, and where it came from |
+
+## License
+
+MIT, see `LICENSE`.
