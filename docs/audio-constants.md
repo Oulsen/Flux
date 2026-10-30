@@ -4,8 +4,10 @@ Every number audio beat detection runs on, where it came from, and what it means
 
 Flux's audio beat detector is a reimplementation of the beat detection in a
 SignalRGB visualizer scene that had been watched against real music, night after
-night, for a long time. That history is the reason its numbers are worth copying
-exactly: they are not derived from theory, they are what turned out to work. The
+night, for a long time. The scene began as an edit of "Pump up the beats", one of
+the audio effects SignalRGB ships, and was tuned from there. That history is the
+reason its numbers are worth copying exactly: they are not derived from theory,
+they are what turned out to work. The
 code is not copied - its structure is a visualizer's main loop with a detector
 woven through it - but the constants are, and they live in
 `src/Flux.Audio/AudioConstants.cs`.
