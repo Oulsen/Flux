@@ -209,6 +209,13 @@ internal static class Program {
 
     builder.Configuration.AddInMemoryCollection(edition);
     builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
+
+    // And one beside the settings, which is the only one an installed copy can keep: an
+    // update replaces the whole folder the executable runs from, local file included.
+    builder.Configuration.AddJsonFile(
+      Path.Combine(FluxPaths.Settings, "appsettings.local.json"),
+      optional: true,
+      reloadOnChange: false);
     builder.Configuration.AddCommandLine(launch.HostArguments);
 
     // The file always, the console only when there is one. The provider is owned by
