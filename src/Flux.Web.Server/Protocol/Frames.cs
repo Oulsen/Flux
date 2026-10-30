@@ -71,6 +71,10 @@ public static class Frames {
     return Encode("stage", stage, ProtocolJson.Default.EnvelopeStageData);
   }
 
+  public static ReadOnlyMemory<byte> Update(UpdateData update) {
+    return Encode("update", update, ProtocolJson.Default.EnvelopeUpdateData);
+  }
+
   public static ReadOnlyMemory<byte> Pong(long t) {
     return Encode("pong", new EchoData(t), ProtocolJson.Default.EnvelopeEchoData);
   }
@@ -395,6 +399,7 @@ public static class Frames {
 [JsonSerializable(typeof(Envelope<DevicesData>))]
 [JsonSerializable(typeof(Envelope<HueData>))]
 [JsonSerializable(typeof(Envelope<StageData>))]
+[JsonSerializable(typeof(Envelope<UpdateData>))]
 [JsonSerializable(typeof(Envelope<EchoData>))]
 [JsonSerializable(typeof(Envelope<ErrorData>))]
 [JsonSerializable(typeof(ClientEnvelope))]

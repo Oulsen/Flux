@@ -71,12 +71,15 @@ numbers nobody has ever heard.
   A skip there is not a broken suite. Recordings are made by running with
   `Audio:RecordAudioPath` and `Audio:RecordFramesPath` set, and a new take
   needs a new filename, since both recorders truncate.
-- `Flux.App` is a window application. Its log is in
-  `%LOCALAPPDATA%\Flux\logs`, and `--console` (after `--` under `dotnet run`)
-  prints it to the terminal too. Only one copy runs per Windows session: a
-  second launch shows the first one's window and exits with code 0 at once, which
-  looks like a start that quietly died. Check `tasklist` for a running `Flux.exe`
-  before reading anything into that. The window's DevTools (F12) exist only in a
+- `Flux.App` is a window application. Built from source it runs as "Flux (dev)",
+  apart from an installed Flux (`FluxEdition`): its log is in
+  `%LOCALAPPDATA%\Flux-dev\logs`, its settings in `%APPDATA%\Flux-dev`, its page on
+  port 5051. `--console` (after `--` under `dotnet run`) prints the log to the
+  terminal too. One copy of each edition runs per Windows session: a second
+  launch shows the first one's window and exits with code 0 at once, which looks
+  like a start that quietly died. Check `tasklist` for a running `Flux.exe`
+  before reading anything into that, and note the installed copy is a
+  `Flux.exe` too. The window's DevTools (F12) exist only in a
   Debug build; for inspecting the page in a Release build, open it in a browser.
 - After C# edits are complete, run
   `dotnet format style --severity warn --verbosity quiet` (this repo opts in;
@@ -103,6 +106,21 @@ numbers nobody has ever heard.
   into: a release moves `main` forward to `develop`'s tip with
   `git push origin <commit>:main`, which only a fast-forward passes, so
   `main` and `develop` are the same commit after a release.
+- Releasing, in order:
+  1. Try the installer from `develop`'s tip. Either run
+     `pwsh tools/publish-release.ps1` and then `releases\Flux-win-Setup.exe`, or push
+     a test tag `vX.Y.Z-test1`, which CI turns into a prerelease draft. Delete a test
+     draft and its tag afterwards.
+  2. Open a release PR from `develop` to `main`, then move `main` with
+     `git fetch origin && git push origin <develop tip>:main`.
+  3. Tag that commit `git tag -a vX.Y.Z -m vX.Y.Z` and push the tag.
+     `.github/workflows/release.yml` refuses a tag that is lightweight, not on
+     `main`, or different from `<Version>`. It drafts the release with
+     `Setup.exe` and the update feed attached.
+  4. Install the draft's `Setup.exe`, then publish it. Installed copies only see
+     published releases.
+  A published version is used up: Velopack offers updates by comparing versions,
+  so a number is never reused or lowered.
 - Comments explain why, not what. Match the existing register: file-level
   summaries argue the design decision the code cannot show.
 - Prose on disk uses " - " or a colon, never an em dash.

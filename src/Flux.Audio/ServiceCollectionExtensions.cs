@@ -42,8 +42,9 @@ public static class ServiceCollectionExtensions {
 
     // The same per-user folder the Hue settings and the bridge key live in, resolved
     // the same way, because "where Flux remembers things" should be one place on disk
-    // rather than one place per project.
-    string directory = System.IO.Path.Combine(
+    // rather than one place per project. Storage:Settings is set by the desktop app,
+    // which keeps a build run from source in a folder of its own.
+    string directory = configuration["Storage:Settings"] ?? System.IO.Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
       "Flux");
 

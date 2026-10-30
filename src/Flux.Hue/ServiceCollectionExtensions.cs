@@ -38,7 +38,10 @@ public static class ServiceCollectionExtensions {
     // combination an installed app needs and the install directory has none of. The
     // path is resolved here rather than inside the stores so that a test can point the
     // same classes at a temporary folder without a setting existing for it.
-    string directory = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Flux");
+    // Storage:Settings is set by the desktop app, which keeps a build run from source in
+    // a folder of its own, and with it a bridge key of its own.
+    string directory = configuration["Storage:Settings"]
+      ?? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Flux");
 
     services.AddSingleton<ICredentialStore>(provider => new DpapiCredentialStore(
       directory,

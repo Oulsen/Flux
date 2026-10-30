@@ -509,6 +509,7 @@ public sealed class HueMessagesTests {
         this.Bridge,
         stream: null,
         new StageService(new MemoryStageSettingsStore()),
+        null,
         new FakeHostLifetime(),
         NullLogger<SocketHub>.Instance);
 

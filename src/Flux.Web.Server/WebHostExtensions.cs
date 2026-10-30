@@ -50,13 +50,15 @@ public static class WebHostExtensions {
      * %APPDATA%\Flux, the same per-user folder the Hue and audio settings use: writable
      * without elevation, surviving an update, and none of which the install directory
      * is. Resolved here rather than inside the store so a test can point the same class
-     * at a temporary folder without a setting existing for it.
+     * at a temporary folder without a setting existing for it. Storage:Settings is set by
+     * the desktop app, which keeps a build run from source in a folder of its own.
      *
      * Registered as itself and as ISpectrumBands, one instance behind both, because the
      * band count would otherwise exist in two places and eventually disagree with
      * itself. The audio project reads it through the interface and never sees the rest.
      */
-    string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Flux");
+    string settings = builder.Configuration["Storage:Settings"]
+      ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Flux");
 
     builder.Services.AddSingleton<IStageSettingsStore>(provider => new JsonStageSettingsStore(
       settings,
@@ -79,6 +81,7 @@ public static class WebHostExtensions {
       provider.GetService<HueBridgeService>(),
       provider.GetService<HueStreamService>(),
       provider.GetRequiredService<StageService>(),
+      provider.GetService<IAppUpdates>(),
       provider.GetRequiredService<IHostApplicationLifetime>(),
       provider.GetRequiredService<ILogger<SocketHub>>()));
 
@@ -119,6 +122,12 @@ public static class WebHostExtensions {
     builder.Services.AddHostedService(provider => new StageBroadcaster(
       provider.GetRequiredService<SocketHub>(),
       provider.GetRequiredService<StageService>()));
+
+    // Updates are optional the way audio is: only an installed desktop app has an
+    // updater to register, and without one this starts nothing.
+    builder.Services.AddHostedService(provider => new UpdateBroadcaster(
+      provider.GetRequiredService<SocketHub>(),
+      provider.GetService<IAppUpdates>()));
 
     // Listening is configured rather than described in a URL string: the address
     // has just been parsed and checked, and handing Kestrel the parsed value

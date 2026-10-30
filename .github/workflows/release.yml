@@ -1,0 +1,98 @@
+# A version tag turns into a draft release with the installer attached. Publishing it
+# stays a click by the maintainer, after trying that installer; until then the in-app
+# update check cannot see it, because Velopack reads published releases only.
+#
+# vX.Y.Z must be an annotated tag on main, and X.Y.Z must be the <Version> in
+# Directory.Build.props: the version inside the build and the one on the release
+# would otherwise disagree, and Velopack offers updates by comparing them. A test tag
+# vX.Y.Z-testN works from any branch and makes a prerelease draft, which installed
+# copies never update to either: delete the draft and the tag afterwards.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    # Windows for the reason CI is: Flux.App targets a Windows framework.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag
+        id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ $TAG =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-test[0-9]+)?$ ]] \
+            || { echo "::error::$TAG is no version tag (vX.Y.Z, or vX.Y.Z-testN for a try)"; exit 1; }
+          base=${BASH_REMATCH[1]}
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          [ "$(git cat-file -t "refs/tags/$TAG")" = tag ] \
+            || { echo "::error::$TAG is a lightweight tag: make an annotated one (git tag -a $TAG -m $TAG)"; exit 1; }
+          props=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)
+          [ "$props" = "$base" ] \
+            || { echo "::error::$TAG does not match <Version>$props</Version> in Directory.Build.props"; exit 1; }
+          case $TAG in
+            *-test*) echo "pre=true" >> "$GITHUB_OUTPUT" ;;
+            *) git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+                 || { echo "::error::$TAG is not on main: tag the commit main points to after the release"; exit 1; }
+               echo "pre=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: src/Flux.Web.Frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: src/Flux.Web.Frontend
+        run: npm ci
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # The same gate as CI: a release is never built from lock files that do not resolve.
+      - name: Restore
+        run: dotnet restore --locked-mode
+
+      # The last published release, so vpk can add a delta package beside the full one.
+      # Nothing to fetch before the first release, which is not an error.
+      - name: Fetch the previous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dotnet tool restore
+          dotnet vpk download github --repoUrl "https://github.com/${{ github.repository }}" \
+            --token "$GH_TOKEN" --outputDir releases \
+            || echo "No earlier release to make a delta from."
+
+      - name: Pack
+        shell: pwsh
+        run: ./tools/publish-release.ps1 -Version '${{ steps.tag.outputs.version }}'
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          pre=()
+          [ "${{ steps.tag.outputs.pre }}" = true ] && pre=(--pre)
+          dotnet vpk upload github --repoUrl "https://github.com/${{ github.repository }}" \
+            --token "$GH_TOKEN" --outputDir releases \
+            --tag "$TAG" --releaseName "$TAG" --targetCommitish "$GITHUB_SHA" "${pre[@]}"
+          echo "Draft $TAG is ready: install its Setup.exe, then publish it on GitHub."
