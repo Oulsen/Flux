@@ -16,7 +16,19 @@
    * being adjusted. The comment justifying the backdrop argued it kept dismissal
    * reachable on a phone, and that argument does not survive the drawer being full-width
    * on a phone: there is no backdrop to reach there. What dismisses this is the close
-   * button, Escape, and the toggle that opened it, all of which work on both.
+   * button, Escape, the toggle that opened it, and on the desk a press on the stage
+   * beside it.
+   *
+   * That last one is still not a backdrop, and the difference is the whole point: a
+   * backdrop is an element over the stage that receives every press, while the page
+   * listens for presses that reach the stage on their own. The stage controls take the
+   * pointer back from the layer above the picture, so a press on anchor lands on anchor
+   * and never on the stage - it acts, and the drawer stays open beside it.
+   *
+   * Focus follows the drawer in both directions. Opening leaves focus on whatever
+   * opened it, which is behind the drawer, so it moves to the selected tab. Closing
+   * makes the drawer `inert`, which would drop focus held inside it onto the page body,
+   * so it goes back to where it came from.
    */
 
   import type { Snippet } from 'svelte';
@@ -44,6 +56,32 @@
   const { open, close, header, scrollKey, children }: Props = $props();
 
   let scroller: HTMLDivElement | undefined = $state();
+  let aside: HTMLElement | undefined = $state();
+
+  /* Where focus was when the drawer opened, to hand it back to on close. */
+  let opener: HTMLElement | null = null;
+  let returnFocus = false;
+
+  // Before the DOM changes, because once `inert` is set there is no focus left inside
+  // the drawer to ask about.
+  $effect.pre(() => {
+    if (open) {
+      opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    } else {
+      returnFocus = aside?.contains(document.activeElement) ?? false;
+    }
+  });
+
+  $effect(() => {
+    if (open) {
+      const target =
+        aside?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? aside?.querySelector<HTMLElement>('button');
+      target?.focus();
+    } else if (returnFocus) {
+      returnFocus = false;
+      opener?.focus();
+    }
+  });
 
   $effect(() => {
     // Read for the dependency: the value itself says nothing, only that it moved.
@@ -60,7 +98,7 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<aside class="drawer" class:open aria-label="Settings" inert={!open}>
+<aside class="drawer" class:open aria-label="Settings" inert={!open} bind:this={aside}>
   {#if header}
     <div class="header">
       {@render header()}

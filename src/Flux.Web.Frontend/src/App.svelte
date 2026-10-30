@@ -105,6 +105,25 @@
     drawerOpen = !drawerOpen;
   }
 
+  let stageEl: HTMLDivElement | undefined = $state();
+
+  /*
+   * A press on the picture closes the drawer, and a press on a stage control does not.
+   * No hit-testing is needed for that: the HUD is a sheet of glass, so a press on empty
+   * stage or on a reading falls through to the stage, while a control that took the
+   * pointer back receives the press itself - and the HUD is the stage's sibling, not
+   * its child. A new stage control therefore has to take the pointer back the way
+   * `.control` and `.settings` do, or it will close the drawer instead of working.
+   *
+   * On the window rather than on the stage, because the stage is hidden from assistive
+   * technology and a handler on it would be a control nobody but a mouse can find.
+   */
+  function closeFromStage(event: PointerEvent): void {
+    if (drawerOpen && event.target instanceof Node && stageEl?.contains(event.target)) {
+      drawerOpen = false;
+    }
+  }
+
   /*
    * Whether somebody has asked to see the bridge setup, which is not the same as
    * whether it is showing.
@@ -342,9 +361,12 @@
   The stage, and it is the page rather than an element on it.
 
   Behind everything and never interactive: it carries no controls, and a canvas that
-  swallowed a tap would take it from the HUD floating over it.
+  swallowed a tap would take it from the HUD floating over it. A press that reaches it
+  closes the drawer, which is the window listening rather than the stage.
 -->
-<div class="stage" aria-hidden="true">
+<svelte:window onpointerdown={closeFromStage} />
+
+<div class="stage" aria-hidden="true" bind:this={stageEl}>
   {#if stageOn}
     <!-- The colour comes off the wire rather than being computed here, which is the
          whole reason it is on the wire: a second engine in the browser would drift from
@@ -381,7 +403,7 @@
       aria-expanded={drawerOpen}
       onclick={toggleDrawer}
     >
-      {needsSetup ? 'set up' : 'settings'}
+      settings
     </button>
   </div>
 
@@ -858,7 +880,8 @@
   }
 
   /* Nothing works until a bridge is chosen, and the drawer only prompts once. After
-     that this is the only thing on screen saying so. */
+     that this is the only thing on screen saying so - by colour rather than by a
+     second label, so the one button that opens the drawer is always called the same. */
   .settings.wants {
     border-color: var(--accent);
     color: var(--accent);
