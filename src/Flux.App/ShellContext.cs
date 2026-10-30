@@ -73,7 +73,7 @@ internal sealed class ShellContext: ApplicationContext {
 
       this.tray = new NotifyIcon {
         Icon = this.trayIcon,
-        Text = "Flux",
+        Text = FluxEdition.Title,
         ContextMenuStrip = this.menu,
         Visible = true,
       };

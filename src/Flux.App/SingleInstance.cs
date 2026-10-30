@@ -27,7 +27,8 @@ namespace Flux.App;
 /// that code has easier ways to stop Flux than this one.
 /// </summary>
 internal sealed class SingleInstance: IDisposable {
-  private const string SessionPrefix = @"Local\Flux";
+  // Per edition, so the installed Flux and a build run from source each have one.
+  private static readonly string SessionPrefix = $@"Local\{FluxEdition.Name}";
 
   /// <summary><c>ASFW_ANY</c>: any process may take the foreground next.</summary>
   private const int AnyProcess = -1;

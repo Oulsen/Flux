@@ -1619,7 +1619,8 @@ A `bands` outside 16 to 128 or a `trailMs` outside 0 to 1000 is `rejected` rathe
 clamped, on the same argument as `setLatencyOffset`. A missing field, a non-integer
 `bands` or `trailMs`, or a name that is not a string is `invalid_data`.
 
-These survive a restart, in `%APPDATA%\Flux\stage-settings.json`.
+These survive a restart, in `%APPDATA%\Flux\stage-settings.json`, or under
+`Flux-dev` for a build run from source.
 
 ### `checkUpdate`
 

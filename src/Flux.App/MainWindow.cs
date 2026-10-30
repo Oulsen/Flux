@@ -52,7 +52,7 @@ internal sealed class MainWindow: Form {
 #if DEBUG
     this.Text = "Flux (DEV)";
 #else
-    this.Text = "Flux";
+    this.Text = FluxEdition.Title;
 #endif
 
     // Kept to be disposed with the window: a form does not dispose the icon it is given.

@@ -91,4 +91,4 @@ if ($LASTEXITCODE -ne 0) { throw "vpk pack failed ($LASTEXITCODE)" }
 
 Write-Host "`nFlux $Version is in $OutputDir" -ForegroundColor Green
 Get-ChildItem $OutputDir | Select-Object Name, Length | Format-Table -AutoSize
-Write-Host 'To install it here: quit Flux from the tray, then run the Setup.exe above.'
+Write-Host 'To install it here, run the Setup.exe above. A development build can stay open; an installed Flux has to be quit from the tray first.'

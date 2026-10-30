@@ -1,17 +1,25 @@
 namespace Flux.App;
 
 /// <summary>
-/// Where the desktop app keeps what is not a setting.
+/// Where the desktop app keeps things, named after <see cref="FluxEdition"/>.
 ///
-/// Local application data rather than the roaming folder the settings live in. A log
-/// and a browser profile are this machine's and nobody's preference: roaming them
+/// Settings go in the roaming folder and the rest in local application data. A log and a
+/// browser profile belong to this machine and are nobody's preference, and roaming them
 /// would copy megabytes of cache between machines to carry nothing worth keeping.
 /// </summary>
 internal static class FluxPaths {
+  /// <summary>
+  /// What is tuned on the page and the bridge key: %APPDATA%\Flux, or Flux-dev. Handed to
+  /// the other projects through configuration, since they cannot see this class.
+  /// </summary>
+  internal static string Settings { get; } = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+    FluxEdition.Name);
+
   /// <summary>The folder itself, for what belongs to this machine and needs no folder of its own.</summary>
   internal static string Root { get; } = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    "Flux");
+    FluxEdition.Name);
 
   /// <summary>The rolling log, one file per day.</summary>
   internal static string Logs { get; } = Path.Combine(Root, "logs");

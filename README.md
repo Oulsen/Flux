@@ -148,6 +148,12 @@ runs from the tray.
 include the address to type on a phone. `dotnet run --project src/Flux.App --
 --console` prints the log to the terminal as well.
 
+**A build run from source is kept apart from an installed Flux.** It is called
+"Flux (dev)", keeps its settings and bridge key in `%APPDATA%\Flux-dev` and its
+log in `%LOCALAPPDATA%\Flux-dev\logs`, and serves the page on port 5051. Both can
+run at once, but only one can stream to the bridge, and a development build has
+to be paired once on its own.
+
 **Frontend work with hot reload:** keep the backend running and run `npm run
 dev` in `src/Flux.Web.Frontend`; Vite proxies the WebSocket through.
 
@@ -162,7 +168,7 @@ command line overrides both for one run, for example
 
 | Key | Default | Meaning |
 |---|---|---|
-| `Web:Port` | `5050` | HTTP and WebSocket port for the page |
+| `Web:Port` | `5050` | HTTP and WebSocket port for the page. A build run from source uses 5051 unless this is set in `appsettings.local.json` or on the command line |
 | `Beat:DefaultSource` | `link` | Source on first run: `link`, `audio`, `manual` or `rekordbox`. Once one is picked on the page, that choice wins |
 | `Beat:Quantum` | `4` | Beats in a bar. rekordbox counts in fours, so any other value logs a warning at startup |
 | `Link:InterfaceAddress` | `null` | Network adapter to listen for Link on; `null` picks one |
@@ -185,7 +191,8 @@ command line overrides both for one run, for example
 ### Saved from the page
 
 What is tuned while the music plays belongs to the page, not to
-`appsettings.json`, and is saved in `%APPDATA%\Flux\`:
+`appsettings.json`, and is saved in `%APPDATA%\Flux\`, or `%APPDATA%\Flux-dev\` for a
+build run from source:
 
 | File | Holds |
 |---|---|

@@ -71,12 +71,15 @@ numbers nobody has ever heard.
   A skip there is not a broken suite. Recordings are made by running with
   `Audio:RecordAudioPath` and `Audio:RecordFramesPath` set, and a new take
   needs a new filename, since both recorders truncate.
-- `Flux.App` is a window application. Its log is in
-  `%LOCALAPPDATA%\Flux\logs`, and `--console` (after `--` under `dotnet run`)
-  prints it to the terminal too. Only one copy runs per Windows session: a
-  second launch shows the first one's window and exits with code 0 at once, which
-  looks like a start that quietly died. Check `tasklist` for a running `Flux.exe`
-  before reading anything into that. The window's DevTools (F12) exist only in a
+- `Flux.App` is a window application. Built from source it runs as "Flux (dev)",
+  apart from an installed Flux (`FluxEdition`): its log is in
+  `%LOCALAPPDATA%\Flux-dev\logs`, its settings in `%APPDATA%\Flux-dev`, its page on
+  port 5051. `--console` (after `--` under `dotnet run`) prints the log to the
+  terminal too. One copy of each edition runs per Windows session: a second
+  launch shows the first one's window and exits with code 0 at once, which looks
+  like a start that quietly died. Check `tasklist` for a running `Flux.exe`
+  before reading anything into that, and note the installed copy is a
+  `Flux.exe` too. The window's DevTools (F12) exist only in a
   Debug build; for inspecting the page in a Release build, open it in a browser.
 - After C# edits are complete, run
   `dotnet format style --severity warn --verbosity quiet` (this repo opts in;

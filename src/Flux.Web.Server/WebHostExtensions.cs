@@ -50,13 +50,15 @@ public static class WebHostExtensions {
      * %APPDATA%\Flux, the same per-user folder the Hue and audio settings use: writable
      * without elevation, surviving an update, and none of which the install directory
      * is. Resolved here rather than inside the store so a test can point the same class
-     * at a temporary folder without a setting existing for it.
+     * at a temporary folder without a setting existing for it. Storage:Settings is set by
+     * the desktop app, which keeps a build run from source in a folder of its own.
      *
      * Registered as itself and as ISpectrumBands, one instance behind both, because the
      * band count would otherwise exist in two places and eventually disagree with
      * itself. The audio project reads it through the interface and never sees the rest.
      */
-    string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Flux");
+    string settings = builder.Configuration["Storage:Settings"]
+      ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Flux");
 
     builder.Services.AddSingleton<IStageSettingsStore>(provider => new JsonStageSettingsStore(
       settings,

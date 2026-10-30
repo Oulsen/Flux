@@ -43,8 +43,9 @@ public static class ServiceCollectionExtensions {
 
     // The same per-user folder the audio and Hue settings live in, named here rather
     // than shared, for the reason those two are separate files: three projects storing
-    // three strings should not have to depend on each other to do it.
-    string directory = System.IO.Path.Combine(
+    // three strings should not have to depend on each other to do it. Storage:Settings
+    // is set by the desktop app, as for the other two.
+    string directory = configuration["Storage:Settings"] ?? System.IO.Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
       "Flux");
 

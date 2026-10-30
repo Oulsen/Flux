@@ -196,6 +196,18 @@ internal static class Program {
     // The host reads it before this line, and a local file that spells out a setting -
     // even as null, which is how the recording paths are written there - would
     // otherwise quietly overrule what somebody typed for this one run.
+    // Where this edition keeps its settings, for the projects that cannot see FluxPaths,
+    // and a build run from source on a port of its own so it can run beside the installed
+    // copy. Ahead of the local file and the command line, so either can still move the port.
+    Dictionary<string, string?> edition = new Dictionary<string, string?> {
+      ["Storage:Settings"] = FluxPaths.Settings,
+    };
+
+    if(!FluxEdition.Installed) {
+      edition["Web:Port"] = FluxEdition.DevelopmentPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    builder.Configuration.AddInMemoryCollection(edition);
     builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
     builder.Configuration.AddCommandLine(launch.HostArguments);
 
