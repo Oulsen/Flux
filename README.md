@@ -1,4 +1,8 @@
-﻿# Flux
+﻿<p align="center">
+  <img src="assets/branding/flux-mark.svg" width="128" height="128" alt="The Flux mark: a waveform seen through five bars">
+</p>
+
+# Flux
 
 Music in, light out.
 
