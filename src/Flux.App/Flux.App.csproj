@@ -38,6 +38,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4022.49" />
+    <PackageReference Include="Velopack" Version="1.2.158" />
   </ItemGroup>
 
   <ItemGroup>

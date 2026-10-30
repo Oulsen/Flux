@@ -154,6 +154,9 @@ measurement or it is absent along with the object holding it. If a promise made
 here turns out to be one Flux cannot keep, correcting it increments the version
 unless no build ever sent the field.
 
+Updating itself added `update`, `checkUpdate` and `applyUpdate`, all new types. An
+older page ignores `update` and never sends the other two, so the version stays 2.
+
 ## Units and conventions
 
 | Field | Unit |
@@ -934,6 +937,36 @@ It is on the screen only. In the scene the canvas was the device and the fade sm
 the LEDs along with the picture; Flux's lights have an envelope of their own, and
 `setLightSettings.pulseMs` is what decides how long a light trails a beat.
 
+### `update`
+
+Whether a newer Flux is waiting. Sent once on connect, right after `stage`, and again to
+every client whenever it changes. The desktop app always sends it, and a host with no
+updater at all sends none. A page that has received none since the last `hello`, or
+has received `unavailable`, shows no update control.
+
+```json
+{ "type": "update", "data": { "status": "ready", "version": "0.7.0" } }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `status` | string | `unavailable`, `checking`, `current`, `ready` or `failed` |
+| `version` | string or null | The downloaded version when `status` is `ready`, otherwise null |
+
+- `unavailable`: this copy cannot update itself. Either it is a development build
+  that Setup.exe never installed, or updates are switched off with `Updates:Enabled`.
+  Nothing changes it while the process runs.
+- `checking`: asking GitHub for a newer release, or downloading one it found.
+- `current`: no newer release is known. The last check found none, or none has run
+  yet: the first runs a minute after start, and then one every two hours.
+- `ready`: a newer version is downloaded and is applied by `applyUpdate`, or else
+  when Flux next quits.
+- `failed`: the last check got no answer, which is ordinary when offline. The next
+  check runs on schedule.
+
+Pushed on change rather than repeated, like `stage`: it moves a few times a day at
+most.
+
 ### `pong`
 
 The reply to `ping`, echoing `t` unchanged, so the client can measure a
@@ -1587,6 +1620,35 @@ clamped, on the same argument as `setLatencyOffset`. A missing field, a non-inte
 `bands` or `trailMs`, or a name that is not a string is `invalid_data`.
 
 These survive a restart, in `%APPDATA%\Flux\stage-settings.json`.
+
+### `checkUpdate`
+
+```json
+{ "type": "checkUpdate", "data": { } }
+```
+
+Asks for a newer release now, rather than at the next scheduled check. `data` is
+empty and is ignored. Confirmed by the `update` frames that follow, `checking` and
+then the outcome, which go to every client. Joins a check already running, and does
+nothing while `status` is `ready` or `unavailable`.
+
+### `applyUpdate`
+
+```json
+{ "type": "applyUpdate", "data": { } }
+```
+
+Stops Flux and starts the downloaded version in its place. `data` is empty and is
+ignored. It does nothing unless `status` is `ready`.
+
+**There is no reply, because nothing is left to send it.** Flux stops the ordinary
+way: the Hue stream is ended and every socket closes. The new version starts a few
+seconds later, and a page reconnects to it as it would after any restart (see
+"Reconnection"). Its `hello` carries the new `app` version, which is the confirmation.
+
+A host that cannot update itself ignores both messages, rather than answering with
+`unknown_type`. A page that is reconnecting may not yet know whether the host has an
+updater, and the messages are well formed either way.
 
 ## Backpressure
 

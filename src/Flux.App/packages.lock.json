@@ -38,6 +38,12 @@
         "resolved": "1.0.4022.49",
         "contentHash": "Dwewh8bbbXoFiF2y0jT3MBEV5ZXZVA7FDbMl6DixUCCLQAoymLMxMwqibdBaY/eWCG/BBSAILUOFDIzJZ9lfNQ=="
       },
+      "Velopack": {
+        "type": "Direct",
+        "requested": "[1.2.158, )",
+        "resolved": "1.2.158",
+        "contentHash": "wQN38beVrAf0WzFMnZtl7UmwxqwaJ7xVYypqITdOI4YUTYch2UvE+xAjg9msfaitVDtgfWeIcGsjRNQ65C03ZQ=="
+      },
       "HueApi": {
         "type": "Transitive",
         "resolved": "3.3.0",
@@ -330,8 +336,8 @@
       "flux.audio": {
         "type": "Project",
         "dependencies": {
-          "Flux.Audio.Contract": "[0.5.0, )",
-          "Flux.Beat": "[0.5.0, )",
+          "Flux.Audio.Contract": "[0.6.0, )",
+          "Flux.Beat": "[0.6.0, )",
           "NAudio.Wasapi": "[2.2.1, )"
         }
       },
@@ -349,8 +355,8 @@
       "flux.hue": {
         "type": "Project",
         "dependencies": {
-          "Flux.Audio.Contract": "[0.5.0, )",
-          "Flux.Beat": "[0.5.0, )",
+          "Flux.Audio.Contract": "[0.6.0, )",
+          "Flux.Beat": "[0.6.0, )",
           "HueApi": "[3.3.0, )",
           "HueApi.ColorConverters": "[3.3.0, )",
           "HueApi.Entertainment": "[3.3.0, )"
@@ -359,21 +365,21 @@
       "flux.midi": {
         "type": "Project",
         "dependencies": {
-          "Flux.Beat": "[0.5.0, )"
+          "Flux.Beat": "[0.6.0, )"
         }
       },
       "flux.rekordbox": {
         "type": "Project",
         "dependencies": {
-          "Flux.Beat": "[0.5.0, )"
+          "Flux.Beat": "[0.6.0, )"
         }
       },
       "flux.web.server": {
         "type": "Project",
         "dependencies": {
-          "Flux.Audio.Contract": "[0.5.0, )",
-          "Flux.Beat": "[0.5.0, )",
-          "Flux.Hue": "[0.5.0, )"
+          "Flux.Audio.Contract": "[0.6.0, )",
+          "Flux.Beat": "[0.6.0, )",
+          "Flux.Hue": "[0.6.0, )"
         }
       }
     }

@@ -90,14 +90,29 @@ Flux runs as a desktop window with a tray icon.
   second copy.
 - F11 puts the stage on the whole screen.
 - Links to anything other than Flux's own page open in the default browser.
+- An installed copy looks for a newer release a minute after start and every two
+  hours after that. Once one is downloaded, the drawer offers to restart into it;
+  otherwise it is applied the next time Flux quits.
+
+## Install
+
+Download `Flux-win-Setup.exe` from the latest
+[release](https://github.com/Oulsen/Flux/releases) and run it. It installs for the
+current user, into `%LOCALAPPDATA%\Flux`, without asking for administrator rights.
+
+The installer is not code-signed, so Windows SmartScreen warns about it the first
+time: choose "More info", then "Run anyway".
+
+Settings are kept in `%APPDATA%\Flux`, outside the install, so updating or
+reinstalling keeps them.
 
 ## Requirements
 
 - Windows 10 version 2004 (build 19041) or newer, or Windows 11. That floor
   comes from the WinRT MIDI API the controller observer uses.
-- [.NET SDK](https://dotnet.microsoft.com/download), version pinned in
-  `global.json`.
-- [Node.js](https://nodejs.org/) 22 or newer, to build the frontend.
+- To build from source: the [.NET SDK](https://dotnet.microsoft.com/download),
+  version pinned in `global.json`, and [Node.js](https://nodejs.org/) 22 or newer
+  for the frontend.
 - A beat to follow, any one of: rekordbox 7.2.19 on the same machine, an Ableton
   Link peer on the network (such as rekordbox with LINK on), or an audio input
   carrying the music (such as a DJ controller's master return).
@@ -163,6 +178,7 @@ command line overrides both for one run, for example
 | `Hue:BridgeAddress` | `null` | Skip discovery and use this address. Only for networks discovery cannot cross, since DHCP can move a bridge |
 | `Hue:StreamHz` | `50` | Frames a second to the bridge, 10 to 60. Higher does not look smoother: bulbs render about 25 a second |
 | `Hue:LatencyOffsetMs` | `0` | Starting light offset, -500 to 500 ms; positive sends light early. The page owns it from there |
+| `Updates:Enabled` | `true` | Look for newer releases. Only an installed copy can update; a build run from source never checks |
 | `Console:BeatLog` | `false` | One console line per beat. Needs `--console` |
 | `Console:AudioMeter` | `false` | Capture level four times a second. Needs `--console` |
 
@@ -229,6 +245,7 @@ npm test
 | `src/Flux.Web.Frontend` | The Svelte single-page app |
 | `src/Flux.App` | The host executable: window, tray icon, single instance, log file |
 | `assets/branding` | The Flux mark as SVG and the script that builds `flux.ico` |
+| `tools/publish-release.ps1` | Builds the installer and update feed; the release workflow runs the same script |
 | `tools/Flux.Rekordbox.ChainFinder` | Desk tool that finds the pointer chains for a rekordbox version; see `docs/rekordbox-chains.md` |
 | `docs/protocol.md` | The WebSocket wire contract; where it and anything else disagree, it wins |
 | `docs/rekordbox-chains.md` | The chain table's rules, format and per-version evidence |

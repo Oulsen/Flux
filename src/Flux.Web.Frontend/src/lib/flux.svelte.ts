@@ -18,6 +18,7 @@ import {
   type SpectrumData,
   type StageData,
   type StateData,
+  type UpdateData,
 } from './protocol.ts';
 import { BAND_DEFAULT, COLOR_DEFAULT, LAYOUT_DEFAULT, SHAPE_DEFAULT } from './scene.ts';
 import type { ConnectionState } from './socket.ts';
@@ -125,6 +126,12 @@ export class FluxStore {
   preview = $state<PreviewData | null>(null);
 
   /**
+   * Whether a newer Flux is waiting. Null until the server says, and a host with no
+   * updater never does.
+   */
+  update = $state<UpdateData | null>(null);
+
+  /**
    * How the stage draws, as the server has it.
    *
    * Seeded with the same defaults the server starts from rather than left null, on the
@@ -192,8 +199,16 @@ export class FluxStore {
         this.app = hello.app;
         this.quantum = hello.quantum;
         this.stateHz = hello.stateHz;
+        // Cleared on every greeting: the update frame follows it from a host that has an
+        // updater, and a page reconnecting to one that has none should not keep the
+        // last host's answer.
+        this.update = null;
         break;
       }
+
+      case 'update':
+        this.update = message.data as UpdateData;
+        break;
 
       case 'state': {
         const state = message.data as StateData;

@@ -103,6 +103,21 @@ numbers nobody has ever heard.
   into: a release moves `main` forward to `develop`'s tip with
   `git push origin <commit>:main`, which only a fast-forward passes, so
   `main` and `develop` are the same commit after a release.
+- Releasing, in order:
+  1. Try the installer from `develop`'s tip. Either run
+     `pwsh tools/publish-release.ps1` and then `releases\Flux-win-Setup.exe`, or push
+     a test tag `vX.Y.Z-test1`, which CI turns into a prerelease draft. Delete a test
+     draft and its tag afterwards.
+  2. Open a release PR from `develop` to `main`, then move `main` with
+     `git fetch origin && git push origin <develop tip>:main`.
+  3. Tag that commit `git tag -a vX.Y.Z -m vX.Y.Z` and push the tag.
+     `.github/workflows/release.yml` refuses a tag that is lightweight, not on
+     `main`, or different from `<Version>`. It drafts the release with
+     `Setup.exe` and the update feed attached.
+  4. Install the draft's `Setup.exe`, then publish it. Installed copies only see
+     published releases.
+  A published version is used up: Velopack offers updates by comparing versions,
+  so a number is never reused or lowered.
 - Comments explain why, not what. Match the existing register: file-level
   summaries argue the design decision the code cannot show.
 - Prose on disk uses " - " or a colon, never an em dash.

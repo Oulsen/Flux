@@ -669,7 +669,7 @@ public sealed class SocketHubTests {
   /// rather than a machine with no devices, and is the case most of these tests
   /// are about.
   /// </summary>
-  private static Rig NewRig(IAudioDevices? audio = null) {
+  private static Rig NewRig(IAudioDevices? audio = null, IAppUpdates? updates = null) {
     MonotonicClock clock = new MonotonicClock();
     BeatOptions beat = new BeatOptions();
     BeatGrid grid = new BeatGrid(clock, beat.Quantum, beat.StaleAfter);
@@ -691,6 +691,7 @@ public sealed class SocketHubTests {
       hue: null,
       stream: null,
       new StageService(new MemoryStageSettingsStore()),
+      updates,
       new FakeHostLifetime(),
       NullLogger<SocketHub>.Instance);
 
@@ -711,6 +712,91 @@ public sealed class SocketHubTests {
 
     using JsonDocument pong = JsonDocument.Parse(await socket.NextAsync());
     Assert.Equal("pong", pong.RootElement.GetProperty("type").GetString());
+  }
+
+  /// <summary>
+  /// A release found before the page opened is told on arrival: the state is pushed on
+  /// change only, and the page would otherwise never learn of it.
+  /// </summary>
+  [Fact]
+  public async Task TellsAnArrivingClientAboutAWaitingUpdate() {
+    FakeWebSocket socket = new FakeWebSocket();
+    FakeUpdates updates = new FakeUpdates(new UpdateState(UpdateStatus.Ready, "0.7.0"));
+    Rig rig = NewRig(updates: updates);
+
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await SkipOpeningAsync(socket);
+
+    using JsonDocument update = JsonDocument.Parse(await socket.NextAsync());
+    Assert.Equal("update", update.RootElement.GetProperty("type").GetString());
+    JsonElement data = update.RootElement.GetProperty("data");
+    Assert.Equal("ready", data.GetProperty("status").GetString());
+    Assert.Equal("0.7.0", data.GetProperty("version").GetString());
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  /// <summary>
+  /// No updater, no frame: its absence is how the page knows to show no update control.
+  /// The two messages are then ignored rather than refused, since an installed page and
+  /// a development host can sit behind the same address on different days.
+  /// </summary>
+  [Fact]
+  public async Task SaysNothingOfUpdatesWithoutAnUpdater() {
+    FakeWebSocket socket = new FakeWebSocket();
+    Rig rig = NewRig();
+
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await SkipOpeningAsync(socket);
+
+    await SettleAsync(socket, """{"type":"checkUpdate","data":{}}""");
+    await SettleAsync(socket, """{"type":"applyUpdate","data":{}}""");
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  [Fact]
+  public async Task PassesCheckAndApplyToTheUpdater() {
+    FakeWebSocket socket = new FakeWebSocket();
+    FakeUpdates updates = new FakeUpdates(new UpdateState(UpdateStatus.Current, null));
+    Rig rig = NewRig(updates: updates);
+
+    Task serving = rig.Hub.ServeAsync(socket, CancellationToken.None);
+    await SkipOpeningAsync(socket);
+    await socket.NextAsync();
+
+    await SettleAsync(socket, """{"type":"checkUpdate","data":{}}""");
+    await SettleAsync(socket, """{"type":"applyUpdate","data":{}}""");
+
+    Assert.Equal(1, updates.Checks);
+    Assert.Equal(1, updates.Restarts);
+
+    socket.ClientClose();
+    await serving;
+  }
+
+  private sealed class FakeUpdates(UpdateState state): IAppUpdates {
+    public int Checks { get; private set; }
+
+    public int Restarts { get; private set; }
+
+    public UpdateState State { get; } = state;
+
+    // Never raised: the hub only reads State.
+    public event Action<UpdateState>? Changed {
+      add { }
+      remove { }
+    }
+
+    public void Check() {
+      this.Checks++;
+    }
+
+    public void RestartToUpdate() {
+      this.Restarts++;
+    }
   }
 
   private sealed record Rig(SocketHub Hub, SyncSourceManager Sources, ManualSource Manual, BeatGrid Grid);

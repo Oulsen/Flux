@@ -42,6 +42,23 @@ export type StageColorStyle = 'randomBeat' | 'hueCycle' | 'hueWave' | 'hueWaveVe
  * one is genuinely a fact about the device and stays in the browser's own storage. The
  * rest are part of the show.
  */
+/**
+ * Whether a newer Flux is waiting.
+ *
+ * A host with no updater sends none. A page that has received none, or `unavailable`,
+ * shows no update control.
+ */
+export interface UpdateData {
+  /**
+   * `unavailable`: this copy cannot update itself. `checking`: asking, or downloading.
+   * `current`: nothing newer is known. `ready`: a newer version is downloaded and waits
+   * for a restart. `failed`: the last check got no answer.
+   */
+  status: 'unavailable' | 'checking' | 'current' | 'ready' | 'failed';
+  /** The downloaded version when `ready`, otherwise null. */
+  version: string | null;
+}
+
 export interface StageData {
   layout: StageLayout;
   shape: StageShape;
@@ -493,7 +510,12 @@ export type ClientMessage =
   | { type: 'setStageSettings'; data: SetStageSettingsData }
   // Repeated every STROBE_RENEW_MS while the finger stays down, because the server
   // holds the strobe on a lease rather than until it hears a release.
-  | { type: 'strobe'; data: StrobeData };
+  | { type: 'strobe'; data: StrobeData }
+  // Answered by the update frame that follows, sent to every page.
+  | { type: 'checkUpdate'; data: Record<string, never> }
+  // Stops Flux and starts the downloaded version: every page loses the connection
+  // and reconnects to the new one.
+  | { type: 'applyUpdate'; data: Record<string, never> };
 
 /**
  * An inbound message decoded only as far as its type tag.

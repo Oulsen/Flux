@@ -11,6 +11,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Runtime.Versioning;
+using Velopack;
 
 namespace Flux.App;
 
@@ -28,6 +29,12 @@ namespace Flux.App;
 internal static class Program {
   [STAThread]
   private static int Main(string[] args) {
+    // First, ahead of the session and the window. Installing, updating and uninstalling
+    // relaunch this executable with Velopack's own arguments, and Run serves those and
+    // ends the process; a normal launch returns at once. A copy started for that must
+    // not take the session from the one the user is running, nor open a window.
+    VelopackApp.Build().Run();
+
     LaunchOptions launch = LaunchOptions.Parse(args);
 
     using SingleInstance instance = new SingleInstance();
@@ -141,6 +148,10 @@ internal static class Program {
       return 1;
     }
 
+    // Taken before the container is disposed, and used after: a downloaded release is
+    // applied only once everything above has stopped.
+    UpdateService updates = app.Services.GetRequiredService<UpdateService>();
+
     // In a finally, so a shell that throws out of its loop still stops the host
     // properly rather than leaving the process to end with the stream to the bridge
     // cut mid-frame.
@@ -161,6 +172,8 @@ internal static class Program {
         await app.DisposeAsync().ConfigureAwait(false);
       }).GetAwaiter().GetResult();
     }
+
+    updates.ApplyOnExit();
 
     startup.LogInformation("Flux stopped.");
 
@@ -262,6 +275,18 @@ internal static class Program {
         "Console:BeatLog and Console:AudioMeter only print with a console. Start Flux with {Flag} to see them.",
         LaunchOptions.ConsoleFlag);
     }
+
+    // Updating itself, for a copy Setup.exe installed. A development build registers it
+    // too and reports it unavailable, so the page behaves the same either way.
+    bool updatesEnabled = builder.Configuration.GetValue("Updates:Enabled", defaultValue: true);
+    builder.Services.AddSingleton<IUpdateBackend>(_ => new VelopackUpdateBackend(UpdateService.Repository));
+    builder.Services.AddSingleton(provider => new UpdateService(
+      provider.GetRequiredService<IUpdateBackend>(),
+      updatesEnabled,
+      provider.GetRequiredService<IHostApplicationLifetime>(),
+      provider.GetRequiredService<ILogger<UpdateService>>()));
+    builder.Services.AddSingleton<IAppUpdates>(provider => provider.GetRequiredService<UpdateService>());
+    builder.Services.AddHostedService<UpdateCheckService>();
 
     builder.AddFluxWeb();
 

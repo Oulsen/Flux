@@ -18,6 +18,7 @@
   import StagePanel from './components/StagePanel.svelte';
   import AnchorPad from './components/AnchorPad.svelte';
   import BarShift from './components/BarShift.svelte';
+  import UpdateNotice from './components/UpdateNotice.svelte';
   import { stagePhrase } from './lib/diagnostics.ts';
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
@@ -337,6 +338,14 @@
 
   function forgetBridge(): void {
     socket?.send({ type: 'forgetBridge', data: {} });
+  }
+
+  function checkUpdate(): void {
+    socket?.send({ type: 'checkUpdate', data: {} });
+  }
+
+  function applyUpdate(): void {
+    socket?.send({ type: 'applyUpdate', data: {} });
   }
 
   function setLatencyOffset(offsetMs: number): void {
@@ -757,6 +766,7 @@
       />
     </section>
 
+    <UpdateNotice update={store.update} check={checkUpdate} restart={applyUpdate} />
     <p class="version">Flux {store.app ?? '--'} &middot; protocol {store.protocol ?? '--'}</p>
   </div>
 </Drawer>

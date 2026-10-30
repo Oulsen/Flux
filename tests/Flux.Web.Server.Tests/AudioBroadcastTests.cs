@@ -210,6 +210,7 @@ public sealed class AudioBroadcastTests {
       hue: null,
       stream: null,
       new StageService(new MemoryStageSettingsStore()),
+      null,
       new FakeHostLifetime(),
       NullLogger<SocketHub>.Instance);
   }

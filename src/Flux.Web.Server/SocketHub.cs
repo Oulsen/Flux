@@ -65,6 +65,9 @@ public sealed class SocketHub {
   /// </summary>
   private readonly StageService stage;
 
+  /// <summary>Null in a host with no updater, which sends no update frames and ignores the two update messages.</summary>
+  private readonly IAppUpdates? updates;
+
   /// <summary>
   /// Null in a build with no Hue support. Starting answers <c>rejected</c> and
   /// stopping does nothing, which is the same pair of answers a build with a bridge
@@ -107,6 +110,7 @@ public sealed class SocketHub {
     HueBridgeService? hue,
     HueStreamService? stream,
     StageService stage,
+    IAppUpdates? updates,
     IHostApplicationLifetime lifetime,
     ILogger<SocketHub> log) {
     ArgumentNullException.ThrowIfNull(options);
@@ -120,6 +124,7 @@ public sealed class SocketHub {
     this.hue = hue;
     this.stream = stream;
     this.stage = stage ?? throw new ArgumentNullException(nameof(stage));
+    this.updates = updates;
     this.stopping = lifetime.ApplicationStopping;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
 
@@ -209,6 +214,12 @@ public sealed class SocketHub {
     // page that waited for the next one would draw the defaults over somebody's chosen
     // look until the next time anybody touched a control.
     client.Enqueue(StageFrames.Snapshot(this.stage.Settings));
+
+    // And whether a newer Flux is waiting, once more for the same reason. Not sent by a
+    // host with no updater, which is how the page knows to show no control for it.
+    if(this.updates is not null) {
+      client.Enqueue(UpdateFrames.Snapshot(this.updates.State));
+    }
 
     this.clients[id] = client;
     this.log.LogInformation("Web client connected. {Count} now watching.", this.clients.Count);
@@ -463,6 +474,16 @@ public sealed class SocketHub {
 
       case "strobe":
         this.HoldStrobe(client, envelope.Data);
+        break;
+
+      // No answer of their own: the next update frame is the answer, and it goes to
+      // every page, since a restart takes Flux away from all of them.
+      case "checkUpdate":
+        this.updates?.Check();
+        break;
+
+      case "applyUpdate":
+        this.updates?.RestartToUpdate();
         break;
 
       default:

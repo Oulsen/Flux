@@ -79,6 +79,7 @@ public static class WebHostExtensions {
       provider.GetService<HueBridgeService>(),
       provider.GetService<HueStreamService>(),
       provider.GetRequiredService<StageService>(),
+      provider.GetService<IAppUpdates>(),
       provider.GetRequiredService<IHostApplicationLifetime>(),
       provider.GetRequiredService<ILogger<SocketHub>>()));
 
@@ -119,6 +120,12 @@ public static class WebHostExtensions {
     builder.Services.AddHostedService(provider => new StageBroadcaster(
       provider.GetRequiredService<SocketHub>(),
       provider.GetRequiredService<StageService>()));
+
+    // Updates are optional the way audio is: only an installed desktop app has an
+    // updater to register, and without one this starts nothing.
+    builder.Services.AddHostedService(provider => new UpdateBroadcaster(
+      provider.GetRequiredService<SocketHub>(),
+      provider.GetService<IAppUpdates>()));
 
     // Listening is configured rather than described in a URL string: the address
     // has just been parsed and checked, and handing Kestrel the parsed value
