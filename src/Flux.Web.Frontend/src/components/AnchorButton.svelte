@@ -80,7 +80,7 @@
      * inside the stage's smaller button and read as a mistake - the label has to be a
      * proportion of the thing it is inside, not a constant beside it.
      */
-    font-size: calc(var(--anchor-size, 5rem) * 0.19);
+    font-size: max(var(--text-xs), calc(var(--anchor-size, 5rem) * 0.19));
 
     /* box-sizing is border-box page-wide, so the browser's own button padding
        comes out of the size rather than adding to it. Six letters and the

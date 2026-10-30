@@ -49,10 +49,17 @@
 </script>
 
 <div class="stage-settings">
-  <button type="button" class="disclosure" aria-pressed={!on} onclick={() => setOn(!on)}>
-    <span class="heading">stage</span>
-    <span class="toggle">{on ? 'numbers only' : 'show visualizer'}</span>
+  <!-- A switch that shows its state, rather than a link naming the opposite action:
+       "numbers only" under a drawn picture read as what the screen was doing. Local to
+       this device, unlike everything under it. -->
+  <button type="button" class="switch" role="switch" aria-checked={on} onclick={() => setOn(!on)}>
+    <span class="heading">visualizer</span>
+    <span class="state" class:on>{on ? 'on' : 'off'}</span>
   </button>
+
+  {#if !on}
+    <p class="hint">Numbers only on this device. Other screens keep their picture.</p>
+  {/if}
 
   <!-- Nothing below configures a canvas that is not being drawn, and a phone that asked
        for numbers only asked to stop being offered a picture. -->
@@ -153,13 +160,10 @@
       step={1}
       value={stage.bands}
       format={(bands) => `${bands} bars`}
+      hint="How many bars the spectrum is divided into."
+      detail="The whole 30 Hz to 16 kHz range is drawn at every setting - this changes the resolution, not how far up it goes."
       commit={(bands) => setStage({ bands })}
     />
-
-    <p class="hint">
-      How many bars the spectrum is divided into. The whole 30 Hz to 16 kHz range is
-      drawn at every setting - this changes the resolution, not how far up it goes.
-    </p>
 
     <RangeSetting
       id="stage-trail"
@@ -169,7 +173,8 @@
       step={50}
       value={stage.trailMs}
       format={trailMsLabel}
-      hint="How long the picture leaves a fading afterimage behind it. Off draws every frame clean. On the screen only - the lights trail a beat by their pulse length."
+      hint="How long the picture leaves a fading afterimage behind it."
+      detail="Off draws every frame clean. On the screen only - the lights trail a beat by their pulse length."
       commit={(trailMs) => setStage({ trailMs })}
     />
   {/if}
@@ -179,38 +184,39 @@
   .stage-settings {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--space-2);
   }
 
   .choice {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .name {
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 
   .options {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .chip {
-    /* Thumb-sized: this gets pressed on a phone, in the dark, mid-set. */
-    min-height: 2.25rem;
+    /* Thumb-sized on touch: this gets pressed on a phone, in the dark, mid-set. A mouse
+       gets less, which `--chip` explains. */
+    min-height: var(--chip);
     padding: 0.4rem 0.6rem;
     background: var(--panel);
     border: 1px solid var(--edge);
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     cursor: pointer;
   }
 
@@ -219,10 +225,10 @@
     color: var(--ink);
   }
 
-  .disclosure {
+  .switch {
     width: 100%;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: var(--gap);
     padding: 0;
@@ -230,28 +236,40 @@
     border: none;
     font: inherit;
     cursor: pointer;
+    min-height: var(--control);
   }
 
   .heading {
     margin: 0;
-    font-size: 0.7rem;
-    letter-spacing: 0.12em;
+    font-size: var(--text-sm);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink);
     font-weight: 600;
   }
 
-  .toggle {
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
+  /* A pill that says the state, lit while the picture is drawn. */
+  .state {
+    min-width: 3.5rem;
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
+    text-align: center;
     color: var(--ink-dim);
+  }
+
+  .state.on {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   .hint {
     margin: 0;
-    font-size: 0.7rem;
+    font-size: var(--text-sm);
     line-height: 1.5;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 </style>

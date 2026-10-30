@@ -67,37 +67,37 @@
   .selector {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .empty {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     letter-spacing: 0.08em;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 
   .option {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     /* Thumb-sized: this gets pressed on a phone in the dark. */
-    min-height: 3rem;
+    min-height: var(--control-lg);
     padding: 0.6rem 0.7rem;
     background: var(--panel);
     border: 1px solid var(--edge);
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     cursor: pointer;
   }
 
   .head {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .dot {

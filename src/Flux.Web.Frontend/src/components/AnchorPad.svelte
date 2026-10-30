@@ -129,7 +129,7 @@
   .anchor-pad {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: start;
   }
 
@@ -142,21 +142,21 @@
   .detail {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     min-width: 0;
   }
 
   .caption {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     letter-spacing: 0.06em;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 
   .tempo-controls {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .reserved {
@@ -165,7 +165,7 @@
 
   .tempo {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .anchor-only {
@@ -190,7 +190,8 @@
     border-radius: var(--radius);
     color: var(--ink);
     font: inherit;
-    font-size: 0.9rem;
+    font-size: var(--text-md);
+    min-height: var(--control);
   }
 
   .set {
@@ -200,10 +201,11 @@
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.8rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     cursor: pointer;
+    min-height: var(--control);
   }
 
   .visually-hidden {

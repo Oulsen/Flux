@@ -1,7 +1,6 @@
 <script lang="ts">
   import { formatRate } from '../lib/format.ts';
   import type { HueData, HueEngineData, LightData } from '../lib/protocol.ts';
-  import LatencySlider from './LatencySlider.svelte';
   import LightEngineControls from './LightEngineControls.svelte';
 
   interface Props {
@@ -15,15 +14,14 @@
     engine: HueEngineData;
     /** Non-null exactly while Flux is streaming. The only field that says so. */
     light: LightData | null;
-    /** The tempo, so the latency offset can be said in beats. */
-    bpm: number | null;
+    /** Whether the beat source names phrases, for the control that follows them. */
+    phrases: boolean;
     setEngine: (change: Partial<HueEngineData>) => void;
-    setOffset: (offsetMs: number) => void;
     startStream: () => void;
     stopStream: () => void;
   }
 
-  const { hue, engine, light, bpm, setEngine, setOffset, startStream, stopStream }: Props = $props();
+  const { hue, engine, light, phrases, setEngine, startStream, stopStream }: Props = $props();
 
   const streaming = $derived(light !== null);
 </script>
@@ -64,34 +62,32 @@
     {/if}
   </div>
 
-  <LightEngineControls {engine} {setEngine} />
-
-  <LatencySlider offsetMs={hue.latencyOffsetMs} {bpm} {setOffset} />
+  <LightEngineControls {engine} {setEngine} {phrases} />
 </div>
 
 <style>
   .lights {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--space-2);
   }
 
   .stream {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .action {
-    min-height: 2.5rem;
+    min-height: var(--control);
     padding: 0.5rem 0.7rem;
     background: none;
     border: 1px solid var(--edge);
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     cursor: pointer;
   }
@@ -108,8 +104,8 @@
 
   .rate {
     margin: 0;
-    font-size: 0.7rem;
-    color: var(--ink-faint);
+    font-size: var(--text-sm);
+    color: var(--ink-dim);
     font-variant-numeric: tabular-nums;
   }
 </style>

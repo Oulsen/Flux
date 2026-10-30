@@ -79,16 +79,16 @@
 
   .empty {
     margin: 0;
-    font-size: 0.8rem;
-    color: var(--ink-faint);
+    font-size: var(--text-sm);
+    color: var(--ink-dim);
   }
 
   h3 {
     margin: 0.75rem 0 0.4rem;
-    font-size: 0.65rem;
-    letter-spacing: 0.12em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
     font-weight: 600;
   }
 
@@ -102,23 +102,23 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: var(--space-2);
   }
 
   .device {
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-2);
     /* The whole row is the target: this gets tapped on a phone in the dark. */
-    min-height: 2.75rem;
+    min-height: var(--control);
     padding: 0.5rem 0.7rem;
     background: var(--surface);
     border: 1px solid var(--edge);
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     text-align: left;
     cursor: pointer;
   }
@@ -126,7 +126,7 @@
   .row {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--space-2);
   }
 
   .name {
@@ -155,10 +155,10 @@
     padding: 0.1rem 0.45rem;
     border: 1px solid currentcolor;
     border-radius: 999px;
-    font-size: 0.65rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 
   .signal {

@@ -10,7 +10,7 @@
  * argument never covered. Whether this device draws a canvas at all is a fact about
  * this device, and syncing it would let the booth laptop blank the visualizer on
  * somebody's handset. Which settings tab it last had open is the same kind of fact:
- * the laptop living on setup says nothing about the phone that only ever wants show.
+ * the laptop living on setup says nothing about the phone that only ever wants lights.
  */
 
 /** Whether the stage is drawn. Namespaced, because a browser origin is shared. */
@@ -20,13 +20,17 @@ const STAGE_KEY = 'flux.stage';
 const DRAWER_TAB_KEY = 'flux.drawerTab';
 
 /**
- * The settings drawer's tabs, grouped by how often they are touched rather than by
- * what they configure: show is reached for with music playing, stage now and then,
- * setup once and then rarely.
+ * The settings drawer's tabs, grouped by how often they are touched: lights is reached
+ * for with music playing, screen now and then, setup once and then rarely. Named for
+ * what each one changes, because the earlier show and stage both sounded like the
+ * picture and only one of them was.
  */
-export const DRAWER_TABS = ['show', 'stage', 'setup'] as const;
+export const DRAWER_TABS = ['lights', 'screen', 'setup'] as const;
 
 export type DrawerTab = (typeof DRAWER_TABS)[number];
+
+/** The names the first two tabs were stored under before they were renamed. */
+const FORMER_TABS: Readonly<Record<string, DrawerTab>> = { show: 'lights', stage: 'screen' };
 
 /**
  * The part of `Storage` this module uses, so a test can supply one.
@@ -59,14 +63,19 @@ export function writeStageOn(storage: PreferenceStore | null, on: boolean): void
 }
 
 /**
- * The tab the drawer opens on. Show when nothing was remembered, or when what was
+ * The tab the drawer opens on. Lights when nothing was remembered, or when what was
  * remembered is not a tab this page has - a key from another version, most likely -
- * because show is the tab the page is open for.
+ * because lights is the tab the page is open for. A tab remembered under its former
+ * name opens as the tab it became.
  */
 export function readDrawerTab(storage: PreferenceStore | null): DrawerTab {
   const saved = read(storage, DRAWER_TAB_KEY);
 
-  return DRAWER_TABS.find((tab) => tab === saved) ?? 'show';
+  if (saved !== null && Object.hasOwn(FORMER_TABS, saved)) {
+    return FORMER_TABS[saved];
+  }
+
+  return DRAWER_TABS.find((tab) => tab === saved) ?? 'lights';
 }
 
 /** Remembers the tab, or silently does not. */

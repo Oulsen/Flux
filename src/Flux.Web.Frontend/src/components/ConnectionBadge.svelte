@@ -32,7 +32,8 @@
 
     switch (sourceState) {
       case 'live':
-        return { text: 'live', tone: 'live' };
+        // Named here too: beside the light sync pill a bare "live" read as the lights.
+        return { text: `${source} live`, tone: 'live' };
       case 'quiet':
         return { text: `${source} quiet`, tone: 'quiet' };
       default:
@@ -43,25 +44,36 @@
 
 <span class="badge {label.tone}">
   <span class="dot"></span>
-  {label.text}
+  <span class="text">{label.text}</span>
 </span>
 
 <style>
   .badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     padding: 0.25rem 0.7rem;
     border: 1px solid var(--edge);
     border-radius: 999px;
-    font-size: 0.8rem;
-    letter-spacing: 0.06em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     color: var(--ink-dim);
     white-space: nowrap;
+
+    /* Gives way to the settings button beside it on a narrow phone; the dot keeps the
+       state readable even when the words are cut. */
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .text {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .dot {
+    flex: none;
     width: 0.5rem;
     height: 0.5rem;
     border-radius: 50%;

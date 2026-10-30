@@ -7,6 +7,8 @@
 :root {
   --ink: #e8ecf4;
   --ink-dim: #8b93a7;
+  /* Below reading contrast on a panel (about 2.9:1): borders, disabled states and
+     decoration only, never text somebody is meant to read. */
   --ink-faint: #5b6274;
 
   --surface: #0b0d12;
@@ -19,10 +21,50 @@
   --alarm: #f87171;
   --accent: #60a5fa;
 
-  --gap: 1rem;
+  /*
+   * One scale for the whole page, used by every component rather than raw sizes.
+   *
+   * Twelve pixels is the floor, and only for short uppercase labels, whose capitals
+   * and tracking carry them; anything read as a sentence is fourteen. Before this
+   * there were eleven sizes down to nine pixels, section headings smaller than the
+   * labels under them, and hints nobody at arm's length from a phone could read.
+   */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --tracking-label: 0.1em;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+
+  /*
+   * 44px is the smallest target a thumb hits reliably, and the phone is used to change
+   * settings mid-set rather than only to watch. Chips are the one exception, and only
+   * under a mouse: rows of them are what makes the drawer long, and a pointer does not
+   * need the room.
+   */
+  --control: 2.75rem;
+  --control-lg: 3rem;
+  --chip: var(--control);
+
+  --gap: var(--space-4);
   --radius: 0.75rem;
 
+  /* Shared by the drawer and the HUD that moves aside for it, so the two cannot
+     disagree about where the drawer's edge is. */
+  --drawer-width: 26rem;
+
   color-scheme: dark;
+}
+
+@media (pointer: fine) {
+  :root {
+    --chip: 2.25rem;
+  }
 }
 
 * {

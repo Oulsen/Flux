@@ -86,7 +86,7 @@
   .meter {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--space-2);
   }
 
   .track {
@@ -117,13 +117,13 @@
     flex: none;
     min-width: 4.5rem;
     text-align: right;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     color: var(--ink-dim);
   }
 
   .unmeasured {
     margin: 0;
-    font-size: 0.75rem;
-    color: var(--ink-faint);
+    font-size: var(--text-sm);
+    color: var(--ink-dim);
   }
 </style>

@@ -9,7 +9,9 @@
   import LightsPanel from './components/LightsPanel.svelte';
   import ConnectionBadge from './components/ConnectionBadge.svelte';
   import DevicePicker from './components/DevicePicker.svelte';
+  import LookChoices from './components/LookChoices.svelte';
   import Diagnostics from './components/Diagnostics.svelte';
+  import LatencySlider from './components/LatencySlider.svelte';
   import SourceSelector from './components/SourceSelector.svelte';
   import SpectrumCanvas from './components/SpectrumCanvas.svelte';
   import StrobeButton from './components/StrobeButton.svelte';
@@ -103,6 +105,61 @@
     }
 
     drawerOpen = !drawerOpen;
+  }
+
+  let stageEl: HTMLDivElement | undefined = $state();
+
+  /*
+   * A press on the picture closes the drawer, and a press on a stage control does not.
+   * No hit-testing is needed for that: the HUD is a sheet of glass, so a press on empty
+   * stage or on a reading falls through to the stage, while a control that took the
+   * pointer back receives the press itself - and the HUD is the stage's sibling, not
+   * its child. A new stage control therefore has to take the pointer back the way
+   * `.control` and `.settings` do, or it will close the drawer instead of working.
+   *
+   * On the window rather than on the stage, because the stage is hidden from assistive
+   * technology and a handler on it would be a control nobody but a mouse can find.
+   */
+  function closeFromStage(event: PointerEvent): void {
+    if (event.target instanceof Node && stageEl?.contains(event.target)) {
+      drawerOpen = false;
+      lookOpen = false;
+    }
+  }
+
+  /*
+   * The source and the look, one tap from the stage.
+   *
+   * Opened from the corner reading that already names the palette, so the thing that
+   * says what the look is is also the way to change it. A panel rather than a standing
+   * row of chips, because eight palettes, six intervals and four sources laid across the
+   * picture would cover the spectrum they are chosen by, and on a phone would push the
+   * beat off the bottom. It closes the way the drawer does - a press on the stage, or
+   * Escape - and stays open while choices are made, since a palette is often tried
+   * twice before it stays.
+   */
+  let lookOpen = $state(false);
+  let lookPanel: HTMLDivElement | undefined = $state();
+  let lookToggle: HTMLButtonElement | undefined = $state();
+
+  /*
+   * Escape closes the panel, and only the panel: listened for on the way down rather
+   * than up, so it runs before the drawer's own Escape and can mark the key handled -
+   * otherwise one press with both open would close both. Focus inside the panel goes
+   * back to the corner it was opened from rather than falling to the page.
+   */
+  function closeLookOnEscape(event: KeyboardEvent): void {
+    if (!lookOpen || event.key !== 'Escape' || document.querySelector(':popover-open') !== null) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (lookPanel?.contains(document.activeElement)) {
+      lookToggle?.focus();
+    }
+
+    lookOpen = false;
   }
 
   /*
@@ -342,9 +399,12 @@
   The stage, and it is the page rather than an element on it.
 
   Behind everything and never interactive: it carries no controls, and a canvas that
-  swallowed a tap would take it from the HUD floating over it.
+  swallowed a tap would take it from the HUD floating over it. A press that reaches it
+  closes the drawer, which is the window listening rather than the stage.
 -->
-<div class="stage" aria-hidden="true">
+<svelte:window onpointerdown={closeFromStage} onkeydowncapture={closeLookOnEscape} />
+
+<div class="stage" aria-hidden="true" bind:this={stageEl}>
   {#if stageOn}
     <!-- The colour comes off the wire rather than being computed here, which is the
          whole reason it is on the wire: a second engine in the browser would drift from
@@ -367,12 +427,44 @@
   The layer ignores the pointer so that the stage below it is not covered by an
   invisible rectangle; the two things in here that are actually controls take it back.
 -->
-<div class="hud">
+<div class="hud" class:beside={drawerOpen}>
   <div class="row top">
     <div class="cluster">
       <h1>Flux</h1>
       <ConnectionBadge connection={store.connection} sourceState={store.sourceState} source={store.source} />
     </div>
+
+    <!-- The reading is also the switch, where there is a room to start: saying the lights
+         are off and then sending somebody into the drawer to change it is two steps for
+         the one thing they glanced at the page to do. Without a room it stays a reading,
+         since a start would be refused. Stopping is offered in the same place, so the
+         switch does not move between the two states.
+
+         The dot says the state before the words do, because on and off were the same
+         grey pill with one word different: green while the room is lit, amber while the
+         stage shows a preview of what it would be, grey with nothing to show. A phone
+         gets the short form, which says the same in a third of the width. -->
+    {#if lightsOff && store.hue?.selectedAreaId != null}
+      <button type="button" class="sync switch" onclick={startStream}>
+        <span class="dot" class:quiet={store.preview !== null}></span>
+        <span class="long">light sync off{store.preview !== null ? ' · showing a preview' : ''}</span>
+        <span class="short">lights off</span>
+        · <span class="go">start</span>
+      </button>
+    {:else if lightsOff}
+      <p class="sync">
+        <span class="dot" class:quiet={store.preview !== null}></span>
+        <span class="long">light sync off{store.preview !== null ? ' · showing a preview' : ''}</span>
+        <span class="short">lights off</span>
+      </p>
+    {:else if store.hue !== null && store.light !== null && !store.protocolMismatch}
+      <button type="button" class="sync switch" onclick={stopStream}>
+        <span class="dot live"></span>
+        <span class="long">light sync on</span>
+        <span class="short">lights on</span>
+        · <span class="go">stop</span>
+      </button>
+    {/if}
 
     <button
       type="button"
@@ -381,29 +473,9 @@
       aria-expanded={drawerOpen}
       onclick={toggleDrawer}
     >
-      {needsSetup ? 'set up' : 'settings'}
+      settings
     </button>
   </div>
-
-  <!-- The reading is also the switch, where there is a room to start: saying the lights
-       are off and then sending somebody into the drawer to change it is two steps for
-       the one thing they glanced at the page to do. Without a room it stays a reading,
-       since a start would be refused. Stopping is offered in the same place, so the
-       switch does not move between the two states - and only there, rather than as a
-       standing "on" notice, since a lit room already says it is on. -->
-  {#if lightsOff && store.hue?.selectedAreaId != null}
-    <button type="button" class="sync switch" onclick={startStream}>
-      light sync off{store.preview !== null ? ' · showing a preview' : ''} · <span class="go">start</span>
-    </button>
-  {:else if lightsOff}
-    <p class="sync">
-      light sync off{store.preview !== null ? ' · showing a preview' : ''}
-    </p>
-  {:else if store.hue !== null && store.light !== null && !store.protocolMismatch}
-    <button type="button" class="sync switch" onclick={stopStream}>
-      light sync on · <span class="go">stop</span>
-    </button>
-  {/if}
 
   {#if store.protocolMismatch}
     <p class="mismatch">
@@ -467,15 +539,52 @@
       </div>
     </div>
 
-    <div class="cluster right">
+    <button
+      type="button"
+      class="cluster right look-toggle"
+      bind:this={lookToggle}
+      aria-expanded={lookOpen}
+      aria-controls="look"
+      onclick={() => (lookOpen = !lookOpen)}
+    >
+      <!-- In two unbreakable halves, so a narrow corner wraps between the palette and
+           the interval rather than inside "every 4 bars". -->
+      <span class="reading">
+        {#if showsRooms(store.hue) && engine !== null}
+          <span class="whole">{engine.palette} &middot;</span>
+          <span class="whole">{colorChangeLabel(engine.colorChangeBars)}</span>
+        {:else}
+          <span class="whole">beat: {store.source}</span>
+        {/if}
+      </span>
+
       <!-- `light` is the one field that says whether Flux is streaming, so the absence
            of a frame rate is the reading rather than a gap in one. -->
-      <p class="reading numeric">{store.light === null ? 'lights idle' : `${store.light.fps.toFixed(1)} fps`}</p>
+      <span class="reading dim numeric fps">
+        {store.light === null ? 'lights idle' : `${store.light.fps.toFixed(1)} fps`}
+      </span>
+    </button>
+  </div>
 
-      {#if engine !== null}
-        <p class="reading dim">{engine.palette} &middot; {colorChangeLabel(engine.colorChangeBars)}</p>
-      {/if}
-    </div>
+  <!-- Always rendered and hidden while closed, so the toggle's `aria-controls` always
+       names something. A group rather than a dialog: it takes no focus and traps none. -->
+  <div class="look" id="look" role="group" aria-label="Beat source and look" hidden={!lookOpen} bind:this={lookPanel}>
+    <section class="look-part">
+      <h2>beat</h2>
+      <SourceSelector
+        sources={store.sources}
+        active={store.source}
+        pending={store.pendingSource}
+        select={selectSource}
+      />
+    </section>
+
+    {#if showsRooms(store.hue) && engine !== null}
+      <section class="look-part">
+        <h2>look</h2>
+        <LookChoices {engine} setEngine={setLightSettings} />
+      </section>
+    {/if}
   </div>
 </div>
 
@@ -511,21 +620,48 @@
     drawer itself is never unmounted: the bridge panel keeps a discovery that is halfway
     through, and the pickers keep a list that was already right.
   -->
-  <div class="tab-panel" role="tabpanel" id="panel-show" aria-labelledby="tab-show" hidden={drawerTab !== 'show'}>
+  <div class="tab-panel" role="tabpanel" id="panel-lights" aria-labelledby="tab-lights" hidden={drawerTab !== 'lights'}>
+    <!--
+      The lights first, because they are what gets touched with music playing: start and
+      stop, then colour, pulse and strobe in the order they are reached for.
+    -->
+    {#if showsRooms(store.hue) && store.hue !== null}
+      <section class="panel">
+        <h2>lights</h2>
+        <LightsPanel
+          hue={store.hue}
+          engine={{ ...store.hue.engine, ...store.pendingEngine }}
+          light={store.light}
+          phrases={store.source === 'rekordbox'}
+          setEngine={setLightSettings}
+          {startStream}
+          {stopStream}
+        />
+      </section>
+    {/if}
+
+    <!-- Said rather than left as a gap: without a room the lights panel is not
+         offered, and a lights tab holding only the beat reads as one that lost half. -->
+    {#if store.hue !== null && !showsRooms(store.hue)}
+      <button type="button" class="hint" onclick={() => showTab('setup')}>
+        the lights appear here once a bridge is set up &rarr;
+      </button>
+    {/if}
+
+    <!--
+      The beat after the lights, and without the source buttons: those are on the stage's
+      look panel, one tap from the music, and what is left here is the correction to the
+      grid the source chose.
+
+      rekordbox reads bar one from the track, so a tap there is a second opinion it
+      overrules at the next seek; what it offers instead is a correction to its grid. It
+      reads bar one under another source's tempo too, and there the correction is offered
+      beside the tap rather than in its place: the tap is still the only fix for a bar
+      that nothing else set, and rekordbox going quiet leaves its last downbeat labelled
+      as its own.
+    -->
     <section class="panel">
       <h2>beat</h2>
-      <SourceSelector
-        sources={store.sources}
-        active={store.source}
-        pending={store.pendingSource}
-        select={selectSource}
-      />
-      <!-- rekordbox reads bar one from the track, so a tap there is a second opinion it
-           overrules at the next seek; what it offers instead is a correction to its grid.
-           It reads bar one under another source's tempo too, and there the correction is
-           offered beside the tap rather than in its place: the tap is still the only fix
-           for a bar that nothing else set, and rekordbox going quiet leaves its last
-           downbeat labelled as its own. -->
       {#if store.source === 'rekordbox'}
         <BarShift shift={shiftBar} captions status={rekordboxStatus(store.diagnostics)} />
       {:else}
@@ -535,37 +671,9 @@
         {/if}
       {/if}
     </section>
-
-    <!--
-      The lights beside the beat, because these two are what the page is open for: they
-      are what gets touched with music playing.
-    -->
-    {#if showsRooms(store.hue) && store.hue !== null}
-      <section class="panel">
-        <h2>lights</h2>
-        <LightsPanel
-          hue={store.hue}
-          engine={{ ...store.hue.engine, ...store.pendingEngine }}
-          light={store.light}
-          bpm={store.grid?.bpm ?? null}
-          setEngine={setLightSettings}
-          setOffset={setLatencyOffset}
-          {startStream}
-          {stopStream}
-        />
-      </section>
-    {/if}
-
-    <!-- Said rather than left as a gap: without a room the lights panel is not
-         offered, and a show tab holding only the beat reads as one that lost half. -->
-    {#if store.hue !== null && !showsRooms(store.hue)}
-      <button type="button" class="hint" onclick={() => showTab('setup')}>
-        the lights appear here once a bridge is set up &rarr;
-      </button>
-    {/if}
   </div>
 
-  <div class="tab-panel" role="tabpanel" id="panel-stage" aria-labelledby="tab-stage" hidden={drawerTab !== 'stage'}>
+  <div class="tab-panel" role="tabpanel" id="panel-screen" aria-labelledby="tab-screen" hidden={drawerTab !== 'screen'}>
     <!--
       The settings on this page that are about the device rather than about the show,
       which is why they are remembered here and never sent to the server.
@@ -612,6 +720,15 @@
         />
       {/if}
     </section>
+
+    <!-- Here rather than with the lights: it is set once per room and bridge, by ear,
+         and between those visits it is the one slider nobody should brush mid-set. -->
+    {#if showsRooms(store.hue) && store.hue !== null}
+      <section class="panel">
+        <h2>latency</h2>
+        <LatencySlider offsetMs={store.hue.latencyOffsetMs} bpm={store.grid?.bpm ?? null} setOffset={setLatencyOffset} />
+      </section>
+    {/if}
 
     <section class="panel">
       <button
@@ -665,6 +782,11 @@
     z-index: 1;
     display: grid;
     grid-template-rows: auto 1fr auto;
+
+    /* At least zero rather than the implicit auto, which grows to fit min-content: a
+       badge that cannot shrink then made the whole HUD wider than a phone, and the
+       settings button - the drawer's only standing opener - was past the right edge. */
+    grid-template-columns: minmax(0, 1fr);
     padding: var(--gap);
     padding-bottom: max(var(--gap), env(safe-area-inset-bottom));
 
@@ -673,6 +795,33 @@
        there - stops receiving a pointer. The two things in here that are controls take
        it back individually. */
     pointer-events: none;
+
+    /* The drawer's own timing, so the readings move aside with it rather than after. */
+    transition: right 180ms ease;
+  }
+
+  /*
+   * Moved aside for the open drawer on a screen wide enough to show both.
+   *
+   * The drawer is not modal so that anchor and strobe can be pressed while something is
+   * being adjusted, and that only works if they are not underneath it: centred on the
+   * whole window, they slid under the drawer at about 1100px and the corner readings
+   * were always covered. Inset by the drawer's width, the centre column is centred in
+   * the stage that is left. The picture stays full width behind the drawer, since
+   * resizing the canvas on every open would redraw the spectrum for nothing.
+   *
+   * Not on a phone, where the drawer is the full width and there is nothing beside it.
+   */
+  @media (min-width: 60rem) {
+    .hud.beside {
+      right: var(--drawer-width);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hud {
+      transition: none;
+    }
   }
 
   /*
@@ -734,7 +883,7 @@
   .cluster {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     padding: 0.6rem 0.9rem;
     border-radius: var(--radius);
     background: rgb(7 9 13 / 88%);
@@ -742,10 +891,50 @@
     backdrop-filter: blur(8px);
   }
 
+  /*
+   * Badge, light sync and settings across the top. The outer columns size to their
+   * contents and the middle takes what is left, rather than three equal columns: equal
+   * columns centre the pill exactly but squeeze the badge into an ellipsis the moment
+   * the drawer narrows the stage, and the badge is the more important of the two.
+   */
+  .top {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+
+    /* Measured for the pill's short form below: the drawer narrows this row without
+       the window changing, so a media query cannot see it. */
+    container-type: inline-size;
+  }
+
+  /* Short enough that the long form would wrap beside the badge and the settings
+     button: at 1100px with the drawer open it broke across two lines with its own
+     "start" stranded on the right. */
+  @container (max-width: 50rem) {
+    .sync .long {
+      display: none;
+    }
+
+    .sync .short {
+      display: inline;
+    }
+  }
+
+  .top .sync {
+    justify-self: center;
+  }
+
+  .top .settings {
+    grid-column: 3;
+  }
+
   .top .cluster {
     flex-direction: row;
     align-items: center;
-    gap: 0.9rem;
+    gap: var(--space-3);
+
+    /* Lets the badge inside give way before the settings button does. */
+    min-width: 0;
   }
 
   /* Not a cluster itself: it stacks a control above one, and only the readings want a
@@ -754,7 +943,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--space-2);
 
     /* Smaller than the drawer's, because the drawer has room for a thumb target beside
        a caption and this sits above the beat dots in the middle of a picture. */
@@ -770,7 +959,7 @@
   .control {
     pointer-events: auto;
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   /* Sized to their contents and pushed to their own edges. A grid stretches its
@@ -805,7 +994,7 @@
 
   h1 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--text-md);
     font-weight: 600;
     letter-spacing: 0.4em;
     text-indent: 0.4em;
@@ -817,20 +1006,23 @@
      screenshot of this layout showed. */
   .reading {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     letter-spacing: 0.06em;
     color: var(--ink);
   }
 
   .reading.dim {
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
     color: var(--ink-dim);
   }
 
   .settings {
     /* Taken back from the sheet of glass above. */
     pointer-events: auto;
-    padding: 0.4rem 0.9rem;
+
+    /* Never the thing that shrinks: the badge beside it ellipsizes instead. */
+    flex: none;
+    padding: 0 var(--space-4);
 
     /* Opaque, unlike the readings around it. A control needs a findable edge, and the
        scrim bands are a gradient - at the top of a tall window this button sits in the
@@ -840,14 +1032,16 @@
     border-radius: 999px;
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.75rem;
-    letter-spacing: 0.12em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     cursor: pointer;
+    min-height: var(--control);
   }
 
   /* Nothing works until a bridge is chosen, and the drawer only prompts once. After
-     that this is the only thing on screen saying so. */
+     that this is the only thing on screen saying so - by colour rather than by a
+     second label, so the one button that opens the drawer is always called the same. */
   .settings.wants {
     border-color: var(--accent);
     color: var(--accent);
@@ -858,6 +1052,12 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--gap);
+  }
+
+  /* The drawer's title out-ranks the section headings inside it, which share its
+     element and so would otherwise share its size. */
+  .drawer-head .heading {
+    font-size: var(--text-lg);
   }
 
   .drawer-head .settings {
@@ -871,7 +1071,7 @@
    */
   .tabs {
     display: flex;
-    gap: 0.4rem;
+    gap: var(--space-2);
   }
 
   .tab {
@@ -882,13 +1082,14 @@
     border-radius: 999px;
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.75rem;
-    letter-spacing: 0.12em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     cursor: pointer;
     transition:
       background 120ms ease,
       color 120ms ease;
+    min-height: var(--control);
   }
 
   .tab:hover {
@@ -929,7 +1130,7 @@
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
     text-align: left;
     cursor: pointer;
   }
@@ -951,17 +1152,17 @@
   h2,
   .heading {
     margin: 0;
-    font-size: 0.7rem;
-    letter-spacing: 0.12em;
+    font-size: var(--text-sm);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink);
     font-weight: 600;
   }
 
   .disclosure {
     width: 100%;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: var(--gap);
     padding: 0;
@@ -969,31 +1170,37 @@
     border: none;
     font: inherit;
     cursor: pointer;
+    min-height: var(--control);
   }
 
   .toggle {
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     color: var(--ink-dim);
   }
 
-  /* The mismatch warning's slot, which it never shares: the two are exclusive by the
-     condition above. Quiet rather than alarmed, because lights being off or on is a state
-     somebody chose, not a fault. */
+  /* Quiet rather than alarmed, because lights being off or on is a state somebody
+     chose, not a fault. */
   .sync {
-    grid-row: 2;
-    align-self: start;
-    justify-self: center;
-    margin: var(--gap) 0 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4em;
+    margin: 0;
     padding: 0.35rem 0.9rem;
     border: 1px solid var(--edge);
     border-radius: 999px;
     background: rgb(11 13 18 / 70%);
     color: var(--ink-dim);
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
+
+    /* Wraps inside the window rather than running off it on a phone. */
+    max-width: 100%;
+    text-align: center;
+    min-height: var(--control);
   }
 
   .switch {
@@ -1013,6 +1220,81 @@
     color: var(--accent);
   }
 
+  .sync .dot {
+    flex: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--dead);
+  }
+
+  .sync .dot.quiet {
+    background: var(--quiet);
+  }
+
+  .sync .dot.live {
+    background: var(--live);
+  }
+
+  .short {
+    display: none;
+  }
+
+  /* Taken back from the sheet of glass, with a control's edge on hover like the pill. */
+  .look-toggle {
+    pointer-events: auto;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .look-toggle:hover,
+  .look-toggle:focus-visible,
+  .look-toggle[aria-expanded='true'] {
+    border-color: var(--accent);
+  }
+
+  /*
+   * Just above the bottom row, in the space between it and the top: the HUD's middle
+   * row, placed explicitly so it can share that cell with the mismatch warning. Sized
+   * to that row and scrolling inside it, so on a short window it never covers the
+   * buttons it was opened beside.
+   */
+  .look {
+    grid-row: 2;
+    grid-column: 1;
+    align-self: end;
+    justify-self: end;
+    width: min(24rem, 100%);
+    max-height: calc(100% - 2 * var(--space-2));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin-bottom: var(--space-2);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    border: 1px solid var(--edge);
+    border-radius: var(--radius);
+    background: var(--surface);
+    pointer-events: auto;
+  }
+
+  .whole {
+    white-space: nowrap;
+  }
+
+  /* The panel sets its own display, which would otherwise outrank `hidden`. */
+  .look[hidden] {
+    display: none;
+  }
+
+  .look-part {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
   .mismatch {
     grid-row: 2;
     align-self: start;
@@ -1023,14 +1305,14 @@
     border-radius: var(--radius);
     background: rgb(11 13 18 / 80%);
     color: var(--alarm);
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     max-width: 40rem;
   }
 
   .version {
     margin: 0;
-    font-size: 0.75rem;
-    color: var(--ink-faint);
+    font-size: var(--text-xs);
+    color: var(--ink-dim);
     text-align: center;
   }
 
@@ -1042,6 +1324,12 @@
    * the drawer has it.
    */
   @media (max-width: 40rem) {
+    /* The window's title bar already says Flux, and on a phone the width it takes is
+       the width the connection badge needs. */
+    h1 {
+      display: none;
+    }
+
     .bottom {
       grid-template-columns: 1fr;
     }
@@ -1053,8 +1341,37 @@
       --bpm-align: center;
     }
 
+    /* The palette summary stays, since it is the way into the look panel; the frame
+       rate goes, being a diagnostic the drawer has. */
     .right {
+      justify-self: center;
+      align-items: center;
+      text-align: center;
+    }
+
+    .fps {
       display: none;
+    }
+
+    /* The pill under the badge and settings rather than squeezed between them. */
+    .top {
+      grid-template-columns: minmax(0, 1fr) auto;
+      row-gap: var(--space-2);
+    }
+
+    .top .sync {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+
+    .top .settings {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .look {
+      justify-self: stretch;
+      width: auto;
     }
   }
 </style>

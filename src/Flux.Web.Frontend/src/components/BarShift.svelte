@@ -29,9 +29,22 @@
 </script>
 
 <div class="bar-shift">
-  <div class="buttons">
-    <button type="button" aria-label="Move bar one a beat earlier" onclick={() => shift(-1)}>&lsaquo; beat</button>
-    <button type="button" aria-label="Move bar one a beat later" onclick={() => shift(1)}>beat &rsaquo;</button>
+  <!-- The label sits between the arrows rather than on them. "beat" on a button read as
+       a seek or a tempo nudge; what moves is the downbeat, and the arrows say which way. -->
+  <div class="buttons" role="group" aria-label="Downbeat">
+    <button
+      type="button"
+      aria-label="Move the downbeat a beat earlier"
+      title="Move the downbeat a beat earlier"
+      onclick={() => shift(-1)}>&lsaquo;</button
+    >
+    <span class="label">downbeat</span>
+    <button
+      type="button"
+      aria-label="Move the downbeat a beat later"
+      title="Move the downbeat a beat later"
+      onclick={() => shift(1)}>&rsaquo;</button
+    >
   </div>
 
   {#if captions}
@@ -47,21 +60,29 @@
   .bar-shift {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: start;
   }
 
   .buttons {
     display: flex;
-    gap: 0.5rem;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .label {
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--ink);
   }
 
   button {
-    /* Sized as the anchor-only button beside the tempo box is: a thumb target that is
-       visibly a correction rather than the page's main control. */
-    min-width: var(--shift-size, 5rem);
-    height: 3rem;
-    padding: 0 0.9rem;
+    /* Square and thumb-sized: the arrow is the whole label, and the word between the
+       two buttons says what they move. */
+    width: var(--control-lg);
+    height: var(--control-lg);
+    padding: 0;
     border: 1px solid var(--accent);
     border-radius: var(--radius);
 
@@ -69,9 +90,7 @@
     background: var(--panel);
     color: var(--accent);
     font: inherit;
-    font-size: 0.8rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-size: var(--text-lg);
     cursor: pointer;
     touch-action: manipulation;
     -webkit-user-select: none;
@@ -85,14 +104,14 @@
 
   .status {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
     color: var(--ink-dim);
   }
 
   .caption {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     letter-spacing: 0.06em;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 </style>

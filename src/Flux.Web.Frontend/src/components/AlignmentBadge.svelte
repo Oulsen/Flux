@@ -25,7 +25,7 @@
      would be there: `--ink-faint` vanished against a lit spectrum. */
   .badge {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     letter-spacing: 0.08em;
     color: var(--ink-dim);
     text-align: center;

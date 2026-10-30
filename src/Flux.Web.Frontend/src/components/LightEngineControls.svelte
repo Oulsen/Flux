@@ -1,12 +1,9 @@
 <script lang="ts">
   import {
     brightnessLabel,
-    colorChangeLabel,
     colorCountLabel,
-    COLOR_CHANGE_BARS,
     COLOR_COUNTS,
     COLOR_LAYOUTS,
-    PALETTES,
     MIN_RENDERABLE_PULSE_MS,
     PERCENT_LIMIT,
     pulseDepthLabel,
@@ -17,7 +14,8 @@
     STROBE_CYCLE_MAX,
     STROBE_CYCLE_MIN,
   } from '../lib/hue.ts';
-  import type { HueColorLayout, HueEngineData, HuePalette } from '../lib/protocol.ts';
+  import type { HueColorLayout, HueEngineData } from '../lib/protocol.ts';
+  import LookChoices from './LookChoices.svelte';
   import RangeSetting from './RangeSetting.svelte';
 
   interface Props {
@@ -29,9 +27,11 @@
     engine: HueEngineData;
     /** Names the one field that changed. The caller turns it into the whole record. */
     setEngine: (change: Partial<HueEngineData>) => void;
+    /** Whether the beat source names phrases, which only rekordbox does. */
+    phrases: boolean;
   }
 
-  const { engine, setEngine }: Props = $props();
+  const { engine, setEngine, phrases }: Props = $props();
 
   /*
    * Each control names only the field it owns, and the caller composes the message.
@@ -44,14 +44,6 @@
    * holds what this page has asked for and has not seen come back, and that is where the
    * whole statement is put together.
    */
-  function choosePalette(palette: HuePalette): void {
-    setEngine({ palette });
-  }
-
-  function chooseInterval(bars: number): void {
-    setEngine({ colorChangeBars: bars });
-  }
-
   function chooseFollowPhrases(followPhrases: boolean): void {
     setEngine({ followPhrases });
   }
@@ -113,45 +105,19 @@
   palette four times a bar.
 -->
 <div class="engine">
-  <div class="choice">
-    <span class="name">palette</span>
-    <div class="options">
-      {#each PALETTES as palette (palette)}
-        <button
-          type="button"
-          class="chip"
-          class:chosen={palette === engine.palette}
-          aria-pressed={palette === engine.palette}
-          onclick={() => choosePalette(palette)}
-        >
-          {palette}
-        </button>
-      {/each}
-    </div>
-  </div>
+  <!-- Grouped in the order they are reached for: the colour every few songs, the pulse
+       now and then, the strobe for a moment. -->
+  <h3 class="group">colour</h3>
 
-  <div class="choice">
-    <span class="name">colour change</span>
-    <div class="options">
-      {#each COLOR_CHANGE_BARS as bars (bars)}
-        <button
-          type="button"
-          class="chip"
-          class:chosen={bars === engine.colorChangeBars}
-          aria-pressed={bars === engine.colorChangeBars}
-          onclick={() => chooseInterval(bars)}
-        >
-          {colorChangeLabel(bars)}
-        </button>
-      {/each}
-    </div>
-  </div>
+  <LookChoices {engine} {setEngine} />
 
   <!-- Beside the bar count because it is a correction to it rather than a second rhythm:
        a phrase starting takes a colour and the count runs on from there. Only rekordbox
-       offers phrases, so with any other source this changes nothing. -->
-  <div class="choice">
-    <span class="name">follow phrases</span>
+       offers phrases, so with any other source this changes nothing - dimmed and said
+       rather than hidden, like the layout below, so it is where it was when the source
+       changes back. -->
+  <div class="choice" class:idle={!phrases}>
+    <span class="name">follow phrases{phrases ? '' : ' · rekordbox only'}</span>
     <div class="options">
       {#each [false, true] as on (on)}
         <button
@@ -205,6 +171,8 @@
     </div>
   </div>
 
+  <h3 class="group">brightness and pulse</h3>
+
   <RangeSetting
     id="light-brightness"
     name="brightness"
@@ -240,14 +208,18 @@
     step={5}
     value={engine.pulseDepth}
     format={pulseDepthLabel}
-    hint="How far the light drops between beats. Shallow keeps the room bright and lets a short pulse read as a flash rather than as darkness."
+    hint="How far the light drops between beats."
+    detail="Shallow keeps the room bright and lets a short pulse read as a flash rather than as darkness."
     commit={setDepth}
   />
 
+  <h3 class="group">strobe</h3>
+
   <!-- Two chips rather than a checkbox, matching every other choice here. The button on
-       the stage runs the same strobe while it is held, whichever of these is chosen. -->
+       the stage runs the same strobe while it is held, whichever of these is chosen;
+       "hands free" is what tells this one apart from that one. -->
   <div class="choice">
-    <span class="name">strobe</span>
+    <span class="name">hands free</span>
     <div class="options">
       {#each [false, true] as on (on)}
         <button
@@ -271,7 +243,8 @@
     step={5}
     value={engine.strobeCycle}
     format={strobeCycleLabel}
-    hint="For the switch above and the button on the stage alike. Faster than about twice a beat, Hue bulbs pulse rather than strobe: the bridge updates them about 25 times a second."
+    hint="For hands free and the button on the stage alike."
+    detail="Faster than about twice a beat, Hue bulbs pulse rather than strobe: the bridge updates them about 25 times a second."
     commit={setStrobeCycle}
   />
 </div>
@@ -280,38 +253,52 @@
   .engine {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--space-2);
   }
 
   .choice {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
+  }
+
+  .group {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+
+  .group:first-child {
+    margin-top: 0;
   }
 
   .name {
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--ink-dim);
   }
 
   .options {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .chip {
-    /* Thumb-sized: this gets pressed on a phone, in the dark, mid-set. */
-    min-height: 2.25rem;
+    /* Thumb-sized on touch: this gets pressed on a phone, in the dark, mid-set. A mouse
+       gets less, which `--chip` explains. */
+    min-height: var(--chip);
     padding: 0.4rem 0.6rem;
     background: var(--panel);
     border: 1px solid var(--edge);
     border-radius: var(--radius);
     color: var(--ink-dim);
     font: inherit;
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
     cursor: pointer;
   }
 
