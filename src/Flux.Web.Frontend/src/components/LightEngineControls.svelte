@@ -208,7 +208,8 @@
     step={5}
     value={engine.pulseDepth}
     format={pulseDepthLabel}
-    hint="How far the light drops between beats. Shallow keeps the room bright and lets a short pulse read as a flash rather than as darkness."
+    hint="How far the light drops between beats."
+    detail="Shallow keeps the room bright and lets a short pulse read as a flash rather than as darkness."
     commit={setDepth}
   />
 
@@ -242,7 +243,8 @@
     step={5}
     value={engine.strobeCycle}
     format={strobeCycleLabel}
-    hint="For the switch above and the button on the stage alike. Faster than about twice a beat, Hue bulbs pulse rather than strobe: the bridge updates them about 25 times a second."
+    hint="For hands free and the button on the stage alike."
+    detail="Faster than about twice a beat, Hue bulbs pulse rather than strobe: the bridge updates them about 25 times a second."
     commit={setStrobeCycle}
   />
 </div>

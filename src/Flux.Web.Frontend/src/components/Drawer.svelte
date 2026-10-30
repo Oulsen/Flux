@@ -90,7 +90,9 @@
   });
 
   function onKeydown(event: KeyboardEvent): void {
-    if (open && event.key === 'Escape') {
+    // An open popup inside the drawer takes the Escape for itself, and the browser closes
+    // it after this has run: closing the drawer as well would take two steps back for one.
+    if (open && event.key === 'Escape' && document.querySelector(':popover-open') === null) {
       close();
     }
   }

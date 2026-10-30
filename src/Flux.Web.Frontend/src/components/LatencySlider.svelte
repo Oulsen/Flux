@@ -39,6 +39,7 @@
   format={offsetLabel}
   note={beats}
   warn={nearABeat}
-  hint="The light path runs behind the music, so positive sends the change early. Expect somewhere around 60 to 140 ms."
+  hint="Positive sends the light early."
+  detail="The light path runs behind the music, so the change has to leave before the beat it belongs to. Expect somewhere around 60 to 140 ms."
   commit={setOffset}
 />

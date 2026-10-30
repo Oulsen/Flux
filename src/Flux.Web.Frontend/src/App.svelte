@@ -141,7 +141,7 @@
   let lookOpen = $state(false);
 
   function closeLookOnEscape(event: KeyboardEvent): void {
-    if (lookOpen && event.key === 'Escape') {
+    if (lookOpen && event.key === 'Escape' && document.querySelector(':popover-open') === null) {
       lookOpen = false;
     }
   }
