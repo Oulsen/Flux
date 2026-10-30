@@ -665,6 +665,11 @@
     z-index: 1;
     display: grid;
     grid-template-rows: auto 1fr auto;
+
+    /* At least zero rather than the implicit auto, which grows to fit min-content: a
+       badge that cannot shrink then made the whole HUD wider than a phone, and the
+       settings button - the drawer's only standing opener - was past the right edge. */
+    grid-template-columns: minmax(0, 1fr);
     padding: var(--gap);
     padding-bottom: max(var(--gap), env(safe-area-inset-bottom));
 
@@ -746,6 +751,9 @@
     flex-direction: row;
     align-items: center;
     gap: 0.9rem;
+
+    /* Lets the badge inside give way before the settings button does. */
+    min-width: 0;
   }
 
   /* Not a cluster itself: it stacks a control above one, and only the readings want a
@@ -830,6 +838,9 @@
   .settings {
     /* Taken back from the sheet of glass above. */
     pointer-events: auto;
+
+    /* Never the thing that shrinks: the badge beside it ellipsizes instead. */
+    flex: none;
     padding: 0.4rem 0.9rem;
 
     /* Opaque, unlike the readings around it. A control needs a findable edge, and the
@@ -994,6 +1005,10 @@
     font-size: 0.75rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+
+    /* Wraps inside the window rather than running off it on a phone. */
+    max-width: 100%;
+    text-align: center;
   }
 
   .switch {
@@ -1042,6 +1057,12 @@
    * the drawer has it.
    */
   @media (max-width: 40rem) {
+    /* The window's title bar already says Flux, and on a phone the width it takes is
+       the width the connection badge needs. */
+    h1 {
+      display: none;
+    }
+
     .bottom {
       grid-template-columns: 1fr;
     }

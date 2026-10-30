@@ -43,7 +43,7 @@
 
 <span class="badge {label.tone}">
   <span class="dot"></span>
-  {label.text}
+  <span class="text">{label.text}</span>
 </span>
 
 <style>
@@ -59,9 +59,20 @@
     text-transform: uppercase;
     color: var(--ink-dim);
     white-space: nowrap;
+
+    /* Gives way to the settings button beside it on a narrow phone; the dot keeps the
+       state readable even when the words are cut. */
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .text {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .dot {
+    flex: none;
     width: 0.5rem;
     height: 0.5rem;
     border-radius: 50%;
