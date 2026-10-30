@@ -389,7 +389,7 @@
   The layer ignores the pointer so that the stage below it is not covered by an
   invisible rectangle; the two things in here that are actually controls take it back.
 -->
-<div class="hud">
+<div class="hud" class:beside={drawerOpen}>
   <div class="row top">
     <div class="cluster">
       <h1>Flux</h1>
@@ -700,6 +700,33 @@
        there - stops receiving a pointer. The two things in here that are controls take
        it back individually. */
     pointer-events: none;
+
+    /* The drawer's own timing, so the readings move aside with it rather than after. */
+    transition: right 180ms ease;
+  }
+
+  /*
+   * Moved aside for the open drawer on a screen wide enough to show both.
+   *
+   * The drawer is not modal so that anchor and strobe can be pressed while something is
+   * being adjusted, and that only works if they are not underneath it: centred on the
+   * whole window, they slid under the drawer at about 1100px and the corner readings
+   * were always covered. Inset by the drawer's width, the centre column is centred in
+   * the stage that is left. The picture stays full width behind the drawer, since
+   * resizing the canvas on every open would redraw the spectrum for nothing.
+   *
+   * Not on a phone, where the drawer is the full width and there is nothing beside it.
+   */
+  @media (min-width: 60rem) {
+    .hud.beside {
+      right: var(--drawer-width);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hud {
+      transition: none;
+    }
   }
 
   /*

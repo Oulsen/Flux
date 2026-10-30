@@ -22,6 +22,10 @@
   --gap: 1rem;
   --radius: 0.75rem;
 
+  /* Shared by the drawer and the HUD that moves aside for it, so the two cannot
+     disagree about where the drawer's edge is. */
+  --drawer-width: 26rem;
+
   color-scheme: dark;
 }
 

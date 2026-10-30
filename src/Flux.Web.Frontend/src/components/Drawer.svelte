@@ -118,7 +118,7 @@
     z-index: 3;
     display: flex;
     flex-direction: column;
-    width: min(26rem, 100%);
+    width: min(var(--drawer-width), 100%);
     height: 100%;
     background: var(--surface);
     border-left: 1px solid var(--edge);
