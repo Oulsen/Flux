@@ -59,9 +59,9 @@ test('storage that throws cannot stop the page from starting', () => {
   assert.doesNotThrow(() => writeStageOn(hostile(), false));
 });
 
-test('the drawer opens on show until another tab has been chosen', () => {
-  assert.equal(readDrawerTab(store()), 'show');
-  assert.equal(readDrawerTab(null), 'show');
+test('the drawer opens on lights until another tab has been chosen', () => {
+  assert.equal(readDrawerTab(store()), 'lights');
+  assert.equal(readDrawerTab(null), 'lights');
 });
 
 test('the tab last open is the tab the drawer opens on', () => {
@@ -71,10 +71,20 @@ test('the tab last open is the tab the drawer opens on', () => {
   assert.equal(readDrawerTab(saved), 'setup');
 });
 
-test('a remembered tab this page does not have falls back to show', () => {
+test('a remembered tab this page does not have falls back to lights', () => {
   // A key written by another version of the page, or by hand. Opening on a tab that
   // does not exist would open on nothing at all.
-  assert.equal(readDrawerTab(store({ 'flux.drawerTab': 'lights' })), 'show');
-  assert.equal(readDrawerTab(hostile()), 'show');
-  assert.doesNotThrow(() => writeDrawerTab(hostile(), 'stage'));
+  assert.equal(readDrawerTab(store({ 'flux.drawerTab': 'colours' })), 'lights');
+  // A name every object answers to, which a lookup of former names must not mistake
+  // for one of them.
+  assert.equal(readDrawerTab(store({ 'flux.drawerTab': 'constructor' })), 'lights');
+  assert.equal(readDrawerTab(hostile()), 'lights');
+  assert.doesNotThrow(() => writeDrawerTab(hostile(), 'screen'));
+});
+
+test('a tab remembered under its old name opens as the tab it became', () => {
+  // The tabs were show / stage / setup before they were named for what they change.
+  // A device that last had stage open still wants the visualizer settings.
+  assert.equal(readDrawerTab(store({ 'flux.drawerTab': 'show' })), 'lights');
+  assert.equal(readDrawerTab(store({ 'flux.drawerTab': 'stage' })), 'screen');
 });

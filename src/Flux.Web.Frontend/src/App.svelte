@@ -11,6 +11,7 @@
   import DevicePicker from './components/DevicePicker.svelte';
   import LookChoices from './components/LookChoices.svelte';
   import Diagnostics from './components/Diagnostics.svelte';
+  import LatencySlider from './components/LatencySlider.svelte';
   import SourceSelector from './components/SourceSelector.svelte';
   import SpectrumCanvas from './components/SpectrumCanvas.svelte';
   import StrobeButton from './components/StrobeButton.svelte';
@@ -602,21 +603,48 @@
     drawer itself is never unmounted: the bridge panel keeps a discovery that is halfway
     through, and the pickers keep a list that was already right.
   -->
-  <div class="tab-panel" role="tabpanel" id="panel-show" aria-labelledby="tab-show" hidden={drawerTab !== 'show'}>
+  <div class="tab-panel" role="tabpanel" id="panel-lights" aria-labelledby="tab-lights" hidden={drawerTab !== 'lights'}>
+    <!--
+      The lights first, because they are what gets touched with music playing: start and
+      stop, then colour, pulse and strobe in the order they are reached for.
+    -->
+    {#if showsRooms(store.hue) && store.hue !== null}
+      <section class="panel">
+        <h2>lights</h2>
+        <LightsPanel
+          hue={store.hue}
+          engine={{ ...store.hue.engine, ...store.pendingEngine }}
+          light={store.light}
+          phrases={store.source === 'rekordbox'}
+          setEngine={setLightSettings}
+          {startStream}
+          {stopStream}
+        />
+      </section>
+    {/if}
+
+    <!-- Said rather than left as a gap: without a room the lights panel is not
+         offered, and a lights tab holding only the beat reads as one that lost half. -->
+    {#if store.hue !== null && !showsRooms(store.hue)}
+      <button type="button" class="hint" onclick={() => showTab('setup')}>
+        the lights appear here once a bridge is set up &rarr;
+      </button>
+    {/if}
+
+    <!--
+      The beat after the lights, and without the source buttons: those are on the stage's
+      look panel, one tap from the music, and what is left here is the correction to the
+      grid the source chose.
+
+      rekordbox reads bar one from the track, so a tap there is a second opinion it
+      overrules at the next seek; what it offers instead is a correction to its grid. It
+      reads bar one under another source's tempo too, and there the correction is offered
+      beside the tap rather than in its place: the tap is still the only fix for a bar
+      that nothing else set, and rekordbox going quiet leaves its last downbeat labelled
+      as its own.
+    -->
     <section class="panel">
       <h2>beat</h2>
-      <SourceSelector
-        sources={store.sources}
-        active={store.source}
-        pending={store.pendingSource}
-        select={selectSource}
-      />
-      <!-- rekordbox reads bar one from the track, so a tap there is a second opinion it
-           overrules at the next seek; what it offers instead is a correction to its grid.
-           It reads bar one under another source's tempo too, and there the correction is
-           offered beside the tap rather than in its place: the tap is still the only fix
-           for a bar that nothing else set, and rekordbox going quiet leaves its last
-           downbeat labelled as its own. -->
       {#if store.source === 'rekordbox'}
         <BarShift shift={shiftBar} captions status={rekordboxStatus(store.diagnostics)} />
       {:else}
@@ -626,37 +654,9 @@
         {/if}
       {/if}
     </section>
-
-    <!--
-      The lights beside the beat, because these two are what the page is open for: they
-      are what gets touched with music playing.
-    -->
-    {#if showsRooms(store.hue) && store.hue !== null}
-      <section class="panel">
-        <h2>lights</h2>
-        <LightsPanel
-          hue={store.hue}
-          engine={{ ...store.hue.engine, ...store.pendingEngine }}
-          light={store.light}
-          bpm={store.grid?.bpm ?? null}
-          setEngine={setLightSettings}
-          setOffset={setLatencyOffset}
-          {startStream}
-          {stopStream}
-        />
-      </section>
-    {/if}
-
-    <!-- Said rather than left as a gap: without a room the lights panel is not
-         offered, and a show tab holding only the beat reads as one that lost half. -->
-    {#if store.hue !== null && !showsRooms(store.hue)}
-      <button type="button" class="hint" onclick={() => showTab('setup')}>
-        the lights appear here once a bridge is set up &rarr;
-      </button>
-    {/if}
   </div>
 
-  <div class="tab-panel" role="tabpanel" id="panel-stage" aria-labelledby="tab-stage" hidden={drawerTab !== 'stage'}>
+  <div class="tab-panel" role="tabpanel" id="panel-screen" aria-labelledby="tab-screen" hidden={drawerTab !== 'screen'}>
     <!--
       The settings on this page that are about the device rather than about the show,
       which is why they are remembered here and never sent to the server.
@@ -703,6 +703,15 @@
         />
       {/if}
     </section>
+
+    <!-- Here rather than with the lights: it is set once per room and bridge, by ear,
+         and between those visits it is the one slider nobody should brush mid-set. -->
+    {#if showsRooms(store.hue) && store.hue !== null}
+      <section class="panel">
+        <h2>latency</h2>
+        <LatencySlider offsetMs={store.hue.latencyOffsetMs} bpm={store.grid?.bpm ?? null} setOffset={setLatencyOffset} />
+      </section>
+    {/if}
 
     <section class="panel">
       <button

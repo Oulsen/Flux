@@ -27,9 +27,11 @@
     engine: HueEngineData;
     /** Names the one field that changed. The caller turns it into the whole record. */
     setEngine: (change: Partial<HueEngineData>) => void;
+    /** Whether the beat source names phrases, which only rekordbox does. */
+    phrases: boolean;
   }
 
-  const { engine, setEngine }: Props = $props();
+  const { engine, setEngine, phrases }: Props = $props();
 
   /*
    * Each control names only the field it owns, and the caller composes the message.
@@ -103,13 +105,19 @@
   palette four times a bar.
 -->
 <div class="engine">
+  <!-- Grouped in the order they are reached for: the colour every few songs, the pulse
+       now and then, the strobe for a moment. -->
+  <h3 class="group">colour</h3>
+
   <LookChoices {engine} {setEngine} />
 
   <!-- Beside the bar count because it is a correction to it rather than a second rhythm:
        a phrase starting takes a colour and the count runs on from there. Only rekordbox
-       offers phrases, so with any other source this changes nothing. -->
-  <div class="choice">
-    <span class="name">follow phrases</span>
+       offers phrases, so with any other source this changes nothing - dimmed and said
+       rather than hidden, like the layout below, so it is where it was when the source
+       changes back. -->
+  <div class="choice" class:idle={!phrases}>
+    <span class="name">follow phrases{phrases ? '' : ' · rekordbox only'}</span>
     <div class="options">
       {#each [false, true] as on (on)}
         <button
@@ -163,6 +171,8 @@
     </div>
   </div>
 
+  <h3 class="group">brightness and pulse</h3>
+
   <RangeSetting
     id="light-brightness"
     name="brightness"
@@ -202,10 +212,13 @@
     commit={setDepth}
   />
 
+  <h3 class="group">strobe</h3>
+
   <!-- Two chips rather than a checkbox, matching every other choice here. The button on
-       the stage runs the same strobe while it is held, whichever of these is chosen. -->
+       the stage runs the same strobe while it is held, whichever of these is chosen;
+       "hands free" is what tells this one apart from that one. -->
   <div class="choice">
-    <span class="name">strobe</span>
+    <span class="name">hands free</span>
     <div class="options">
       {#each [false, true] as on (on)}
         <button
@@ -245,6 +258,19 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+  }
+
+  .group {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+
+  .group:first-child {
+    margin-top: 0;
   }
 
   .name {

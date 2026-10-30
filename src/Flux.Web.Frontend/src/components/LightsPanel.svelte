@@ -1,7 +1,6 @@
 <script lang="ts">
   import { formatRate } from '../lib/format.ts';
   import type { HueData, HueEngineData, LightData } from '../lib/protocol.ts';
-  import LatencySlider from './LatencySlider.svelte';
   import LightEngineControls from './LightEngineControls.svelte';
 
   interface Props {
@@ -15,15 +14,14 @@
     engine: HueEngineData;
     /** Non-null exactly while Flux is streaming. The only field that says so. */
     light: LightData | null;
-    /** The tempo, so the latency offset can be said in beats. */
-    bpm: number | null;
+    /** Whether the beat source names phrases, for the control that follows them. */
+    phrases: boolean;
     setEngine: (change: Partial<HueEngineData>) => void;
-    setOffset: (offsetMs: number) => void;
     startStream: () => void;
     stopStream: () => void;
   }
 
-  const { hue, engine, light, bpm, setEngine, setOffset, startStream, stopStream }: Props = $props();
+  const { hue, engine, light, phrases, setEngine, startStream, stopStream }: Props = $props();
 
   const streaming = $derived(light !== null);
 </script>
@@ -64,9 +62,7 @@
     {/if}
   </div>
 
-  <LightEngineControls {engine} {setEngine} />
-
-  <LatencySlider offsetMs={hue.latencyOffsetMs} {bpm} {setOffset} />
+  <LightEngineControls {engine} {setEngine} {phrases} />
 </div>
 
 <style>
