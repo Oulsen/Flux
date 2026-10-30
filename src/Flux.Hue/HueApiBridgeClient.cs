@@ -68,9 +68,10 @@ internal sealed class HueApiBridgeClient: IHueBridgeClient {
     // A subnet sweep: entirely local, and slower than a listen because it asks every
     // address rather than waiting to be told. Worth reaching for before leaving the
     // network, and not before, since it is the only route here that generates traffic
-    // to machines that have nothing to do with Hue.
+    // to machines that have nothing to do with Hue. Flux's own rather than the
+    // library's, which cannot see a Bridge Pro - see LocalNetworkScan.
     _logger.LogInformation("Neither mDNS nor SSDP answered. Scanning the local network for a bridge.");
-    IReadOnlyList<HueBridge> scanned = await LocateAsync(new LocalNetworkScanBridgeLocator(), timeout, cancellationToken).ConfigureAwait(false);
+    IReadOnlyList<HueBridge> scanned = await new LocalNetworkScan().ScanAsync(timeout, cancellationToken).ConfigureAwait(false);
     if(scanned.Count > 0) {
       return scanned;
     }
