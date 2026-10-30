@@ -79,13 +79,14 @@ measured by somebody standing in the room watching both.
   falls asleep cannot leave the room strobing.
 - Serves a web UI built around the visualizer, which fills the window: the BPM,
   the position in the bar, the anchor and strobe buttons, the achieved frame
-  rate and the connection and source health sit over it, and everything
-  adjustable is behind a drawer, in three tabs: what is reached for with music
-  playing, the look of the stage, and the one-time setup. Each device remembers
-  the tab it left open. The page reconnects on its own through a Flux
-  restart or a Wi-Fi drop, and a phone that would rather not draw a 64 column
-  spectrum thirty times a second can switch to numbers only, which it then
-  remembers.
+  rate and the connection and source health sit over it. The beat source, the
+  palette and how often it changes open from the corner reading, one tap from the
+  music; everything else adjustable is behind a drawer, in three tabs: what is
+  reached for with music playing, the look of the stage, and the one-time setup.
+  Each device remembers the tab it left open. The page reconnects on its own
+  through a Flux restart or a Wi-Fi drop, and a phone that would rather not
+  draw a 64 column spectrum thirty times a second can switch to numbers only,
+  which it then remembers.
 - Shows the look before the room is lit: with light sync off the visualizer is
   drawn in the colours the light engine would send, laid out as the selected
   room's lights, so palettes and colour splits can be judged with the bulbs off

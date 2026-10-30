@@ -32,7 +32,8 @@
 
     switch (sourceState) {
       case 'live':
-        return { text: 'live', tone: 'live' };
+        // Named here too: beside the light sync pill a bare "live" read as the lights.
+        return { text: `${source} live`, tone: 'live' };
       case 'quiet':
         return { text: `${source} quiet`, tone: 'quiet' };
       default:

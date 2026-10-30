@@ -1,12 +1,9 @@
 <script lang="ts">
   import {
     brightnessLabel,
-    colorChangeLabel,
     colorCountLabel,
-    COLOR_CHANGE_BARS,
     COLOR_COUNTS,
     COLOR_LAYOUTS,
-    PALETTES,
     MIN_RENDERABLE_PULSE_MS,
     PERCENT_LIMIT,
     pulseDepthLabel,
@@ -17,7 +14,8 @@
     STROBE_CYCLE_MAX,
     STROBE_CYCLE_MIN,
   } from '../lib/hue.ts';
-  import type { HueColorLayout, HueEngineData, HuePalette } from '../lib/protocol.ts';
+  import type { HueColorLayout, HueEngineData } from '../lib/protocol.ts';
+  import LookChoices from './LookChoices.svelte';
   import RangeSetting from './RangeSetting.svelte';
 
   interface Props {
@@ -44,14 +42,6 @@
    * holds what this page has asked for and has not seen come back, and that is where the
    * whole statement is put together.
    */
-  function choosePalette(palette: HuePalette): void {
-    setEngine({ palette });
-  }
-
-  function chooseInterval(bars: number): void {
-    setEngine({ colorChangeBars: bars });
-  }
-
   function chooseFollowPhrases(followPhrases: boolean): void {
     setEngine({ followPhrases });
   }
@@ -113,39 +103,7 @@
   palette four times a bar.
 -->
 <div class="engine">
-  <div class="choice">
-    <span class="name">palette</span>
-    <div class="options">
-      {#each PALETTES as palette (palette)}
-        <button
-          type="button"
-          class="chip"
-          class:chosen={palette === engine.palette}
-          aria-pressed={palette === engine.palette}
-          onclick={() => choosePalette(palette)}
-        >
-          {palette}
-        </button>
-      {/each}
-    </div>
-  </div>
-
-  <div class="choice">
-    <span class="name">colour change</span>
-    <div class="options">
-      {#each COLOR_CHANGE_BARS as bars (bars)}
-        <button
-          type="button"
-          class="chip"
-          class:chosen={bars === engine.colorChangeBars}
-          aria-pressed={bars === engine.colorChangeBars}
-          onclick={() => chooseInterval(bars)}
-        >
-          {colorChangeLabel(bars)}
-        </button>
-      {/each}
-    </div>
-  </div>
+  <LookChoices {engine} {setEngine} />
 
   <!-- Beside the bar count because it is a correction to it rather than a second rhythm:
        a phrase starting takes a colour and the count runs on from there. Only rekordbox

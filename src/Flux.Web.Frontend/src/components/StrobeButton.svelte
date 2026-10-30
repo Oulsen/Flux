@@ -93,6 +93,9 @@
   oncontextmenu={(event) => event.preventDefault()}
 >
   strobe
+  <!-- Said on the button, because it looks like the tap buttons beside it and is not
+       one: it runs only while held. -->
+  <span class="sub" aria-hidden="true">hold</span>
 </button>
 
 <style>
@@ -121,6 +124,20 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+  }
+
+  .strobe {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.2;
+  }
+
+  .sub {
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
+    opacity: 0.7;
   }
 
   /* White while held, because that is what the room is doing. */
