@@ -96,7 +96,13 @@ numbers nobody has ever heard.
 - Commit messages: imperative mood, specific about what changed.
 - Branches: `type/short-description`, lowercase. Every change reaches
   `develop` through a PR, squash-merged; the PR body becomes the commit
-  message, so write it as one.
+  message, so write it as one. `develop` is not the default branch, so open
+  each PR with `--base develop` and write `Refs #N`, not `Fixes #N`: a
+  closing keyword does nothing outside the default branch.
+- `main` holds releases only and is the default branch. It is never merged
+  into: a release moves `main` forward to `develop`'s tip with
+  `git push origin <commit>:main`, which only a fast-forward passes, so
+  `main` and `develop` are the same commit after a release.
 - Comments explain why, not what. Match the existing register: file-level
   summaries argue the design decision the code cannot show.
 - Prose on disk uses " - " or a colon, never an em dash.

@@ -7,7 +7,7 @@ on:
   pull_request:
     branches: [develop, main]
   push:
-    branches: [develop]
+    branches: [develop, main]
 
 # A second push to the same branch makes the first run's answer worthless, and
 # Windows minutes bill at twice the Linux rate.
