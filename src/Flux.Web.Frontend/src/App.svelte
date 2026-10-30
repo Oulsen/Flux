@@ -139,11 +139,27 @@
    * twice before it stays.
    */
   let lookOpen = $state(false);
+  let lookPanel: HTMLDivElement | undefined = $state();
+  let lookToggle: HTMLButtonElement | undefined = $state();
 
+  /*
+   * Escape closes the panel, and only the panel: listened for on the way down rather
+   * than up, so it runs before the drawer's own Escape and can mark the key handled -
+   * otherwise one press with both open would close both. Focus inside the panel goes
+   * back to the corner it was opened from rather than falling to the page.
+   */
   function closeLookOnEscape(event: KeyboardEvent): void {
-    if (lookOpen && event.key === 'Escape' && document.querySelector(':popover-open') === null) {
-      lookOpen = false;
+    if (!lookOpen || event.key !== 'Escape' || document.querySelector(':popover-open') !== null) {
+      return;
     }
+
+    event.preventDefault();
+
+    if (lookPanel?.contains(document.activeElement)) {
+      lookToggle?.focus();
+    }
+
+    lookOpen = false;
   }
 
   /*
@@ -386,7 +402,7 @@
   swallowed a tap would take it from the HUD floating over it. A press that reaches it
   closes the drawer, which is the window listening rather than the stage.
 -->
-<svelte:window onpointerdown={closeFromStage} onkeydown={closeLookOnEscape} />
+<svelte:window onpointerdown={closeFromStage} onkeydowncapture={closeLookOnEscape} />
 
 <div class="stage" aria-hidden="true" bind:this={stageEl}>
   {#if stageOn}
@@ -526,6 +542,7 @@
     <button
       type="button"
       class="cluster right look-toggle"
+      bind:this={lookToggle}
       aria-expanded={lookOpen}
       aria-controls="look"
       onclick={() => (lookOpen = !lookOpen)}
@@ -549,26 +566,26 @@
     </button>
   </div>
 
-  {#if lookOpen}
-    <div class="look" id="look" role="dialog" aria-label="Beat source and look">
-      <section class="look-part">
-        <h2>beat</h2>
-        <SourceSelector
-          sources={store.sources}
-          active={store.source}
-          pending={store.pendingSource}
-          select={selectSource}
-        />
-      </section>
+  <!-- Always rendered and hidden while closed, so the toggle's `aria-controls` always
+       names something. A group rather than a dialog: it takes no focus and traps none. -->
+  <div class="look" id="look" role="group" aria-label="Beat source and look" hidden={!lookOpen} bind:this={lookPanel}>
+    <section class="look-part">
+      <h2>beat</h2>
+      <SourceSelector
+        sources={store.sources}
+        active={store.source}
+        pending={store.pendingSource}
+        select={selectSource}
+      />
+    </section>
 
-      {#if showsRooms(store.hue) && engine !== null}
-        <section class="look-part">
-          <h2>look</h2>
-          <LookChoices {engine} setEngine={setLightSettings} />
-        </section>
-      {/if}
-    </div>
-  {/if}
+    {#if showsRooms(store.hue) && engine !== null}
+      <section class="look-part">
+        <h2>look</h2>
+        <LookChoices {engine} setEngine={setLightSettings} />
+      </section>
+    {/if}
+  </div>
 </div>
 
 <Drawer open={drawerOpen} close={() => (drawerOpen = false)} scrollKey={drawerTab}>
@@ -1265,6 +1282,11 @@
 
   .whole {
     white-space: nowrap;
+  }
+
+  /* The panel sets its own display, which would otherwise outrank `hidden`. */
+  .look[hidden] {
+    display: none;
   }
 
   .look-part {

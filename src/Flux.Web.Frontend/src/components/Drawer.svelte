@@ -76,7 +76,9 @@
     if (open) {
       const target =
         aside?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? aside?.querySelector<HTMLElement>('button');
-      target?.focus();
+      // Without scrolling: the drawer is still sliding in, and a fixed element pulled
+      // into view mid-transition can nudge the page under it.
+      target?.focus({ preventScroll: true });
     } else if (returnFocus) {
       returnFocus = false;
       opener?.focus();
@@ -92,7 +94,8 @@
   function onKeydown(event: KeyboardEvent): void {
     // An open popup inside the drawer takes the Escape for itself, and the browser closes
     // it after this has run: closing the drawer as well would take two steps back for one.
-    if (open && event.key === 'Escape' && document.querySelector(':popover-open') === null) {
+    // The stage's look panel takes it the same way, by marking the event handled.
+    if (open && event.key === 'Escape' && !event.defaultPrevented && document.querySelector(':popover-open') === null) {
       close();
     }
   }

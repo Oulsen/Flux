@@ -105,12 +105,17 @@
     }
   }
 
-  // A mouse click on the "?" would toggle shut what pointing at it just opened.
+  // A mouse click on the "?" would toggle shut what pointing at it just opened. Only a
+  // real click: Enter on the button is a click too, with no pointer behind it (a detail
+  // of zero), and a mouse having passed over the setting earlier must not swallow it.
   function clicked(event: MouseEvent): void {
-    if (pointer === 'mouse') {
+    if (event.detail > 0 && pointer === 'mouse') {
       event.preventDefault();
     }
   }
+
+  /** Removes the scroll listener of the popup that is open, if one is. */
+  let unwatchScroll: (() => void) | null = null;
 
   /*
    * Puts the popup beside its "?", which the popover itself does not do: it opens in the
@@ -119,11 +124,16 @@
    * its height, and kept inside the window either way.
    */
   function place(event: ToggleEvent): void {
+    const tip = event.currentTarget as HTMLElement;
+
+    unwatchScroll?.();
+    unwatchScroll = null;
+
     if (event.newState !== 'open' || more === undefined) {
+      tip.style.visibility = '';
       return;
     }
 
-    const tip = event.currentTarget as HTMLElement;
     const button = more.getBoundingClientRect();
     const margin = 8;
     const width = tip.offsetWidth;
@@ -135,10 +145,14 @@
 
     tip.style.left = `${left}px`;
     tip.style.top = `${top}px`;
+    tip.style.visibility = 'visible';
 
     // Placed once, so a scroll would leave it floating beside nothing. A tap already
-    // dismisses it; a mouse wheel does not, so the scroll does.
-    window.addEventListener('scroll', () => tip.hidePopover(), { capture: true, once: true });
+    // dismisses it; a mouse wheel does not, so the scroll does. Removed again on close,
+    // so popups opened and closed without a scroll do not leave listeners behind.
+    const hide = (): void => tip.hidePopover();
+    window.addEventListener('scroll', hide, { capture: true, once: true });
+    unwatchScroll = () => window.removeEventListener('scroll', hide, { capture: true });
   }
 
   const position = $derived(dragged ?? value);
@@ -283,6 +297,10 @@
     position: fixed;
     inset: auto;
     margin: 0;
+
+    /* Until placed: the toggle event that places it arrives after the popup has been
+       drawn once, which would otherwise show it for a frame wherever it opened. */
+    visibility: hidden;
     width: max-content;
     max-width: min(18rem, calc(100vw - 1rem));
     padding: var(--space-3);
