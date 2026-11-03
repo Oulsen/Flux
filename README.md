@@ -18,6 +18,12 @@ by somebody standing in the room.
 
 Flux is being built in phases; this README describes what works now.
 
+## Help and contact
+
+- **Bugs and feature requests:** [GitHub issues](https://github.com/Oulsen/Flux/issues)
+- **A security hole:** privately, not in an issue: [SECURITY.md](SECURITY.md)
+- **Enjoying it?** [Buy me a cold one](https://github.com/sponsors/Oulsen), any amount helps
+
 ## Install
 
 Download `Flux-win-Setup.exe` from the latest
