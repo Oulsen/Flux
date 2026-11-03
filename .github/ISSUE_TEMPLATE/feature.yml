@@ -1,0 +1,11 @@
+name: Feature request
+description: Something Flux could add or do better
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What it would add
+      description: What you want Flux to do, and why. Plain words are best.
+    validations:
+      required: true

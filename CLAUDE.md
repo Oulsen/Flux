@@ -102,10 +102,21 @@ numbers nobody has ever heard.
   message, so write it as one. `develop` is not the default branch, so open
   each PR with `--base develop` and write `Refs #N`, not `Fixes #N`: a
   closing keyword does nothing outside the default branch.
-- `main` holds releases only and is the default branch. It is never merged
-  into: a release moves `main` forward to `develop`'s tip with
-  `git push origin <commit>:main`, which only a fast-forward passes, so
-  `main` and `develop` are the same commit after a release.
+- `main` holds releases and is the default branch. A release moves `main`
+  forward to `develop`'s tip with `git push origin <commit>:main`, which only
+  a fast-forward passes, so `main` and `develop` are the same commit after a
+  release.
+- A patch to the released version, for a correction that should not wait for
+  the next release: a `patch/short-description` branch from `main`, a PR into
+  `main` (a merge commit, the only method there), then right after the merge a
+  `sync/short-description` branch from `develop` with
+  `git merge --no-ff origin/main`, never a squash or a PR, which `develop` is
+  moved forward to with `git push origin <commit>:develop`. When `develop` has
+  nothing beyond the old `main`, skip the sync branch and move `develop` to
+  `main` directly. Either way `develop` contains `main`, so the next release
+  still fast-forwards. A docs-only patch keeps the version; one that changes
+  the app bumps the patch number and is released from `main` like any other
+  version.
 - Releasing, in order:
   1. Try the installer from `develop`'s tip. Either run
      `pwsh tools/publish-release.ps1` and then `releases\Flux-win-Setup.exe`, or push

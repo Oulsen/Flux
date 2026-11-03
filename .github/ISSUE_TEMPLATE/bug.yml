@@ -1,0 +1,39 @@
+name: Bug
+description: Something does not work as it should, including the install
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never attach your Hue bridge key or anything from `%APPDATA%\Flux` that holds it.
+  - type: input
+    id: versions
+    attributes:
+      label: Flux and Windows version
+      placeholder: Flux 0.6.0, Windows 11 24H2
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Beat source
+      options: [rekordbox, Ableton Link, Listening to the audio, Not relevant]
+    validations:
+      required: true
+  - type: dropdown
+    id: bridge
+    attributes:
+      label: Hue bridge
+      options: [Hue Bridge, Hue Bridge Pro, Not relevant]
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead. A screenshot helps.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Drag the day's file from `%LOCALAPPDATA%\Flux\logs` here.
