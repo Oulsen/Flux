@@ -136,6 +136,37 @@ public class LightEngineTests {
   }
 
   /// <summary>
+  /// A held bass as loud as the track's kick is not a kick: the sub band has to thump -
+  /// rise and fall within the beat - before the kick band's level is believed. A break
+  /// recorded on 2026-11-12 pulsed on every beat until this was asked.
+  /// </summary>
+  [Fact]
+  public void ALoudLowEndThatDoesNotThumpIsNotAKick() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 0.5, Highs: 0.5) { SubDb = -30 };
+    for(int frame = 0; frame < 100; frame++) {
+      harness.Clock.Advance(TimeSpan.FromMilliseconds(20));
+      harness.Engine.Render();
+    }
+
+    harness.BeatNow(index: 0);
+    harness.Engine.Render();
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(40));
+    Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
+
+    // The same level, thumping: twenty decibels up and down every quarter of a second.
+    for(int frame = 0; frame < 100; frame++) {
+      harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 0.5, Highs: 0.5) { SubDb = (frame / 12) % 2 == 0 ? -30 : -50 };
+      harness.Clock.Advance(TimeSpan.FromMilliseconds(20));
+      harness.Engine.Render();
+    }
+
+    harness.BeatNow(index: 4);
+    Assert.Equal(1.0, Brightness(harness.Engine.Render()), 3);
+  }
+
+  /// <summary>
   /// The downbeat takes the whole pulse, the middle of the bar most of one and the rest
   /// about a third, so the room moves in bars rather than flashing alike on every beat.
   /// With nothing to listen to, so the accent is the only thing sizing the pulse.
@@ -1056,6 +1087,7 @@ public class LightEngineTests {
     // thing still hitting.
     harness.Heard.Bands = new SpectrumLevels(Kick: 0.2, Mids: 0.1, Highs: 0.25);
     harness.BeatNow(index: 0);
+    RiseOver(harness, 100, 0, 1);
 
     (_, HueColor[] lights) = RenderRoom(harness, 0, 1);
 
@@ -1262,6 +1294,7 @@ public class LightEngineTests {
     // The break: the kick has gone, the hats have not.
     harness.Heard.Bands = new SpectrumLevels(Kick: 0.2, Mids: 0.3, Highs: 0.3);
     harness.BeatNow(index: 0);
+    RiseOver(harness, 100, 0, 1);
 
     (_, HueColor[] lights) = RenderRoom(harness, 0, 1);
 
@@ -1471,6 +1504,80 @@ public class LightEngineTests {
   }
 
   /// <summary>
+  /// A hi-hat hit lifts one light, briefly, and leaves the rest of the room where it was:
+  /// a single light flicking up reads as a hat, several together as another beat.
+  /// </summary>
+  [Fact]
+  public void AHatHitSparklesOneLightBriefly() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+    double[] ats = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
+
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 1, Highs: 1) { HatsDb = -50 };
+    harness.BeatNow(index: 0);
+    RiseOver(harness, 2000, ats);
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 1, Highs: 1) { HatsDb = -85 };
+    RiseOver(harness, 2000, ats);
+
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 1, Highs: 1) { HatsDb = -50 };
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(20));
+    (_, HueColor[] hit) = RenderRoom(harness, ats);
+
+    Assert.Single(hit, light => Brightness(light) > 0.5);
+    Assert.Equal(8, hit.Count(light => Brightness(light) < 0.16));
+
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 1, Highs: 1) { HatsDb = -85 };
+    RiseOver(harness, 200, ats);
+    (_, HueColor[] after) = RenderRoom(harness, ats);
+
+    Assert.All(after, light => Assert.True(Brightness(light) < 0.16, $"A sparkle is still lit at {Brightness(light):F3} 200 ms on."));
+  }
+
+  /// <summary>
+  /// Once the kick has gone the room is lifted by the music and a soft spot sweeps it
+  /// once a bar, out from the centre and back, so a break moves on the grid rather than
+  /// sitting at one level; while the kick plays, the same steady band leaves the lights
+  /// to the beat.
+  /// </summary>
+  [Fact]
+  public void WithTheKickGoneTheRoomFollowsTheMusicAndAWaveSweepsIt() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240, ColorChangeBars = 16 });
+    double[] ats = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
+    long beat = 0;
+
+    HueColor[] Play(int milliseconds) {
+      HueColor[] lights = [];
+      for(int elapsed = 0; elapsed < milliseconds; elapsed += 20) {
+        if(elapsed % 500 == 0) {
+          harness.Engine.OnBeat(harness.BeatAt(beat++, harness.Clock.NowMicros));
+        }
+
+        harness.Clock.Advance(TimeSpan.FromMilliseconds(20));
+        (_, lights) = RenderRoom(harness, ats);
+      }
+
+      return lights;
+    }
+
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 0.5, Highs: 0.5);
+    HueColor[] playing = Play(4000);
+    Assert.True(Brightness(playing[4]) < 0.2, $"A steady band lifted its light to {Brightness(playing[4]):F3} between beats while the kick played.");
+
+    // The break, a whole number of bars long, so the next read is on a downbeat.
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.1, Mids: 0.5, Highs: 0.5);
+    Play(6000);
+
+    HueColor[] downbeat = Play(100);
+    HueColor[] midBar = Play(1000);
+
+    int Brightest(HueColor[] lights) => Array.IndexOf(lights, lights.MaxBy(Brightness));
+
+    Assert.All(midBar, light => Assert.True(Brightness(light) > 0.25, $"A light sat at {Brightness(light):F3} through the break."));
+    Assert.True(
+      Math.Abs(Brightest(downbeat) - Brightest(midBar)) >= 4,
+      $"The brightest light was {Brightest(downbeat)} on the downbeat and {Brightest(midBar)} half a bar on, so nothing swept the room.");
+  }
+
+  /// <summary>
   /// With fewer lights than there are beats to share out, some beats would reach no
   /// light at all, so every light takes every pulse instead.
   /// </summary>
@@ -1516,6 +1623,18 @@ public class LightEngineTests {
     HueColor[] colors = new HueColor[ats.Length];
 
     return (harness.Engine.Render(lights, colors), colors);
+  }
+
+  /// <summary>
+  /// Renders the room a frame at a time for <paramref name="milliseconds"/>, which is what
+  /// the smoothed lift between beats needs to rise: it answers within a few frames and
+  /// never on the frame the music changes.
+  /// </summary>
+  private static void RiseOver(Harness harness, int milliseconds, params double[] ats) {
+    for(int elapsed = 0; elapsed < milliseconds; elapsed += 20) {
+      harness.Clock.Advance(TimeSpan.FromMilliseconds(20));
+      RenderRoom(harness, ats);
+    }
   }
 
   private static double Brightness(HueColor color) {

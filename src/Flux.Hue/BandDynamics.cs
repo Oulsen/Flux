@@ -134,6 +134,55 @@ internal sealed class BandDynamics {
   private const double KickNoneBelowDb = 12;
 
   /// <summary>
+  /// How far the sub band has to swing within <see cref="PunchWindowSeconds"/>, in
+  /// decibels, before the kick band's level is believed - none at the first, whole at
+  /// the second.
+  ///
+  /// <b>Level alone cannot tell a kick from a bassline, found on 2026-11-12</b> by
+  /// recording a break the lights pulsed straight through. The break's bass sat as loud
+  /// in the kick band as the drop's kicks, so it read as a whole kick on every beat. What
+  /// tells them apart is shape: a kick's thump hits and falls away inside the beat, and a
+  /// held bass does not. In the raw 40 to 100 Hz band that recording swung twenty to
+  /// thirty decibels a beat wherever a kick played and two and a half through the break
+  /// and the build. Measured per beat at 135 BPM, ten and sixteen let 2 of the break's 45
+  /// beats through and kept all 54 of the drop's, whose quietest tenth still swung
+  /// sixteen; six and twelve let 11 of the break's through, because a bassline does move
+  /// now and then. <b>Flux's own, reasoned from that one recording.</b>
+  /// </summary>
+  private const double PunchNoneBelowDb = 10;
+
+  /// <inheritdoc cref="PunchNoneBelowDb"/>
+  private const double PunchFullFromDb = 16;
+
+  /// <summary>
+  /// How far back the sub band's swing is measured: six tenths of a second, which holds
+  /// at least one kick and the trough after it from about 100 BPM up, so the swing is a
+  /// whole beat's and never only the top or only the gap.
+  /// </summary>
+  private const double PunchWindowSeconds = 0.6;
+
+  /// <summary>How many sub readings are kept, which at fifty frames a second covers <see cref="PunchWindowSeconds"/>.</summary>
+  private const int PunchHistory = 40;
+
+  /// <summary>
+  /// How far under its own recent loudest, in decibels, a band reads as nothing for the
+  /// swell - the measure the lights follow through a break.
+  ///
+  /// <b>In decibels because the energy ratio did not move</b>, found on 2026-11-12 in a
+  /// recorded break: its vocals and pads moved five to eleven decibels every couple of
+  /// seconds, which on the energy scale is a ratio of about four fifths, so a light
+  /// following the ratio sat pinned near the top and the break looked stale. Twelve
+  /// decibels spans the movement a phrase makes. <b>Flux's own and reasoned.</b>
+  /// </summary>
+  private const double SwellRangeDb = 12;
+
+  /// <summary>
+  /// How fast a band's loudest falls for the swell, in decibels a second: about a range
+  /// in four seconds, so the measure follows the phrase rather than the track.
+  /// </summary>
+  private const double SwellFallsDbPerSecond = 3;
+
+  /// <summary>
   /// How long a band's running average looks back, which is what a transient is measured
   /// against.
   ///
@@ -212,9 +261,51 @@ internal sealed class BandDynamics {
   /// </summary>
   private const double LoudestFallsDbPerSecond = 0.1;
 
+  /// <summary>
+  /// How far the hat band has to jump above its own last tenth of a second, in decibels,
+  /// to count as a hit.
+  ///
+  /// <b>What turns the hat band into hits, found on 2026-11-12 by replaying the
+  /// 2026-09-08 session's audio through the analyzer's transform.</b> Read raw, a hat is
+  /// a step: an open hat went from -86 to -47 in one frame, a closed one rises twenty or
+  /// more, and what sits between hits falls away fast. Fifteen counted three to six hits a
+  /// second through the passages with hats and almost none through the quiet stretch;
+  /// ten let the tail of a busy pattern count as hits of its own, twenty dropped most
+  /// closed hats. <b>Flux's own, reasoned from two recordings</b>, like the two beside it.
+  /// </summary>
+  private const double HatRiseDb = 15;
+
+  /// <summary>
+  /// How far under the hat band's loudest a hit may land and still count, in decibels.
+  ///
+  /// The same idea as the kick's: a hit is a hit of this track's hats, and a jump in a
+  /// band that is otherwise near silent - the noise between tracks, a reverb tail - is
+  /// not. The loudest falls at <see cref="LoudestFallsDbPerSecond"/>.
+  /// </summary>
+  private const double HatNearLoudestDb = 15;
+
+  /// <summary>
+  /// How far back a hit's rise is measured from, and the least time between two hits.
+  ///
+  /// A tenth of a second back is about a sixteenth at 150 BPM, the closest two hats sit
+  /// in most music, so the rise is from the gap before this hat rather than from the hat
+  /// before it. Eighty milliseconds between hits is two bridge frames, the shortest
+  /// sparkle a bulb will render as one.
+  /// </summary>
+  private const double HatLookBackSeconds = 0.1;
+
+  /// <inheritdoc cref="HatLookBackSeconds"/>
+  private const double HatSpacingSeconds = 0.08;
+
+  /// <summary>How many recent hat readings are kept, which at fifty frames a second covers <see cref="HatLookBackSeconds"/> with room to spare.</summary>
+  private const int HatHistory = 8;
+
   private double kickPeak;
   private double midsPeak;
   private double highsPeak;
+  private double kickSwellDb;
+  private double midsSwellDb;
+  private double highsSwellDb;
   private double roomPeak;
 
   /// <summary>The loudest the kick band has been, in decibels up the band scale, falling at <see cref="LoudestFallsDbPerSecond"/>.</summary>
@@ -225,6 +316,19 @@ internal sealed class BandDynamics {
 
   /// <summary>The loudest the averaged energy has been, in decibels up the band scale, falling at <see cref="LoudestFallsDbPerSecond"/>.</summary>
   private double sectionLoudestDb;
+
+  /// <summary>How long this has been observing, which the hat history is timed against.</summary>
+  private double observedSeconds;
+
+  private readonly double[] hatHistoryDb = new double[HatHistory];
+  private readonly double[] hatHistoryAt = [.. Enumerable.Repeat(double.NegativeInfinity, HatHistory)];
+  private int hatHistoryNext;
+  private double hatsLoudestDb = SpectrumLevels.SilentDb;
+  private double lastHatHitAt = double.NegativeInfinity;
+
+  private readonly double[] subHistoryDb = new double[PunchHistory];
+  private readonly double[] subHistoryAt = [.. Enumerable.Repeat(double.NegativeInfinity, PunchHistory)];
+  private int subHistoryNext;
 
   private double kickMean;
   private double midsMean;
@@ -260,6 +364,12 @@ internal sealed class BandDynamics {
     // kick, which is precisely what this has to tell apart. See KickFullWithinDb.
     double kickDb = DecibelsOf(heard.Kick);
     this.kickLoudestDb = Math.Max(kickDb, this.kickLoudestDb - (LoudestFallsDbPerSecond * elapsed));
+
+    // Kept up whether or not the room is playing, like the references above, so the
+    // first hat after a silence is measured against the silence.
+    this.observedSeconds += elapsed;
+    bool hatHit = this.HatHit(heard.HatsDb, elapsed);
+    double punch = this.Punch(heard.SubDb);
 
     // Started at the first frame for the reason the band means below are, and kept up
     // through silence like the peaks, so a track starting finds it where the room is.
@@ -299,14 +409,28 @@ internal sealed class BandDynamics {
       Against(heard.Mids, this.midsPeak),
       Against(heard.Highs, this.highsPeak));
 
+    double swellFall = SwellFallsDbPerSecond * elapsed;
+    this.kickSwellDb = Math.Max(DecibelsOf(heard.Kick), this.kickSwellDb - swellFall);
+    this.midsSwellDb = Math.Max(DecibelsOf(heard.Mids), this.midsSwellDb - swellFall);
+    this.highsSwellDb = Math.Max(DecibelsOf(heard.Highs), this.highsSwellDb - swellFall);
+
+    SpectrumLevels swell = new SpectrumLevels(
+      Swell(heard.Kick, this.kickSwellDb),
+      Swell(heard.Mids, this.midsSwellDb),
+      Swell(heard.Highs, this.highsSwellDb));
+
     SpectrumLevels transient = new SpectrumLevels(
       Above(heard.Kick, this.kickMean),
       Above(heard.Mids, this.midsMean),
       Above(heard.Highs, this.highsMean));
 
+    // The smaller of the two, because they are two conditions on one answer: the band at
+    // this track's kick level, and moving the way a kick moves. Either alone was fooled.
     double kickPresence = this.kickLoudestDb < DecibelsOf(SilentBelow)
       ? 0
-      : SmoothStep((KickNoneBelowDb - (this.kickLoudestDb - kickDb)) / (KickNoneBelowDb - KickFullWithinDb));
+      : Math.Min(
+        SmoothStep((KickNoneBelowDb - (this.kickLoudestDb - kickDb)) / (KickNoneBelowDb - KickFullWithinDb)),
+        punch);
 
     double intensity = SmoothStep((NoneBelowDb - (this.sectionLoudestDb - sectionDb)) / (NoneBelowDb - FullWithinDb));
 
@@ -315,7 +439,79 @@ internal sealed class BandDynamics {
       transient,
       Math.Clamp(loudest / (this.roomPeak * LoudEnoughFraction), 0, 1),
       kickPresence,
-      intensity);
+      intensity,
+      hatHit,
+      swell);
+  }
+
+  /// <summary>A band's level as how close it is to its own recent loudest, 0 to 1, in decibels - see <see cref="SwellRangeDb"/>.</summary>
+  private static double Swell(double energy, double loudestDb) {
+    return energy < SilentBelow ? 0 : SmoothStep((SwellRangeDb - (loudestDb - DecibelsOf(energy))) / SwellRangeDb);
+  }
+
+  /// <summary>
+  /// How much the sub band moves like a kick, 0 to 1, from its swing over the last
+  /// <see cref="PunchWindowSeconds"/>; see <see cref="PunchNoneBelowDb"/>.
+  ///
+  /// One when the band was never measured - a source with no sub band, or a recording
+  /// made before it existed - so that the level check alone decides, exactly as it did
+  /// before this measure, rather than every beat reading as no kick.
+  /// </summary>
+  private double Punch(double subDb) {
+    this.subHistoryDb[this.subHistoryNext] = subDb;
+    this.subHistoryAt[this.subHistoryNext] = this.observedSeconds;
+    this.subHistoryNext = (this.subHistoryNext + 1) % PunchHistory;
+
+    if(subDb <= SpectrumLevels.SilentDb) {
+      return 1;
+    }
+
+    double highest = double.NegativeInfinity;
+    double lowest = double.PositiveInfinity;
+    for(int index = 0; index < PunchHistory; index++) {
+      if(this.observedSeconds - this.subHistoryAt[index] <= PunchWindowSeconds) {
+        highest = Math.Max(highest, this.subHistoryDb[index]);
+        lowest = Math.Min(lowest, this.subHistoryDb[index]);
+      }
+    }
+
+    return SmoothStep((highest - lowest - PunchNoneBelowDb) / (PunchFullFromDb - PunchNoneBelowDb));
+  }
+
+  /// <summary>
+  /// Whether the hat band was hit on this frame, and remembers the reading for the next.
+  ///
+  /// A rise of <see cref="HatRiseDb"/> over the quietest of the last
+  /// <see cref="HatLookBackSeconds"/>, near the band's own loudest, and not inside
+  /// <see cref="HatSpacingSeconds"/> of the last hit. The quietest rather than the last
+  /// reading, because the light engine samples a sixty-frame analyzer fifty times a
+  /// second and can land on the second frame of a hat: measured from the frame before,
+  /// that hat would rise nothing.
+  /// </summary>
+  private bool HatHit(double hatsDb, double elapsed) {
+    this.hatsLoudestDb = Math.Max(hatsDb, this.hatsLoudestDb - (LoudestFallsDbPerSecond * elapsed));
+
+    double quietest = double.PositiveInfinity;
+    for(int index = 0; index < HatHistory; index++) {
+      if(this.observedSeconds - this.hatHistoryAt[index] <= HatLookBackSeconds) {
+        quietest = Math.Min(quietest, this.hatHistoryDb[index]);
+      }
+    }
+
+    bool hit = double.IsFinite(quietest)
+      && hatsDb - quietest >= HatRiseDb
+      && hatsDb >= this.hatsLoudestDb - HatNearLoudestDb
+      && this.observedSeconds - this.lastHatHitAt >= HatSpacingSeconds;
+
+    if(hit) {
+      this.lastHatHitAt = this.observedSeconds;
+    }
+
+    this.hatHistoryDb[this.hatHistoryNext] = hatsDb;
+    this.hatHistoryAt[this.hatHistoryNext] = this.observedSeconds;
+    this.hatHistoryNext = (this.hatHistoryNext + 1) % HatHistory;
+
+    return hit;
   }
 
   /// <summary>
@@ -433,4 +629,14 @@ internal sealed class BandDynamics {
 /// Averaged over seconds rather than read per frame, so the beats of one passage are
 /// one size. See <see cref="BandDynamics"/>'s section constants.
 /// </param>
-internal readonly record struct RoomSound(SpectrumLevels Drive, SpectrumLevels Transient, double Loudness, double KickPresence, double Intensity);
+/// <param name="HatHit">
+/// Whether a hi-hat or cymbal was hit on this frame. True on one frame per hit and
+/// never on two in a row, so the engine can start one sparkle per hit without
+/// remembering anything about the band itself.
+/// </param>
+/// <param name="Swell">
+/// Each band as how close it is to its own loudest of the last few seconds, in
+/// decibels, 0 to 1: what a light follows through a break, where the energy ratio of
+/// <paramref name="Drive"/> barely moves. See <see cref="BandDynamics"/>'s swell constants.
+/// </param>
+internal readonly record struct RoomSound(SpectrumLevels Drive, SpectrumLevels Transient, double Loudness, double KickPresence, double Intensity, bool HatHit, SpectrumLevels Swell);

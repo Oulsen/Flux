@@ -36,9 +36,13 @@ matters more than the numbers do.** The scene drove colour sections by index and
 never compared one frequency band against another, so everything in
 `src/Flux.Hue/BandDynamics.cs` is Flux's own and has no ancestor to be faithful
 to - the per-band and per-room reference windows, the transient ratio, the kick
-presence ramp that sizes the pulse, the section energy that scales it - as are
-`ShimmerShare`, `MinimumLitFraction`, `StrobeStaleBeats` and the two beat
-accents (`MidBarAccent`, `OffBeatAccent`) in `LightEngine.cs`, and the six
+presence ramp and the sub-band punch that size the pulse, the section energy that
+scales it, the hi-hat hit detector, the swell a break follows - as are `ShimmerShare`, `MinimumLitFraction`,
+`StrobeStaleBeats`, the two beat accents, the sparkle, the break follow and
+wave (`ContourShare`, `SwellBase`, `WaveWidth`) and the lift smoothing in
+`LightEngine.cs`, the hat and sub bands
+(`HatLowHz`, `HatHighHz`, `SubLowHz`, `SubHighHz`) in `AudioConstants.cs`, which
+the beat detector never reads, and the six
 stand-in lights in `LightPreview.cs`. The stage's afterimage trail in
 `src/Flux.Web.Frontend/src/lib/scene.ts` is Flux's own too: the scene's trail
 ran to nearly ten seconds and was cut to one by looking, and the copy count and

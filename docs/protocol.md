@@ -384,13 +384,25 @@ a beat would give it. The beat is divided between the lights, while what happens
 is a fact about each band on its own: a hat pattern under a held chord lifts the outer
 lights whether or not anything is louder elsewhere. That is the difference between a
 room the music moves through and a set of simultaneous flashes at different heights.
+The lift rises within a few frames and falls over about a third of a second, so it
+swells rather than flickers. **As the kick goes, the room is carried by the music
+and a wave**: every light is lifted by how close the mids and the top are to their
+own loudest of the last few seconds, in decibels, spread across the room in `at`
+order since a break's low end is usually a held bass that would not move; and a soft
+spot about a third of the room wide sweeps from `at` 0 to 1 and back once a bar on the
+beat grid, brighter as the music swells, up to six tenths in all. As the kick comes
+back the beat takes over. **A
+hi-hat or cymbal hit sparkles one light** for about 160 ms, up to three quarters,
+from a band at 6 to 14 kHz that is measured for the lights only and never sent.
 
 **The pulse answers the music and not only the grid**, and it does so in two ways at
 once because they are two different questions.
 
 *Is a kick playing on this beat* is the kick band in decibels under the loudest this
 track's kick has been, a reference that forgets at a tenth of a decibel a second, ramped
-so that within 6 dB of it is a whole kick and 12 dB or more under is none, read as the beat lands and allowed to rise - never fall - while the pulse is alive.
+so that within 6 dB of it is a whole kick and 12 dB or more under is none - and only
+while a 40 to 100 Hz band swings at least 10 dB, whole from 16, inside the last 0.6 s,
+because a held bassline can be as loud as a kick but does not thump - read as the beat lands and allowed to rise - never fall - while the pulse is alive.
 It may rise because the light path runs deliberately ahead of the audio, so the kick a
 beat announces has usually not reached the analyzer at the moment the beat is consumed;
 it never falls, so the fade is not cut off by the gap after the kick that caused it.

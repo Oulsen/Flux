@@ -33,6 +33,11 @@ namespace Flux.Audio;
 /// the timestamps alone. Defaults to zero, so a recording made before this field
 /// existed still replays as the single unbroken run it was.
 /// </param>
+/// <param name="Hats">
+/// The hi-hat band's raw power in decibels, which the lights find hits in. Defaults to
+/// silence, so a recording made before the band existed replays as one with no hats.
+/// </param>
+/// <param name="Sub">The sub band's raw power in decibels, defaulted to silence on the same terms.</param>
 internal sealed record RecordedFrame(
   double T,
   int Rate,
@@ -40,7 +45,9 @@ internal sealed record RecordedFrame(
   double Mids,
   double Highs,
   int[] Bins,
-  int Gen = 0);
+  int Gen = 0,
+  double Hats = SpectrumLevels.SilentDb,
+  double Sub = SpectrumLevels.SilentDb);
 
 /// <summary>
 /// Source-generated so the format is one declaration rather than a serializer
@@ -71,7 +78,9 @@ internal static class FrameRecording {
         frame.Mids,
         frame.Highs,
         frame.Bins,
-        frame.Generation),
+        frame.Generation,
+        frame.HatsDb,
+        frame.SubDb),
       RecordingJson.Default.RecordedFrame);
   }
 
@@ -98,7 +107,9 @@ internal static class FrameRecording {
         recorded.Kick,
         recorded.Mids,
         recorded.Highs,
-        recorded.Gen);
+        recorded.Gen,
+        recorded.Hats,
+        recorded.Sub);
     }
   }
 }

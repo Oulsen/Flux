@@ -97,6 +97,14 @@ internal sealed class SpectrumAnalyzer: IHostedService, IDisposable {
   private (int Low, int High) kickBand;
   private (int Low, int High) midBand;
   private (int Low, int High) highBand;
+  private (int Low, int High) hatBand;
+  private (int Low, int High) subBand;
+
+  /// <summary>The hat band's raw power in decibels for the window just transformed. See <see cref="AudioConstants.HatLowHz"/>.</summary>
+  private double hatsDb = SpectrumLevels.SilentDb;
+
+  /// <summary>The sub band's raw power in decibels for the window just transformed. See <see cref="AudioConstants.SubLowHz"/>.</summary>
+  private double subDb = SpectrumLevels.SilentDb;
 
   private SpectrumFrame? latest;
   private double measuredFps;
@@ -269,7 +277,9 @@ internal sealed class SpectrumAnalyzer: IHostedService, IDisposable {
       SpectrumScale.BandEnergy(this.spectrum, this.kickBand.Low, this.kickBand.High),
       SpectrumScale.BandEnergy(this.spectrum, this.midBand.Low, this.midBand.High),
       SpectrumScale.BandEnergy(this.spectrum, this.highBand.Low, this.highBand.High),
-      this.generation);
+      this.generation,
+      this.hatsDb,
+      this.subDb);
 
     Volatile.Write(ref this.latest, frame);
     Interlocked.Increment(ref this.frames);
@@ -298,22 +308,48 @@ internal sealed class SpectrumAnalyzer: IHostedService, IDisposable {
 
     FastFourierTransform.FFT(true, FftExponent, this.transform);
 
+    double hatPower = 0;
+    double subPower = 0;
+
     for(int bin = 0; bin < this.spectrum.Length; bin++) {
       double real = this.transform[bin].X;
       double imaginary = this.transform[bin].Y;
       double magnitude = Math.Sqrt((real * real) + (imaginary * imaginary)) * MagnitudeScale;
+
+      // Before the smoothing, which spreads a hat's one-frame step across four frames.
+      if(bin >= this.hatBand.Low && bin < this.hatBand.High) {
+        hatPower += magnitude * magnitude;
+      }
+
+      if(bin >= this.subBand.Low && bin < this.subBand.High) {
+        subPower += magnitude * magnitude;
+      }
 
       this.smoothed[bin] = (this.smoothed[bin] * AudioConstants.SpectrumSmoothing)
         + (magnitude * (1.0 - AudioConstants.SpectrumSmoothing));
 
       this.spectrum[bin] = SpectrumScale.ToByte(this.smoothed[bin]);
     }
+
+    this.hatsDb = PowerDb(hatPower, this.hatBand);
+    this.subDb = PowerDb(subPower, this.subBand);
+  }
+
+  /// <summary>A band's mean raw power in decibels, floored at <see cref="SpectrumLevels.SilentDb"/>.</summary>
+  private static double PowerDb(double power, (int Low, int High) band) {
+    int bins = band.High - band.Low;
+
+    return bins > 0 && power > 0
+      ? Math.Max(10.0 * Math.Log10(power / bins), SpectrumLevels.SilentDb)
+      : SpectrumLevels.SilentDb;
   }
 
   private void RecomputeBands(int rate) {
     this.kickBand = SpectrumScale.BandRange(AudioConstants.KickLowHz, AudioConstants.KickHighHz, rate);
     this.midBand = SpectrumScale.BandRange(AudioConstants.MidLowHz, AudioConstants.MidHighHz, rate);
     this.highBand = SpectrumScale.BandRange(AudioConstants.HighLowHz, AudioConstants.HighHighHz, rate);
+    this.hatBand = SpectrumScale.BandRange(AudioConstants.HatLowHz, AudioConstants.HatHighHz, rate);
+    this.subBand = SpectrumScale.BandRange(AudioConstants.SubLowHz, AudioConstants.SubHighHz, rate);
     this.bandsForRate = rate;
 
     this.log.LogInformation(

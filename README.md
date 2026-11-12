@@ -119,8 +119,10 @@ Around them:
   a smaller pulse moving outward through the room over the rest of the bar, and
   less again in a passage quieter than the rest of the track.
   Each bulb follows the part of the spectrum nearest its place in the room, so a
-  kick punches in the middle and a hi-hat lifts the corners. A beat without a kick
-  under it does not pulse, which leaves breakdowns to whatever is still playing.
+  kick punches in the middle and voices and leads lift the corners, and each
+  hi-hat or cymbal hit sparkles one bulb. A beat without a kick under it does not
+  pulse: through a break the room swells with the voice and instruments while a
+  soft wave sweeps it once a bar.
 - **Tuning while it plays.** Eight palettes, one to three colours and how they
   spread, brightness, pulse length and depth, and a latency offset. All of it is
   saved for next time.

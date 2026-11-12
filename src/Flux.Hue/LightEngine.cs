@@ -186,6 +186,103 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// </summary>
   private const double OffBeatAccent = 0.35;
 
+  /// <summary>
+  /// How bright a hi-hat's sparkle gets, as a share of a full pulse.
+  ///
+  /// <b>What a hat looks like in the room, added on 2026-11-12</b>, when Flux first
+  /// measured a band that holds one. A hat is short and bright and sits between the
+  /// beats, so it gets one light, briefly, rather than a lift across part of the room:
+  /// a single light flicking up is read as a sparkle, and several together as another
+  /// beat. Three quarters, under the downbeat's whole pulse so the beat stays the
+  /// biggest thing in the room, and over <see cref="ShimmerShare"/> so a sparkle shows on
+  /// a light whose band is busy anyway. <b>Flux's own and reasoned</b>, like the timing
+  /// beside it, and the first thing to move if hats look too loud or go unseen.
+  /// </summary>
+  private const double SparkleHeight = 0.75;
+
+  /// <summary>
+  /// How long a sparkle holds its peak, and how long it lasts in all, in milliseconds.
+  ///
+  /// One bridge frame of hold and a fall over three more, a hundred and sixty in all.
+  /// The bridge forwards about twenty-five updates a second, so anything under eighty
+  /// may never reach a bulb, and a sparkle much longer than this overlaps the next hat
+  /// in a sixteenth pattern and stops reading as separate hits.
+  /// </summary>
+  private const double SparkleHoldMs = 40;
+
+  /// <inheritdoc cref="SparkleHoldMs"/>
+  private const double SparkleMs = 160;
+
+  /// <summary>
+  /// How far a light follows its own band's level once the kick has gone, as a share of
+  /// a full pulse.
+  ///
+  /// <b>What a break looks like, added on 2026-11-12</b>, when watching one showed lights
+  /// flashing at random with no kick anywhere. With the pulse gated off, what was left
+  /// was the transient measure alone - each band against its own last second, read
+  /// fresh every frame - and over vocals and synths that answer jumps about from frame
+  /// to frame. What a break wants is the opposite: lights that rise and fall with the
+  /// voice and the instruments. So as the kick goes, each light follows its band's level
+  /// against its own recent loudest (the same measure that decides which lights lead a
+  /// beat), and as the kick comes back the beat takes over again. A follow like this was
+  /// tried on 2026-09-30 for every passage and rejected because the lights went still;
+  /// this one is only for passages without a kick, and the transient lift stays on top.
+  ///
+  /// It follows the mids and the top only, spread across the whole room - the inner
+  /// lights the mids, the outer ones the top - because that is where voices and
+  /// instruments are, and a break's low end is usually a held bass that would sit at its
+  /// own peak and hold the middle of the room up without moving.
+  /// <b>Flux's own and reasoned</b>, like the timing below it.
+  /// </summary>
+  private const double ContourShare = 0.6;
+
+  /// <summary>
+  /// How much of <see cref="ContourShare"/> the whole room takes from the music's swell
+  /// alone, with the wave on top of it.
+  ///
+  /// <b>A break needs movement of its own, found on 2026-11-12</b>: with the false beats
+  /// gone, a recorded break whose voice and pads moved only a few decibels left every light
+  /// near one level, and the room looked stale. A light show fills a break with slow
+  /// motion timed to the music rather than waiting for the music to supply it, so through
+  /// a break a soft bright spot sweeps out from the middle of the room to its edge and
+  /// back once a bar - see <see cref="WaveWidth"/> - and the swell lifts the whole room
+  /// underneath it and brightens the spot as the music grows. Half, so the room is never
+  /// dark around the spot and the spot always shows. <b>Flux's own and reasoned.</b>
+  /// </summary>
+  private const double SwellBase = 0.5;
+
+  /// <summary>
+  /// How wide the break wave's bright spot is, as a fraction of the room from centre to
+  /// edge: about a third, so three or four lights of nine share it and it reads as one
+  /// spot moving rather than a single light blinking.
+  /// </summary>
+  private const double WaveWidth = 0.35;
+
+  /// <summary>
+  /// How fast the lift between beats rises and falls, as time constants in seconds.
+  ///
+  /// Fast up and slow down, so a light answers a note at once and lets it go over about
+  /// a third of a second: a swell rather than a flicker. Applied to the transient lift as
+  /// well as the follow, because the transient read raw was half of what looked random.
+  /// </summary>
+  private const double LiftAttackSeconds = 0.06;
+
+  /// <inheritdoc cref="LiftAttackSeconds"/>
+  private const double LiftReleaseSeconds = 0.35;
+
+  /// <summary>
+  /// How long the kick takes to be counted as gone or back for the follow, as a time
+  /// constant in seconds. A second, so the gap between two kicks never reads as a break,
+  /// and a break is answered within its first bar.
+  /// </summary>
+  private const double KickFlowSeconds = 1.0;
+
+  /// <summary>
+  /// How many sparkles may be lit at once: two, so a hat landing while the last one
+  /// fades starts on another light rather than cutting the first one off.
+  /// </summary>
+  private const int SparkleSlots = 2;
+
   private readonly BeatScheduler scheduler;
   private readonly HueBridgeService bridge;
   private readonly IMonotonicClock clock;
@@ -331,6 +428,24 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// phrase, where there are phrases - and the room has two shapes rather than one.
   /// </summary>
   private bool travelInward;
+
+  /// <summary>Which light each sparkle is on, by its place in the room's array, or -1 for an empty slot.</summary>
+  private readonly int[] sparkleLight = [.. Enumerable.Repeat(-1, SparkleSlots)];
+
+  /// <summary>When each sparkle started, on the frame clock.</summary>
+  private readonly double[] sparkleStartedMicros = new double[SparkleSlots];
+
+  /// <summary>How many sparkles have started, which picks the next light and the slot it goes in.</summary>
+  private uint sparkles;
+
+  /// <summary>
+  /// Each light's lift between beats, smoothed - see <see cref="LiftAttackSeconds"/>.
+  /// Resized only when the room's light count changes, which is when a stream opens.
+  /// </summary>
+  private double[] lifts = [];
+
+  /// <summary>The kick's presence smoothed over <see cref="KickFlowSeconds"/>, 1 while it plays and 0 through a break.</summary>
+  private double kickFlow = 1;
 
   private double? renderedAtMicros;
 
@@ -495,13 +610,43 @@ internal sealed class LightEngine: ILightSource, IHostedService {
 
     int quantum = this.scheduler.Quantum;
 
+    if(sound is { HatHit: true }) {
+      this.Sparkle(now, lights.Length);
+    }
+
+    if(this.lifts.Length != lights.Length) {
+      this.lifts = new double[lights.Length];
+    }
+
+    // One with nothing to listen to, which leaves the follow off: with no audio there is
+    // no band to follow, and the pulse is all there is.
+    double kickNow = sound?.KickPresence ?? 1;
+    this.kickFlow += (kickNow - this.kickFlow) * (1 - Math.Exp(-elapsedSeconds / KickFlowSeconds));
+    double? wavePosition = this.WavePosition(now, quantum);
+    SpectrumLevels? swell = sound?.Swell;
+
     for(int index = 0; index < lights.Length; index++) {
       double at = lights[index].At;
       double hue = this.displayHues[GroupOf(at, lights.Length, wanted, this.colorRoll, settings.ColorLayout)];
       double travel = this.travelInward ? 1 - at : at;
       double share = TakesPulse(travel, lights.Length, this.pulsePosition, quantum) ? Share(drive, at) : 0;
 
-      colors[index] = FromHue(hue, envelope.LevelAt(share, Shimmer(transient, at)));
+      // The upper half of the axis spread over the whole room: without a kick, the low
+      // end is a held bass at its own peak, which held the inner lights up and still.
+      double follow = 0;
+      if(swell is { } levels) {
+        double music = Math.Clamp(levels.At(0.5 + (at / 2)), 0, 1);
+        double wave = wavePosition is { } spot ? SmoothStep01(1 - (Math.Abs(travel - spot) / WaveWidth)) : 0;
+
+        follow = ContourShare * (1 - this.kickFlow) * Math.Max(SwellBase * music, wave * (0.5 + (0.5 * music)));
+      }
+      double target = Math.Max(Shimmer(transient, at), follow);
+      double seconds = target > this.lifts[index] ? LiftAttackSeconds : LiftReleaseSeconds;
+      this.lifts[index] += (target - this.lifts[index]) * (1 - Math.Exp(-elapsedSeconds / seconds));
+
+      double lift = Math.Max(this.lifts[index], this.SparkleOn(index, now));
+
+      colors[index] = FromHue(hue, envelope.LevelAt(share, lift));
     }
 
     return shared;
@@ -887,6 +1032,88 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     bool midBar = quantum % 2 == 0 && quantum >= 4 && beat.PositionInBar == (quantum / 2) + 1;
 
     return midBar ? MidBarAccent : OffBeatAccent;
+  }
+
+  /// <summary>
+  /// Starts a sparkle for a hat hit on one light, never the one the other sparkle is on.
+  ///
+  /// The light is chosen by hashing the count of sparkles with the colour roll rather
+  /// than drawn from <see cref="random"/>, so the seeded colours the tests assert are not
+  /// moved along by hats, and the pattern still changes with every colour change. Any
+  /// light, not only the ones listening to the top: hats are all over a mix, and a
+  /// sparkle that only ever landed on the outer ring would be a second shimmer there.
+  /// </summary>
+  private void Sparkle(double now, int lights) {
+    if(lights <= 0) {
+      return;
+    }
+
+    uint mixed = ((this.sparkles + 1) * 2654435761u) ^ this.colorRoll;
+    int light = (int)((mixed >> 16) % (uint)lights);
+    int slot = (int)(this.sparkles % SparkleSlots);
+    int other = this.sparkleLight[(slot + 1) % SparkleSlots];
+
+    if(lights > 1 && light == other) {
+      light = (light + 1) % lights;
+    }
+
+    this.sparkleLight[slot] = light;
+    this.sparkleStartedMicros[slot] = now;
+    this.sparkles++;
+  }
+
+  /// <summary>How far the sparkles lift one light at this instant, 0 to <see cref="SparkleHeight"/>.</summary>
+  private double SparkleOn(int light, double now) {
+    double lift = 0;
+
+    for(int slot = 0; slot < SparkleSlots; slot++) {
+      if(this.sparkleLight[slot] != light) {
+        continue;
+      }
+
+      double ageMs = (now - this.sparkleStartedMicros[slot]) / MicrosPerMilli;
+      double left = ageMs < 0 || ageMs >= SparkleMs
+        ? 0
+        : ageMs <= SparkleHoldMs ? 1 : 1 - ((ageMs - SparkleHoldMs) / (SparkleMs - SparkleHoldMs));
+
+      lift = Math.Max(lift, left * SparkleHeight);
+    }
+
+    return lift;
+  }
+
+  /// <summary>
+  /// Where the break wave's spot is, 0 at the centre of the room and 1 at its edge, or
+  /// null with no beat grid to time it by.
+  ///
+  /// Out over the first half of the bar and back over the second, from where the grid
+  /// says the bar is, so the room breathes once a bar and stays on the music through a
+  /// break the kick has left. Out and back rather than round and round, because the axis
+  /// runs from the centre of the room to its edge and has no end that meets the other.
+  /// Null once the grid has gone stale, on the strobe's rule: a wave extrapolating a
+  /// grid that no longer exists is a room moving to nothing.
+  /// </summary>
+  private double? WavePosition(double now, int quantum) {
+    if(this.lastBeatMicros is not { } beat || this.beatPeriodMicros is not { } period || period <= 0) {
+      return null;
+    }
+
+    double since = now - beat;
+    if(since < 0 || since > period * StrobeStaleBeats) {
+      return null;
+    }
+
+    int beats = Math.Max(quantum, 1);
+    double bar = ((this.pulsePosition - 1 + (since / period)) / beats) % 1.0;
+
+    return 1 - Math.Abs((2 * bar) - 1);
+  }
+
+  /// <summary>A ramp from 0 to 1 that leaves and arrives flat, for any value.</summary>
+  private static double SmoothStep01(double value) {
+    double x = Math.Clamp(value, 0, 1);
+
+    return x * x * (3 - (2 * x));
   }
 
   /// <summary>

@@ -111,6 +111,38 @@ internal static class AudioConstants {
   public const double HighHighHz = 1300;
 
   /// <summary>
+  /// The band the lights read hi-hats and cymbals from: 6 to 14 kHz.
+  ///
+  /// <b>For the light engine only; the beat detector never reads it.</b> None of the
+  /// scene's bands reaches above 1.3 kHz, so before this nothing Flux measured held a
+  /// hi-hat at all. The edges are where a closed hat's energy sits - above the
+  /// presence of a voice and a snare's crack, which end around 5 kHz, and below the air
+  /// band, where a lossy source has often cut everything. Measured from the raw
+  /// transform and not from the smoothed bytes, for the reason
+  /// <c>docs/audio-constants.md</c> gives under "A band for the lights".
+  /// </summary>
+  public const double HatLowHz = 6000;
+
+  /// <inheritdoc cref="HatLowHz"/>
+  public const double HatHighHz = 14000;
+
+  /// <summary>
+  /// The band the lights tell a kick from a held bassline in: 40 to 100 Hz.
+  ///
+  /// <b>For the light engine only; the beat detector never reads it.</b> A kick's thump
+  /// sits here and falls away within the beat, while a sub-bass or a held bass note
+  /// sits here and stays. On 2026-11-12 a break whose bass was as loud as the drop's kick
+  /// read as a kick on every beat, because the kick band's level could not tell them
+  /// apart; this band's swing within a beat could, by about ten times. Measured raw, like
+  /// the hat band, so a thump is a step rather than a slope. See
+  /// <c>docs/audio-constants.md</c>, "A band for the lights".
+  /// </summary>
+  public const double SubLowHz = 40;
+
+  /// <inheritdoc cref="SubLowHz"/>
+  public const double SubHighHz = 100;
+
+  /// <summary>
   /// The bottom of the decibel range a bin is scaled over.
   ///
   /// This pair is the only number in the file measured against this rig rather
