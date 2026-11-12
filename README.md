@@ -74,7 +74,7 @@ behind; delete that folder as well for a clean slate.
 
 **Logs** are in `%LOCALAPPDATA%\Flux\logs`, one file a day, kept two weeks.
 
-## What works in 0.6.0
+## What works in 0.6.1
 
 ### Finding the beat
 
