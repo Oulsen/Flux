@@ -29,6 +29,17 @@ namespace Flux.Audio;
 /// their timestamps sit: a device switch refills the capture buffer in well under
 /// the gap a timestamp test can safely call a discontinuity.
 /// </param>
+/// <param name="HatsDb">
+/// The hi-hat band's raw power in decibels, for the lights only - see
+/// <see cref="AudioConstants.HatLowHz"/>. Defaulted, because nothing but the analyzer
+/// measures it: a replayed recording that predates the band reads as hats that never
+/// play, which is what it holds.
+/// </param>
+/// <param name="SubDb">
+/// The sub band's raw power in decibels, for the lights only - see
+/// <see cref="AudioConstants.SubLowHz"/>. Defaulted for the same reason as
+/// <paramref name="HatsDb"/>.
+/// </param>
 internal sealed record SpectrumFrame(
   double TimestampMicros,
   int SampleRate,
@@ -36,7 +47,9 @@ internal sealed record SpectrumFrame(
   double Kick,
   double Mids,
   double Highs,
-  int Generation = 0);
+  int Generation = 0,
+  double HatsDb = SpectrumLevels.SilentDb,
+  double SubDb = SpectrumLevels.SilentDb);
 
 /// <summary>
 /// Where the analyzer gets its audio.

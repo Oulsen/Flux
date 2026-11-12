@@ -9,8 +9,8 @@ namespace Flux.Hue;
 /// Turns beats into one colour, evaluated fresh on every frame.
 ///
 /// Two layers at two rates, which is the whole design. A hue is chosen every few bars
-/// and slides toward its new value; brightness is knocked to full on every beat and
-/// fades. Separating them is what stops the lights either sitting still for eight
+/// and slides toward its new value; brightness is knocked up on every beat and fades,
+/// furthest on the downbeat and less on the beats between. Separating them is what stops the lights either sitting still for eight
 /// seconds between colour changes or strobing through the palette four times a bar -
 /// both of which are what happens when one setting has to do both jobs.
 ///
@@ -159,6 +159,130 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// </summary>
   private const double StrobeStaleBeats = 2.0;
 
+  /// <summary>
+  /// How much of a full pulse the beat in the middle of a bar gets - beat three of four.
+  ///
+  /// <b>Beats are not all worth the same, and until 2026-11-12 the engine treated them as
+  /// if they were.</b> Every beat took the room from its resting level to the top, twice a
+  /// second for the length of a track, which reads as a machine keeping time rather than
+  /// as a light show: the complaint was a room that beats too much, and replaying the
+  /// 2026-09-08 session showed nine tenths of a full pulse on nearly every beat. Music is
+  /// heard as strong and weak beats - the downbeat, then the middle of the bar, then the
+  /// rest - so the pulse follows that order and the bar becomes the unit the room moves
+  /// in. The downbeat keeps the whole pulse, which is also the beat the colour changes on.
+  ///
+  /// Departs from the scene, which flashed every beat alike. <b>Flux's own and reasoned
+  /// rather than listened to</b>, like <see cref="OffBeatAccent"/>, and the two are the
+  /// first numbers to move if the room now looks too still or still too busy.
+  /// </summary>
+  private const double MidBarAccent = 0.6;
+
+  /// <summary>
+  /// How much of a full pulse the remaining beats get - two and four of four.
+  ///
+  /// About a third: still a visible lift, so the tempo stays readable from across the
+  /// room, but small enough that the downbeat stands out from them rather than being one
+  /// flash in a row of equal ones. See <see cref="MidBarAccent"/>.
+  /// </summary>
+  private const double OffBeatAccent = 0.35;
+
+  /// <summary>
+  /// How bright a hi-hat's sparkle gets, as a share of a full pulse.
+  ///
+  /// <b>What a hat looks like in the room, added on 2026-11-12</b>, when Flux first
+  /// measured a band that holds one. A hat is short and bright and sits between the
+  /// beats, so it gets one light, briefly, rather than a lift across part of the room:
+  /// a single light flicking up is read as a sparkle, and several together as another
+  /// beat. Three quarters, under the downbeat's whole pulse so the beat stays the
+  /// biggest thing in the room, and over <see cref="ShimmerShare"/> so a sparkle shows on
+  /// a light whose band is busy anyway. <b>Flux's own and reasoned</b>, like the timing
+  /// beside it, and the first thing to move if hats look too loud or go unseen.
+  /// </summary>
+  private const double SparkleHeight = 0.75;
+
+  /// <summary>
+  /// How long a sparkle holds its peak, and how long it lasts in all, in milliseconds.
+  ///
+  /// One bridge frame of hold and a fall over three more, a hundred and sixty in all.
+  /// The bridge forwards about twenty-five updates a second, so anything under eighty
+  /// may never reach a bulb, and a sparkle much longer than this overlaps the next hat
+  /// in a sixteenth pattern and stops reading as separate hits.
+  /// </summary>
+  private const double SparkleHoldMs = 40;
+
+  /// <inheritdoc cref="SparkleHoldMs"/>
+  private const double SparkleMs = 160;
+
+  /// <summary>
+  /// How far a light follows its own band's level once the kick has gone, as a share of
+  /// a full pulse.
+  ///
+  /// <b>What a break looks like, added on 2026-11-12</b>, when watching one showed lights
+  /// flashing at random with no kick anywhere. With the pulse gated off, what was left
+  /// was the transient measure alone - each band against its own last second, read
+  /// fresh every frame - and over vocals and synths that answer jumps about from frame
+  /// to frame. What a break wants is the opposite: lights that rise and fall with the
+  /// voice and the instruments. So as the kick goes, each light follows its band's level
+  /// against its own recent loudest (the same measure that decides which lights lead a
+  /// beat), and as the kick comes back the beat takes over again. A follow like this was
+  /// tried on 2026-09-30 for every passage and rejected because the lights went still;
+  /// this one is only for passages without a kick, and the transient lift stays on top.
+  ///
+  /// It follows the mids and the top only, spread across the whole room - the inner
+  /// lights the mids, the outer ones the top - because that is where voices and
+  /// instruments are, and a break's low end is usually a held bass that would sit at its
+  /// own peak and hold the middle of the room up without moving.
+  /// <b>Flux's own and reasoned</b>, like the timing below it.
+  /// </summary>
+  private const double ContourShare = 0.6;
+
+  /// <summary>
+  /// How much of <see cref="ContourShare"/> the whole room takes from the music's swell
+  /// alone, with the wave on top of it.
+  ///
+  /// <b>A break needs movement of its own, found on 2026-11-12</b>: with the false beats
+  /// gone, a recorded break whose voice and pads moved only a few decibels left every light
+  /// near one level, and the room looked stale. A light show fills a break with slow
+  /// motion timed to the music rather than waiting for the music to supply it, so through
+  /// a break a soft bright spot sweeps out from the middle of the room to its edge and
+  /// back once a bar - see <see cref="WaveWidth"/> - and the swell lifts the whole room
+  /// underneath it and brightens the spot as the music grows. Half, so the room is never
+  /// dark around the spot and the spot always shows. <b>Flux's own and reasoned.</b>
+  /// </summary>
+  private const double SwellBase = 0.5;
+
+  /// <summary>
+  /// How wide the break wave's bright spot is, as a fraction of the room from centre to
+  /// edge: about a third, so three or four lights of nine share it and it reads as one
+  /// spot moving rather than a single light blinking.
+  /// </summary>
+  private const double WaveWidth = 0.35;
+
+  /// <summary>
+  /// How fast the lift between beats rises and falls, as time constants in seconds.
+  ///
+  /// Fast up and slow down, so a light answers a note at once and lets it go over about
+  /// a third of a second: a swell rather than a flicker. Applied to the transient lift as
+  /// well as the follow, because the transient read raw was half of what looked random.
+  /// </summary>
+  private const double LiftAttackSeconds = 0.06;
+
+  /// <inheritdoc cref="LiftAttackSeconds"/>
+  private const double LiftReleaseSeconds = 0.35;
+
+  /// <summary>
+  /// How long the kick takes to be counted as gone or back for the follow, as a time
+  /// constant in seconds. A second, so the gap between two kicks never reads as a break,
+  /// and a break is answered within its first bar.
+  /// </summary>
+  private const double KickFlowSeconds = 1.0;
+
+  /// <summary>
+  /// How many sparkles may be lit at once: two, so a hat landing while the last one
+  /// fades starts on another light rather than cutting the first one off.
+  /// </summary>
+  private const int SparkleSlots = 2;
+
   private readonly BeatScheduler scheduler;
   private readonly HueBridgeService bridge;
   private readonly IMonotonicClock clock;
@@ -281,6 +405,47 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// as it always has.
   /// </summary>
   private double pulseStrength = 1;
+
+  /// <summary>
+  /// How much of a full pulse the last beat was worth by where it fell in the bar, from
+  /// <see cref="AccentOf"/>. One before the first beat, which never renders a pulse anyway.
+  /// </summary>
+  private double pulseAccent = 1;
+
+  /// <summary>
+  /// Where in the bar the last beat fell, which decides the lights its pulse reaches -
+  /// see <see cref="TakesPulse"/>. One before the first beat, which reaches them all.
+  /// </summary>
+  private int pulsePosition = 1;
+
+  /// <summary>
+  /// Whether the pulse travels from the edges of the room in toward the centre rather
+  /// than out from it, turned round at every colour change on a downbeat.
+  ///
+  /// The same roll on every bar of a track is a loop, and a loop is what the eye stops
+  /// seeing after a minute. Turning it round where the colour changes ties the change in
+  /// movement to the change in colour, so both mark the same moment in the music - a
+  /// phrase, where there are phrases - and the room has two shapes rather than one.
+  /// </summary>
+  private bool travelInward;
+
+  /// <summary>Which light each sparkle is on, by its place in the room's array, or -1 for an empty slot.</summary>
+  private readonly int[] sparkleLight = [.. Enumerable.Repeat(-1, SparkleSlots)];
+
+  /// <summary>When each sparkle started, on the frame clock.</summary>
+  private readonly double[] sparkleStartedMicros = new double[SparkleSlots];
+
+  /// <summary>How many sparkles have started, which picks the next light and the slot it goes in.</summary>
+  private uint sparkles;
+
+  /// <summary>
+  /// Each light's lift between beats, smoothed - see <see cref="LiftAttackSeconds"/>.
+  /// Resized only when the room's light count changes, which is when a stream opens.
+  /// </summary>
+  private double[] lifts = [];
+
+  /// <summary>The kick's presence smoothed over <see cref="KickFlowSeconds"/>, 1 while it plays and 0 through a break.</summary>
+  private double kickFlow = 1;
 
   private double? renderedAtMicros;
 
@@ -424,7 +589,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     this.Split(wanted, settings.Palette);
     this.Slide(elapsedSeconds, lastFrame is null, wanted);
 
-    Envelope envelope = this.EnvelopeOf(now, settings, sound?.Loudness ?? 1);
+    Envelope envelope = this.EnvelopeOf(now, settings, sound?.Loudness ?? 1, sound?.Intensity ?? 1);
 
     // After everything above rather than instead of it, so the hue keeps sliding and
     // the bands keep being heard through a flash: the room between flashes is the
@@ -443,11 +608,45 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       return shared;
     }
 
+    int quantum = this.scheduler.Quantum;
+
+    if(sound is { HatHit: true }) {
+      this.Sparkle(now, lights.Length);
+    }
+
+    if(this.lifts.Length != lights.Length) {
+      this.lifts = new double[lights.Length];
+    }
+
+    // One with nothing to listen to, which leaves the follow off: with no audio there is
+    // no band to follow, and the pulse is all there is.
+    double kickNow = sound?.KickPresence ?? 1;
+    this.kickFlow += (kickNow - this.kickFlow) * (1 - Math.Exp(-elapsedSeconds / KickFlowSeconds));
+    double? wavePosition = this.WavePosition(now, quantum);
+    SpectrumLevels? swell = sound?.Swell;
+
     for(int index = 0; index < lights.Length; index++) {
       double at = lights[index].At;
       double hue = this.displayHues[GroupOf(at, lights.Length, wanted, this.colorRoll, settings.ColorLayout)];
+      double travel = this.travelInward ? 1 - at : at;
+      double share = TakesPulse(travel, lights.Length, this.pulsePosition, quantum) ? Share(drive, at) : 0;
 
-      colors[index] = FromHue(hue, envelope.LevelAt(Share(drive, at), Shimmer(transient, at)));
+      // The upper half of the axis spread over the whole room: without a kick, the low
+      // end is a held bass at its own peak, which held the inner lights up and still.
+      double follow = 0;
+      if(swell is { } levels) {
+        double music = Math.Clamp(levels.At(0.5 + (at / 2)), 0, 1);
+        double wave = wavePosition is { } spot ? SmoothStep01(1 - (Math.Abs(travel - spot) / WaveWidth)) : 0;
+
+        follow = ContourShare * (1 - this.kickFlow) * Math.Max(SwellBase * music, wave * (0.5 + (0.5 * music)));
+      }
+      double target = Math.Max(Shimmer(transient, at), follow);
+      double seconds = target > this.lifts[index] ? LiftAttackSeconds : LiftReleaseSeconds;
+      this.lifts[index] += (target - this.lifts[index]) * (1 - Math.Exp(-elapsedSeconds / seconds));
+
+      double lift = Math.Max(this.lifts[index], this.SparkleOn(index, now));
+
+      colors[index] = FromHue(hue, envelope.LevelAt(share, lift));
     }
 
     return shared;
@@ -716,6 +915,8 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       this.lastBeatMicros = beat.ScheduledMicros;
       this.beatPeriodMicros = beat.Bpm > 0 ? 60 * MicrosPerSecond / beat.Bpm : null;
       this.pulseStrength = kickPresence is { } present ? Math.Clamp(present, 0, 1) : 1;
+      this.pulseAccent = AccentOf(beat, this.scheduler.Quantum);
+      this.pulsePosition = beat.PositionInBar;
 
       // The anchored beat takes a colour whatever bar it was stamped with, since one that
       // fired just before the press still carries the old count. Earlier beats are left
@@ -728,6 +929,12 @@ internal sealed class LightEngine: ILightSource, IHostedService {
 
       if(anchored || this.ShouldChangeColor(beat, settings.ColorChangeBars, phrases)) {
         this.PickHues(settings.Palette, colorCount);
+
+        // Only on a downbeat: a change on every beat would turn the travel round inside
+        // the bar it is travelling through, which is no direction at all.
+        if(beat.PositionInBar == 1) {
+          this.travelInward = !this.travelInward;
+        }
       }
     }
 
@@ -801,6 +1008,147 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     }
 
     return beat.PositionInBar == 1 && FloorMod(beat.Bar, bars) == 0;
+  }
+
+  /// <summary>
+  /// How much of a full pulse a beat gets by where it falls in the bar.
+  ///
+  /// Whole on the downbeat, <see cref="MidBarAccent"/> on the beat halfway through a bar
+  /// that has one - three of four, four of six - and <see cref="OffBeatAccent"/> on the
+  /// rest.
+  ///
+  /// Applied before any anchor as well, when the position is a count from wherever the
+  /// grid started rather than the music's own downbeat. That can put the big pulse a beat
+  /// or two off the bar, and it is still the better of the two answers: the colour already
+  /// changes on that same position 1, so the strong pulse and the change land together,
+  /// and the alternative - every beat whole until somebody anchors - is the room this
+  /// exists to stop, on the audio source, where nothing anchors without a press.
+  /// </summary>
+  private static double AccentOf(BeatEvent beat, int quantum) {
+    if(quantum <= 1 || beat.PositionInBar == 1) {
+      return 1;
+    }
+
+    bool midBar = quantum % 2 == 0 && quantum >= 4 && beat.PositionInBar == (quantum / 2) + 1;
+
+    return midBar ? MidBarAccent : OffBeatAccent;
+  }
+
+  /// <summary>
+  /// Starts a sparkle for a hat hit on one light, never the one the other sparkle is on.
+  ///
+  /// The light is chosen by hashing the count of sparkles with the colour roll rather
+  /// than drawn from <see cref="random"/>, so the seeded colours the tests assert are not
+  /// moved along by hats, and the pattern still changes with every colour change. Any
+  /// light, not only the ones listening to the top: hats are all over a mix, and a
+  /// sparkle that only ever landed on the outer ring would be a second shimmer there.
+  /// </summary>
+  private void Sparkle(double now, int lights) {
+    if(lights <= 0) {
+      return;
+    }
+
+    uint mixed = ((this.sparkles + 1) * 2654435761u) ^ this.colorRoll;
+    int light = (int)((mixed >> 16) % (uint)lights);
+    int slot = (int)(this.sparkles % SparkleSlots);
+    int other = this.sparkleLight[(slot + 1) % SparkleSlots];
+
+    if(lights > 1 && light == other) {
+      light = (light + 1) % lights;
+    }
+
+    this.sparkleLight[slot] = light;
+    this.sparkleStartedMicros[slot] = now;
+    this.sparkles++;
+  }
+
+  /// <summary>How far the sparkles lift one light at this instant, 0 to <see cref="SparkleHeight"/>.</summary>
+  private double SparkleOn(int light, double now) {
+    double lift = 0;
+
+    for(int slot = 0; slot < SparkleSlots; slot++) {
+      if(this.sparkleLight[slot] != light) {
+        continue;
+      }
+
+      double ageMs = (now - this.sparkleStartedMicros[slot]) / MicrosPerMilli;
+      double left = ageMs < 0 || ageMs >= SparkleMs
+        ? 0
+        : ageMs <= SparkleHoldMs ? 1 : 1 - ((ageMs - SparkleHoldMs) / (SparkleMs - SparkleHoldMs));
+
+      lift = Math.Max(lift, left * SparkleHeight);
+    }
+
+    return lift;
+  }
+
+  /// <summary>
+  /// Where the break wave's spot is, 0 at the centre of the room and 1 at its edge, or
+  /// null with no beat grid to time it by.
+  ///
+  /// Out over the first half of the bar and back over the second, from where the grid
+  /// says the bar is, so the room breathes once a bar and stays on the music through a
+  /// break the kick has left. Out and back rather than round and round, because the axis
+  /// runs from the centre of the room to its edge and has no end that meets the other.
+  /// Null once the grid has gone stale, on the strobe's rule: a wave extrapolating a
+  /// grid that no longer exists is a room moving to nothing.
+  /// </summary>
+  private double? WavePosition(double now, int quantum) {
+    if(this.lastBeatMicros is not { } beat || this.beatPeriodMicros is not { } period || period <= 0) {
+      return null;
+    }
+
+    double since = now - beat;
+    if(since < 0 || since > period * StrobeStaleBeats) {
+      return null;
+    }
+
+    int beats = Math.Max(quantum, 1);
+    double bar = ((this.pulsePosition - 1 + (since / period)) / beats) % 1.0;
+
+    return 1 - Math.Abs((2 * bar) - 1);
+  }
+
+  /// <summary>A ramp from 0 to 1 that leaves and arrives flat, for any value.</summary>
+  private static double SmoothStep01(double value) {
+    double x = Math.Clamp(value, 0, 1);
+
+    return x * x * (3 - (2 * x));
+  }
+
+  /// <summary>
+  /// Whether a light at a given frequency takes the pulse of a beat at this position.
+  ///
+  /// <b>The downbeat reaches every light and each beat after it reaches one part of the
+  /// room, moving outward</b> - with four to the bar, beat two the inner third of the
+  /// lights, three the middle, four the outer - so over a bar the pulse travels from the
+  /// middle of the room to its edges and the next downbeat gathers it again. Added on
+  /// 2026-11-12, after the accents had calmed the room and it still read as busy: every
+  /// light pulsing on the same instant is what makes a room look like a machine keeping
+  /// time, whatever height each pulse is, and a pulse that moves through the room is what
+  /// a light show does with several fixtures.
+  ///
+  /// Given the axis turned round when <see cref="travelInward"/> is set, so the same
+  /// groups are visited edge first. Along the axis at all because it is already the
+  /// room's radius, centre to edge - see
+  /// <see cref="LightPlacements"/> - so the travel follows where the lights are rather
+  /// than the order the bridge numbered them in. Groups are by rank, the same rank
+  /// <see cref="GroupOf"/> recovers, so they are as even as the light count allows. A
+  /// light outside the group keeps its own band's shimmer, so between beats nothing goes
+  /// still. Every light takes every pulse when there is no bar to travel through - two
+  /// beats or fewer - or fewer lights than groups, where a beat would reach nobody.
+  /// <b>Flux's own</b>, and the scene had nothing like it.
+  /// </summary>
+  private static bool TakesPulse(double at, int lights, int position, int quantum) {
+    int groups = quantum - 1;
+    if(position <= 1 || groups < 2 || lights < groups) {
+      return true;
+    }
+
+    int rank = (int)Math.Round(Math.Clamp(at, 0, 1) * (lights - 1));
+    int group = Math.Min(rank * groups / lights, groups - 1);
+
+    return group == (position - 2) % groups;
   }
 
   /// <summary>
@@ -971,7 +1319,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// Worth revisiting by ear: the two differ only in the couple of hundred milliseconds
   /// after a beat.
   /// </summary>
-  private Envelope EnvelopeOf(double now, LightSettings settings, double loudness) {
+  private Envelope EnvelopeOf(double now, LightSettings settings, double loudness, double intensity) {
     double ceiling = settings.Brightness / (double)LightSettings.MaxPercent;
 
     if(settings.PulseMs <= 0 || this.pulseStartedMicros is not { } started) {
@@ -987,7 +1335,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       // needing a special case, which is right: with the pulse switched off there is no
       // pulse to divide between the lights, and the person who turned it off asked for
       // one steady colour rather than for a room that shimmers by position.
-      return new Envelope(ceiling, ceiling, 1, 1, 1);
+      return new Envelope(ceiling, ceiling, 1, 1, 1, 1);
     }
 
     double floor = Math.Max(
@@ -1004,7 +1352,9 @@ internal sealed class LightEngine: ILightSource, IHostedService {
       ? 1
       : Math.Exp(Math.Log(PulseSpentAt) * (age - holdMicros) / (pulseMicros - holdMicros));
 
-    return new Envelope(floor, ceiling, decay, Math.Clamp(loudness, 0, 1), this.pulseStrength);
+    double size = this.pulseAccent * Math.Clamp(intensity, 0, 1);
+
+    return new Envelope(floor, ceiling, decay, Math.Clamp(loudness, 0, 1), this.pulseStrength, size);
   }
 
   /// <summary>Where this frame sits between the resting level and full.</summary>
@@ -1037,7 +1387,20 @@ internal sealed class LightEngine: ILightSource, IHostedService {
   /// the energy lifted the resting level between beats, which held a drop at half
   /// brightness with the beat lost inside it.
   /// </param>
-  private readonly record struct Envelope(double Floor, double Ceiling, double Decay, double Loudness, double Strength) {
+  /// <param name="Size">
+  /// How big this beat's pulse is allowed to be once it counts: its accent in the bar
+  /// times how hard the passage is, both 0 to 1.
+  ///
+  /// <b>A dimmer applied after the gates, not a third gate beside them</b>, and the
+  /// difference is the one <see cref="PulseGate"/> argues. The gates answer whether a
+  /// beat counts, so composing them by the smaller keeps either from charging the pulse
+  /// twice for one doubt. This answers a different question - how much a beat that
+  /// counts is worth - and it is meant to bite in ordinary playing: on beat two of four,
+  /// or under a quieter passage, a smaller pulse is the point rather than a side effect.
+  /// It reaches the pulse and not the shimmer, which follows each light's own band and
+  /// is what carries a passage between the strong beats.
+  /// </param>
+  private readonly record struct Envelope(double Floor, double Ceiling, double Decay, double Loudness, double Strength, double Size) {
     /// <summary>
     /// <b>Two gates compose by taking the smaller, not by multiplying.</b>
     ///
@@ -1055,8 +1418,11 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     /// </summary>
     private double PulseGate => Math.Min(this.Loudness, this.Strength);
 
+    /// <summary>The beat's pulse at this instant: its fade, whether it counts, and how big it is.</summary>
+    private double Pulse => this.Decay * this.PulseGate * this.Size;
+
     /// <summary>The level the room as a whole is at, which is what a page is shown.</summary>
-    internal double Level => this.Above(this.Decay * this.PulseGate);
+    internal double Level => this.Above(this.Pulse);
 
     /// <summary>
     /// The level for one light, given its cut of the beat and its own band's shimmer.
@@ -1072,7 +1438,7 @@ internal sealed class LightEngine: ILightSource, IHostedService {
     /// carrying the break.
     /// </summary>
     internal double LevelAt(double share, double shimmer) {
-      return this.Above(Math.Max(this.Decay * share * this.PulseGate, shimmer * this.Loudness));
+      return this.Above(Math.Max(this.Pulse * share, shimmer * this.Loudness));
     }
 
     /// <summary>

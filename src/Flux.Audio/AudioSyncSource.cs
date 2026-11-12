@@ -84,6 +84,14 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
   private SpectrumSnapshot? latest;
 
   /// <summary>
+  /// The newest frame's hat band, kept beside <see cref="latest"/> rather than on it:
+  /// the snapshot is what the visualizer draws, and this is for the lights alone. Written
+  /// under the same lock, so the two always describe one frame.
+  /// </summary>
+  private double latestHatsDb = SpectrumLevels.SilentDb;
+  private double latestSubDb = SpectrumLevels.SilentDb;
+
+  /// <summary>
   /// The strongest verdict since the last <see cref="Spectrum"/> read.
   ///
   /// Latched rather than taken from the newest frame, because the two sides run at
@@ -193,7 +201,7 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
         return null;
       }
 
-      return new SpectrumLevels(snapshot.Kick, snapshot.Mids, snapshot.Highs);
+      return new SpectrumLevels(snapshot.Kick, snapshot.Mids, snapshot.Highs) { HatsDb = this.latestHatsDb, SubDb = this.latestSubDb };
     }
   }
 
@@ -268,6 +276,8 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
         frame.Highs,
         decision.Flux,
         decision.Strength);
+      this.latestHatsDb = frame.HatsDb;
+      this.latestSubDb = frame.SubDb;
 
       if(decision.Strength > this.pendingStrength) {
         this.pendingStrength = decision.Strength;

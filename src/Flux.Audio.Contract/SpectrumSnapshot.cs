@@ -68,6 +68,43 @@ public sealed record SpectrumSnapshot(
 /// <param name="Highs">High band energy.</param>
 public readonly record struct SpectrumLevels(double Kick, double Mids, double Highs) {
   /// <summary>
+  /// How many decibels a band's scale spans from 0 to 1, before squaring.
+  ///
+  /// A band is the mean of its bins squared, each bin a position on this span, so the
+  /// square root of a band is close to how far up the span it sits and a difference of
+  /// those roots, times this, is close to a difference in decibels. That is the form a
+  /// reader comparing two passages wants: the scale is logarithmic already, so ratios of
+  /// band energy say little about how much quieter something is.
+  ///
+  /// Restated here because the analyzer's constants are internal to it, and held equal
+  /// to them by a test in <c>Flux.Audio.Tests</c>, so the two cannot drift apart silently.
+  /// </summary>
+  public const double DecibelSpan = 70;
+
+  /// <summary>What <see cref="HatsDb"/> reads with nothing in the band, or with no band measured at all.</summary>
+  public const double SilentDb = -120;
+
+  /// <summary>
+  /// The hi-hat band's raw power in decibels, or <see cref="SilentDb"/> when it was not
+  /// measured.
+  ///
+  /// Not one of the three bands, and kept out of their positional shape on purpose: the
+  /// three are energies on one byte scale that <see cref="At"/> interpolates between,
+  /// while this is decibels off the raw transform, unsmoothed, so that a hit is one step
+  /// rather than a slope. It is for the lights to find hits in, and comparing it with
+  /// the three would be comparing two different measurements. See
+  /// <c>docs/audio-constants.md</c>, "A band for the lights".
+  /// </summary>
+  public double HatsDb { get; init; } = SilentDb;
+
+  /// <summary>
+  /// The sub band's raw power in decibels, or <see cref="SilentDb"/> when it was not
+  /// measured: 40 to 100 Hz, where a kick's thump swings within a beat and a held bass
+  /// does not. For the lights, on the same terms as <see cref="HatsDb"/>.
+  /// </summary>
+  public double SubDb { get; init; } = SilentDb;
+
+  /// <summary>
   /// The band at a point on the frequency axis, 0 for the kick and 1 for the top.
   ///
   /// Three bands rather than the display columns, and that is a decision rather than a

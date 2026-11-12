@@ -146,6 +146,61 @@ public class SpectrumAnalyzerTests {
     }
   }
 
+  /// <summary>
+  /// The hat band hears a tone inside it and not one outside it. A 10 kHz tone has to
+  /// read tens of decibels over the 1 kHz tone the other tests use, or the lights are
+  /// finding hats in a band that is not listening to them.
+  /// </summary>
+  [Fact]
+  public async Task MeasuresTheHatBandFromTonesInsideIt() {
+    async Task<double> HatsFor(double hertz) {
+      ToneSamples source = new ToneSamples { Amplitude = 0.5, Frequency = hertz };
+      SpectrumAnalyzer analyzer = Build(source);
+
+      await analyzer.StartAsync(TestContext.Current.CancellationToken);
+
+      try {
+        Assert.True(await WaitUntil(() => analyzer.Frames >= 5, Patience), "The analyzer produced no frames.");
+
+        return Assert.IsType<SpectrumFrame>(analyzer.Latest).HatsDb;
+      } finally {
+        await Stop(analyzer);
+      }
+    }
+
+    double inside = await HatsFor(10_000);
+    double outside = await HatsFor(ToneHz);
+
+    Assert.True(inside - outside > 40, $"A 10 kHz tone read {inside:F1} dB in the hat band and a 1 kHz one {outside:F1} dB.");
+  }
+
+  /// <summary>
+  /// The sub band hears a tone inside it and not one outside it, on the same terms as the
+  /// hat band: a 60 Hz tone tens of decibels over the 1 kHz one.
+  /// </summary>
+  [Fact]
+  public async Task MeasuresTheSubBandFromTonesInsideIt() {
+    async Task<double> SubFor(double hertz) {
+      ToneSamples source = new ToneSamples { Amplitude = 0.5, Frequency = hertz };
+      SpectrumAnalyzer analyzer = Build(source);
+
+      await analyzer.StartAsync(TestContext.Current.CancellationToken);
+
+      try {
+        Assert.True(await WaitUntil(() => analyzer.Frames >= 5, Patience), "The analyzer produced no frames.");
+
+        return Assert.IsType<SpectrumFrame>(analyzer.Latest).SubDb;
+      } finally {
+        await Stop(analyzer);
+      }
+    }
+
+    double inside = await SubFor(60);
+    double outside = await SubFor(ToneHz);
+
+    Assert.True(inside - outside > 40, $"A 60 Hz tone read {inside:F1} dB in the sub band and a 1 kHz one {outside:F1} dB.");
+  }
+
   [Fact]
   public async Task ProducesTheNumberOfColumnsItWasAskedFor() {
     // The claim the whole ISpectrumBands seam exists to make, and the one that was

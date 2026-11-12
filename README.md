@@ -74,7 +74,7 @@ behind; delete that folder as well for a clean slate.
 
 **Logs** are in `%LOCALAPPDATA%\Flux\logs`, one file a day, kept two weeks.
 
-## What works in 0.6.0
+## What works in 0.6.1
 
 ### Finding the beat
 
@@ -115,10 +115,14 @@ Around them:
   achieved shown on screen. Bulbs render about 25 updates a second over Zigbee
   whatever the stream does.
 - **Per-bulb light.** A new hue every few bars, landing on the downbeat.
-  Brightness pulses on each beat and fades. Each bulb follows the part of the
-  spectrum nearest its place in the room, so a kick punches in the middle and a
-  hi-hat lifts the corners. A beat without a kick under it does not pulse, which
-  leaves breakdowns to whatever is still playing.
+  Brightness pulses on the beat and fades: the whole room on the downbeat, then
+  a smaller pulse moving outward through the room over the rest of the bar, and
+  less again in a passage quieter than the rest of the track.
+  Each bulb follows the part of the spectrum nearest its place in the room, so a
+  kick punches in the middle and voices and leads lift the corners, and each
+  hi-hat or cymbal hit sparkles one bulb. A beat without a kick under it does not
+  pulse: through a break the room swells with the voice and instruments while a
+  soft wave sweeps it once a bar.
 - **Tuning while it plays.** Eight palettes, one to three colours and how they
   spread, brightness, pulse length and depth, and a latency offset. All of it is
   saved for next time.

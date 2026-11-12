@@ -384,13 +384,25 @@ a beat would give it. The beat is divided between the lights, while what happens
 is a fact about each band on its own: a hat pattern under a held chord lifts the outer
 lights whether or not anything is louder elsewhere. That is the difference between a
 room the music moves through and a set of simultaneous flashes at different heights.
+The lift rises within a few frames and falls over about a third of a second, so it
+swells rather than flickers. **As the kick goes, the room is carried by the music
+and a wave**: every light is lifted by how close the mids and the top are to their
+own loudest of the last few seconds, in decibels, spread across the room in `at`
+order since a break's low end is usually a held bass that would not move; and a soft
+spot about a third of the room wide sweeps from `at` 0 to 1 and back once a bar on the
+beat grid, brighter as the music swells, up to six tenths in all. As the kick comes
+back the beat takes over. **A
+hi-hat or cymbal hit sparkles one light** for about 160 ms, up to three quarters,
+from a band at 6 to 14 kHz that is measured for the lights only and never sent.
 
 **The pulse answers the music and not only the grid**, and it does so in two ways at
 once because they are two different questions.
 
-*Is a kick playing on this beat* is the kick band against the loudest this track's
-kick has been over about the last minute, ramped so that under two fifths of it is no
-kick and four fifths or more is a whole one, read as the beat lands and allowed to rise - never fall - while the pulse is alive.
+*Is a kick playing on this beat* is the kick band in decibels under the loudest this
+track's kick has been, a reference that forgets at a tenth of a decibel a second, ramped
+so that within 6 dB of it is a whole kick and 12 dB or more under is none - and only
+while a 40 to 100 Hz band swings at least 10 dB, whole from 16, inside the last 0.6 s,
+because a held bassline can be as loud as a kick but does not thump - read as the beat lands and allowed to rise - never fall - while the pulse is alive.
 It may rise because the light path runs deliberately ahead of the audio, so the kick a
 beat announces has usually not reached the analyzer at the moment the beat is consumed;
 it never falls, so the fade is not cut off by the gap after the kick that caused it.
@@ -417,7 +429,18 @@ average looks back over, and longer than the two bars its level is measured agai
 breakdown runs sixteen to thirty-two bars, and a reference that forgot inside one
 would decide halfway through the break that the break is now normal.
 
-**Neither reaches the floor itself.** Both spend the range above it,
+**A beat that counts is then sized, and not every beat is worth the same.** Where it
+falls in the bar decides how big it is: the whole pulse on the downbeat, six tenths in
+the middle of the bar, about a third on the rest. How hard the passage is decides it
+too: the room's energy averaged over a second and a half, in decibels under the
+track's loudest passage, is a whole pulse within 3 dB and none at 15 dB. **And the
+pulse travels.** The downbeat reaches every light; each beat after it reaches one part
+of the room in `at` order - with four to the bar, the third of the lights nearest
+`at` 0, then the middle third, then the rest - and the direction turns round at every
+colour change on a downbeat. A room with fewer lights than parts takes every pulse on
+every light. A light outside the part keeps its own band's lift.
+
+**None of these reaches the floor itself.** All spend the range above it,
 and the floor is never zero while a stream is open - a light that goes out is
 indistinguishable from one that has stopped receiving anything. A `brightness` of 0
 is still black, because that is a blackout and somebody asking for no light should
@@ -1429,7 +1452,8 @@ neither of them asked for.
 
 The engine works in two layers at two rates, and the settings are how a person
 sets each one. A hue is chosen every `colorChangeBars` bars and slides to its new
-value; brightness is knocked to full on every beat and fades over `pulseMs`. That
+value; brightness is knocked up on every beat - to full on the downbeat - and fades
+over `pulseMs`. That
 separation is the point - one setting doing both jobs gives either lights that sit
 still for eight seconds between colours or lights that strobe through the palette
 four times a bar.

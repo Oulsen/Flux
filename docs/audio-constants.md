@@ -208,6 +208,45 @@ browser as the protocol's `highs`.
 a coincidence worth knowing and not worth relying on; a device that opens at 96 kHz
 would put a band computed for 48 kHz an octave out.
 
+### A band for the lights
+
+`HatLowHz` and `HatHighHz`, 6 to 14 kHz, are Flux's own and are read by the light
+engine only. Nothing in the detector changes with them, and no number above moves.
+None of the scene's three bands reaches above 1.3 kHz, so before this band existed
+the lights had no way to see a hi-hat: what the room called its top was voices and
+leads.
+
+It is measured differently from the other three, on purpose. Replaying
+`2026-09-08-session-b-01.wav` through the analyzer's own transform showed two
+things:
+
+| Measurement | Open hat at 130.42 s | What it means |
+|---|---|---|
+| Band energy on the byte scale | about 0.005 | Hats sit at the floor of `SpectrumMinDb`, so the bytes hold almost nothing |
+| Smoothed magnitude, in dB | -72 to -57 over four frames | `SpectrumSmoothing` spreads a hit across the frames after it |
+| Raw magnitude, in dB | -86 to -47 in one frame | The hit is a single 39 dB step |
+
+So the band is the mean power of the raw, unsmoothed bins, in decibels, with no
+byte scale and no clamp. It reaches the light engine beside the three bands as
+`SpectrumLevels.HatsDb` and is never sent to a browser.
+
+`SubLowHz` and `SubHighHz`, 40 to 100 Hz, are the second band for the lights,
+measured the same raw way and reaching the engine as `SpectrumLevels.SubDb`. It
+exists because the kick band's level could not tell a kick from a bassline: a break
+recorded on 2026-11-12 (`2026-11-12-desk-01.wav`) held its bass as loud as the
+drop's kicks. What separates them is how far the band swings within a beat:
+
+| Passage | Raw 40 to 100 Hz swing per beat, median | Kick band (bytes) swing per beat |
+|---|---|---|
+| Before the break, kick playing | 27 dB | 4.8 dB |
+| Break, held bass | 2.6 dB | 2.4 dB |
+| Build, no kick | 2.6 dB | 2.0 dB |
+| Drop | 19 dB | 3.5 dB |
+
+The byte-scale kick band, smoothed and spread over 50 to 200 Hz where the bassline
+lives, barely moves either way; the raw sub band moves ten times as far with a kick
+in it as without.
+
 ## The thresholds
 
 Transcribed values. "Scene" is the identifier in the scene's source; "Flux" is the
