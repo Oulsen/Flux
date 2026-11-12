@@ -97,8 +97,9 @@ internal sealed class BandDynamics {
   private const double LoudEnoughFraction = 0.6;
 
   /// <summary>
-  /// Below this fraction of the track's own kick, the kick band counts as not playing
-  /// a kick at all.
+  /// How far under the track's own loudest kick, in decibels, the kick band can sit and
+  /// still count as playing a kick in full - and, below, how far under it counts as no
+  /// kick at all.
   ///
   /// <b>What sizes the beat's pulse, replacing two measures that each failed at one end,
   /// found on 2026-09-30 by replaying frames recorded at the desk.</b> The first asked
@@ -106,29 +107,31 @@ internal sealed class BandDynamics {
   /// where the bassline fills the band and the kicks barely stand out. The patch for that
   /// let the room's running-hot energy vouch for the beat, which then pulsed a vocal and
   /// strings build at full on every beat, because a build is running hot by definition.
-  /// What separates the three passages is simpler than either: whether the kick band is
-  /// at the level this track's kick plays at. The recording read about the whole of it
-  /// in the drop, between a fifth and a half in the build - the strings' low end, never
-  /// a kick - and nothing in a break.
+  /// What separates the passages is simpler than either: whether the kick band is at the
+  /// level this track's kick plays at.
   ///
-  /// Two fifths, so the build's residue stays below or barely over it; with
-  /// <see cref="KickPresentAt"/> this is a ramp and not a switch, so a light kick coming
-  /// in under a build still gets a small pulse rather than none. <b>Flux's own, reasoned
-  /// from one recording and then listened to once</b>, and the first thing to move if a
-  /// build pulses too much or a soft kick too little.
+  /// <b>In decibels since 2026-11-12</b>, when the travelling pulse was seen running
+  /// through a break. Until then this was a fraction of the band's energy against a
+  /// reference falling to a tenth in a minute, and both halves of that were wrong for a
+  /// band that is on a decibel scale already: a bassline twenty decibels under the kick
+  /// still reads a sizeable fraction of it, and the reference forgets fast enough for
+  /// that fraction to climb within seconds. Replaying the 2026-09-08 session showed it -
+  /// a stretch fourteen to twenty decibels under the track's kick read as a kick at
+  /// seven tenths to all of one. Measured in decibels, the drops of both recordings sit
+  /// two to six under their loudest kick, that stretch fourteen to twenty, the 2026-09-30
+  /// build twenty-two to twenty-five.
+  ///
+  /// A ramp and not a switch, smoothed at both ends, so a kick a little under the
+  /// track's own gets most of a pulse. The light kick under the 2026-09-30 build sits
+  /// twenty-five under and now gets none, where the fraction gave it a small one: that
+  /// passage is carried by the shimmer instead. <b>Flux's own, reasoned from two
+  /// recordings</b>, and the first pair to move if a break still pulses or a drop's
+  /// kick reads short.
   /// </summary>
-  private const double KickPresentFrom = 0.4;
+  private const double KickFullWithinDb = 6;
 
-  /// <summary>
-  /// The fraction of the track's own kick at which the beat counts in full.
-  ///
-  /// Four fifths rather than all of it, for the reason <see cref="LoudEnoughFraction"/>
-  /// gives: the kick's reference is the loudest it has been in the last minute, which
-  /// ordinary kicks sit a little under, and a gate reaching one only at the loudest kick
-  /// would dim every other beat of the drop. Flux's own and reasoned, like
-  /// <see cref="KickPresentFrom"/>, and open to moving with it.
-  /// </summary>
-  private const double KickPresentAt = 0.8;
+  /// <inheritdoc cref="KickFullWithinDb"/>
+  private const double KickNoneBelowDb = 12;
 
   /// <summary>
   /// How long a band's running average looks back, which is what a transient is measured
@@ -160,11 +163,68 @@ internal sealed class BandDynamics {
   /// </summary>
   private const double TransientAtRatio = 1.5;
 
+  /// <summary>
+  /// How long the room's energy is averaged over before it is compared with the track,
+  /// which is what sizes the beat's pulse by the passage it is in.
+  ///
+  /// A second and a half, about three beats at 120 BPM. Long enough that one loud kick or
+  /// the gap after it does not move the answer, so the pulses within a passage stay one
+  /// size; short enough that the drop landing after a quiet bar is answered within its
+  /// first bar rather than after it. <b>Flux's own and reasoned, not listened to.</b>
+  /// </summary>
+  private const double SectionEnergySeconds = 1.5;
+
+  /// <summary>
+  /// How far under the track's loudest passage, in decibels, the passage playing now can
+  /// sit and still pulse in full - and, below, how far under it pulses not at all.
+  ///
+  /// <b>The answer to "the lights beat just as hard when the music is quiet",
+  /// reported on 2026-11-12.</b> The bands are on a decibel scale already, so a passage
+  /// ten decibels under the drop still reads about two thirds of the drop's energy, and
+  /// the loudness gate counts anything over three fifths as fully playing. Replaying the
+  /// 2026-09-08 session showed the room pulsing at nine tenths of its height on nearly
+  /// every beat for minutes, through a stretch eight to twelve decibels under the rest.
+  /// Measured in decibels the passages separate: that session's steady playing sits
+  /// within three of its loudest, its quieter stretch eight to twelve under, and the
+  /// 2026-09-30 build fifteen to twenty-five under its drop.
+  ///
+  /// Smoothed between the two rather than linear, so neither end is a visible step, and
+  /// nine under - the middle - gets half a pulse. <b>Flux's own, reasoned from two
+  /// recordings and not yet listened to</b>, and the first pair to move if a quiet
+  /// passage still pumps or a drop looks held back.
+  /// </summary>
+  private const double FullWithinDb = 3;
+
+  /// <inheritdoc cref="FullWithinDb"/>
+  private const double NoneBelowDb = 15;
+
+  /// <summary>
+  /// How fast the loudest passage is forgotten, in decibels a second, with nothing as
+  /// loud arriving.
+  ///
+  /// A fixed rate in decibels and not a fall to a fraction, which is the lesson of the
+  /// loudness reference beside it: falling to a tenth in a minute sounds slow, but on a
+  /// decibel scale a passage at two thirds of the drop catches it up in about ten
+  /// seconds, and from then on the quieter passage counts as normal. At a tenth of a
+  /// decibel a second a passage ten under is still read as quieter half a minute later -
+  /// sixteen bars at 128 BPM - and a genuinely quieter track following a loud one is
+  /// caught up within about a minute and a half. <b>Flux's own and reasoned.</b>
+  /// </summary>
+  private const double LoudestFallsDbPerSecond = 0.1;
+
   private double kickPeak;
   private double midsPeak;
   private double highsPeak;
   private double roomPeak;
-  private double kickLoudest;
+
+  /// <summary>The loudest the kick band has been, in decibels up the band scale, falling at <see cref="LoudestFallsDbPerSecond"/>.</summary>
+  private double kickLoudestDb;
+
+  /// <summary>The room's energy averaged over <see cref="SectionEnergySeconds"/>, or null before the first frame.</summary>
+  private double? sectionEnergy;
+
+  /// <summary>The loudest the averaged energy has been, in decibels up the band scale, falling at <see cref="LoudestFallsDbPerSecond"/>.</summary>
+  private double sectionLoudestDb;
 
   private double kickMean;
   private double midsMean;
@@ -195,10 +255,21 @@ internal sealed class BandDynamics {
     double loudest = heard.Peak;
     this.roomPeak = Math.Max(loudest, this.roomPeak * roomFall);
 
-    // On the room's minute and not the band's two bars: the band's peak falls far
+    // At the slow decibel rate and not the band's two bars: the band's peak falls far
     // enough inside a four-second break for the strings' low end to read as a whole
-    // kick, which is precisely what this has to tell apart.
-    this.kickLoudest = Math.Max(heard.Kick, this.kickLoudest * roomFall);
+    // kick, which is precisely what this has to tell apart. See KickFullWithinDb.
+    double kickDb = DecibelsOf(heard.Kick);
+    this.kickLoudestDb = Math.Max(kickDb, this.kickLoudestDb - (LoudestFallsDbPerSecond * elapsed));
+
+    // Started at the first frame for the reason the band means below are, and kept up
+    // through silence like the peaks, so a track starting finds it where the room is.
+    // Compared in decibels, for the reason LoudestFallsDbPerSecond gives.
+    double section = this.sectionEnergy is { } held
+      ? held + ((loudest - held) * (1 - Math.Exp(-elapsed / SectionEnergySeconds)))
+      : loudest;
+    this.sectionEnergy = section;
+    double sectionDb = DecibelsOf(section);
+    this.sectionLoudestDb = Math.Max(sectionDb, this.sectionLoudestDb - (LoudestFallsDbPerSecond * elapsed));
 
     // The room's own reference and not the three band ones: a track with no hats leaves
     // the highs reference under the floor all night, and that is a fact about the track
@@ -233,15 +304,33 @@ internal sealed class BandDynamics {
       Above(heard.Mids, this.midsMean),
       Above(heard.Highs, this.highsMean));
 
-    double kickPresence = this.kickLoudest < SilentBelow
+    double kickPresence = this.kickLoudestDb < DecibelsOf(SilentBelow)
       ? 0
-      : Math.Clamp(((heard.Kick / this.kickLoudest) - KickPresentFrom) / (KickPresentAt - KickPresentFrom), 0, 1);
+      : SmoothStep((KickNoneBelowDb - (this.kickLoudestDb - kickDb)) / (KickNoneBelowDb - KickFullWithinDb));
+
+    double intensity = SmoothStep((NoneBelowDb - (this.sectionLoudestDb - sectionDb)) / (NoneBelowDb - FullWithinDb));
 
     return new RoomSound(
       drive,
       transient,
       Math.Clamp(loudest / (this.roomPeak * LoudEnoughFraction), 0, 1),
-      kickPresence);
+      kickPresence,
+      intensity);
+  }
+
+  /// <summary>
+  /// A band's energy as decibels up its scale, which is the form two passages are
+  /// compared in - see <see cref="SpectrumLevels.DecibelSpan"/> for why the square root.
+  /// </summary>
+  private static double DecibelsOf(double energy) {
+    return Math.Sqrt(Math.Max(energy, 0)) * SpectrumLevels.DecibelSpan;
+  }
+
+  /// <summary>A ramp from 0 to 1 that leaves and arrives flat, for a value clamped to 0 to 1 first.</summary>
+  private static double SmoothStep(double value) {
+    double x = Math.Clamp(value, 0, 1);
+
+    return x * x * (3 - (2 * x));
   }
 
   /// <summary>
@@ -328,9 +417,20 @@ internal sealed class BandDynamics {
 /// <param name="KickPresence">
 /// Whether the kick band is playing a kick at this track's own level, 0 to 1.
 ///
-/// What a beat's pulse is sized by. Against the loudest the kick has been in the last
-/// minute, ramped between <see cref="BandDynamics"/>'s two kick fractions, so a drop
+/// What a beat's pulse is sized by. In decibels under the loudest the kick has been
+/// lately, ramped between <see cref="BandDynamics"/>'s two kick thresholds, so a drop
 /// whose kicks are buried in its bassline still reads as fully present, a build's low
 /// strings read as little or nothing, and a break as nothing at all.
 /// </param>
-internal readonly record struct RoomSound(SpectrumLevels Drive, SpectrumLevels Transient, double Loudness, double KickPresence);
+/// <param name="Intensity">
+/// How hard the passage playing now is, against the track's recent hardest, 0 to 1.
+///
+/// A dimmer where <paramref name="Loudness"/> and <paramref name="KickPresence"/> are
+/// gates, and the difference is the point: those two decide whether a beat counts at
+/// all, and this decides how big it is allowed to be. A drop is whole, a quieter
+/// passage with its kick still in gets a smaller pulse, and a breakdown none, which is
+/// what a gate saturating at three fifths of a decibel scale could not tell apart.
+/// Averaged over seconds rather than read per frame, so the beats of one passage are
+/// one size. See <see cref="BandDynamics"/>'s section constants.
+/// </param>
+internal readonly record struct RoomSound(SpectrumLevels Drive, SpectrumLevels Transient, double Loudness, double KickPresence, double Intensity);

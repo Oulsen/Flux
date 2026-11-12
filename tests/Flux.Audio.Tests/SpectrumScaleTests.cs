@@ -22,6 +22,16 @@ public class SpectrumScaleTests {
     Assert.Equal((32, 55), SpectrumScale.BandRange(AudioConstants.HighLowHz, AudioConstants.HighHighHz, 48_000));
   }
 
+  /// <summary>
+  /// The contract restates the span for readers outside the analyzer, which cannot see
+  /// its constants. Moving the range without moving that would leave the light engine
+  /// reading decibels on the wrong scale, and nothing else would notice.
+  /// </summary>
+  [Fact]
+  public void TheContractsDecibelSpanIsTheAnalyzersRange() {
+    Assert.Equal(AudioConstants.SpectrumMaxDb - AudioConstants.SpectrumMinDb, SpectrumLevels.DecibelSpan);
+  }
+
   [Fact]
   public void SharesNoBinBetweenTheKickAndMidBands() {
     // The two bands meet at 200 Hz, and the kick-versus-mid ratio is the one test

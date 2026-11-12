@@ -115,10 +115,12 @@ Around them:
   achieved shown on screen. Bulbs render about 25 updates a second over Zigbee
   whatever the stream does.
 - **Per-bulb light.** A new hue every few bars, landing on the downbeat.
-  Brightness pulses on each beat and fades. Each bulb follows the part of the
-  spectrum nearest its place in the room, so a kick punches in the middle and a
-  hi-hat lifts the corners. A beat without a kick under it does not pulse, which
-  leaves breakdowns to whatever is still playing.
+  Brightness pulses on the beat and fades: the whole room on the downbeat, then
+  a smaller pulse moving outward through the room over the rest of the bar, and
+  less again in a passage quieter than the rest of the track.
+  Each bulb follows the part of the spectrum nearest its place in the room, so a
+  kick punches in the middle and a hi-hat lifts the corners. A beat without a kick
+  under it does not pulse, which leaves breakdowns to whatever is still playing.
 - **Tuning while it plays.** Eight palettes, one to three colours and how they
   spread, brightness, pulse length and depth, and a latency offset. All of it is
   saved for next time.

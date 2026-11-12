@@ -72,16 +72,18 @@ public class LightEngineTests {
 
     // The track's own kick first, and then a beat consumed in the gap before the next
     // one lands, where the kick band is at a fraction of it: the gate reads no kick.
-    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 0.3, Highs: 0.3);
+    // The mids hold the room at the same level throughout, so the passage stays one
+    // passage and only the kick is in question.
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 1, Highs: 0.3);
     harness.Engine.Render();
     harness.Clock.Advance(TimeSpan.FromSeconds(1));
-    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 0.3, Highs: 0.3);
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.3, Mids: 1, Highs: 0.3);
     harness.BeatNow(index: 0);
     Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
 
     // Two stream frames later the kick arrives, and the pulse takes its full height.
     harness.Clock.Advance(TimeSpan.FromMilliseconds(40));
-    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 0.3, Highs: 0.3);
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 1, Highs: 0.3);
     Assert.Equal(1.0, Brightness(harness.Engine.Render()), 3);
   }
 
@@ -104,6 +106,99 @@ public class LightEngineTests {
 
     harness.Clock.Advance(TimeSpan.FromMilliseconds(40));
     Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
+  }
+
+  /// <summary>
+  /// A break that keeps its bassline: the kick band holds well under the track's own
+  /// kick, and half a minute in it must still not read as a kick. Against a reference
+  /// falling to a tenth in a minute it did, within seconds, and the room pulsed through
+  /// the break.
+  /// </summary>
+  [Fact]
+  public void ABreakWithItsBassStillInDoesNotPulseHalfAMinuteIn() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 0.8, Highs: 0.5);
+    harness.Engine.Render();
+
+    // About eighteen decibels under the kick, for thirty seconds.
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.55, Mids: 0.8, Highs: 0.5);
+    for(int frame = 0; frame < 1500; frame++) {
+      harness.Clock.Advance(TimeSpan.FromMilliseconds(20));
+      harness.Engine.Render();
+    }
+
+    harness.BeatNow(index: 0);
+    harness.Engine.Render();
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(40));
+
+    Assert.Equal(0.15, Brightness(harness.Engine.Render()), 3);
+  }
+
+  /// <summary>
+  /// The downbeat takes the whole pulse, the middle of the bar most of one and the rest
+  /// about a third, so the room moves in bars rather than flashing alike on every beat.
+  /// With nothing to listen to, so the accent is the only thing sizing the pulse.
+  /// </summary>
+  [Theory]
+  [InlineData(0, 1.0)]
+  [InlineData(1, 0.35)]
+  [InlineData(2, 0.6)]
+  [InlineData(3, 0.35)]
+  [InlineData(4, 1.0)]
+  public void ABeatsPulseFollowsWhereItFallsInTheBar(long index, double accent) {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+
+    harness.BeatNow(index);
+
+    Assert.Equal(0.15 + (0.85 * accent), Brightness(harness.Engine.Render()), 3);
+  }
+
+  /// <summary>
+  /// The bar is followed before anybody anchors it too: the position then counts from
+  /// wherever the grid started, and the colour changes on that same position 1, so the
+  /// strong pulse and the change still land together.
+  /// </summary>
+  [Fact]
+  public void AnUnanchoredBarStillAccentsItsFirstBeat() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+
+    harness.BeatNow(index: 1, barAligned: false);
+    Assert.Equal(0.15 + (0.85 * 0.35), Brightness(harness.Engine.Render()), 3);
+
+    harness.Clock.Advance(TimeSpan.FromMilliseconds(1500));
+    harness.BeatNow(index: 4, barAligned: false);
+    Assert.Equal(1.0, Brightness(harness.Engine.Render()), 3);
+  }
+
+  /// <summary>
+  /// A passage well under the track's own level gets a smaller pulse, kick and all. On a
+  /// decibel scale a quieter passage still reads most of the drop's energy, which the
+  /// loudness gate counts as fully playing, so this is what keeps it from pulsing as hard
+  /// as the drop did.
+  /// </summary>
+  [Fact]
+  public void AQuieterPassagePulsesLessThanTheDropBeforeIt() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+
+    harness.Heard.Bands = new SpectrumLevels(Kick: 1, Mids: 1, Highs: 1);
+    harness.Engine.Render();
+    harness.Clock.Advance(TimeSpan.FromSeconds(4));
+    harness.BeatNow(index: 0);
+    Assert.Equal(1.0, Brightness(harness.Engine.Render()), 3);
+
+    // Three quarters of the drop's energy, which on the band scale is about nine decibels
+    // down, kick in proportion, held long enough for the average to settle.
+    harness.Heard.Bands = new SpectrumLevels(Kick: 0.75, Mids: 0.75, Highs: 0.75);
+    for(int frame = 0; frame < 300; frame++) {
+      harness.Clock.Advance(TimeSpan.FromMilliseconds(20));
+      harness.Engine.Render();
+    }
+
+    harness.BeatNow(index: 4);
+    double quieter = Brightness(harness.Engine.Render());
+    Assert.True(quieter < 0.75, $"A passage nine decibels under the drop still pulsed to {quieter:F3}.");
+    Assert.True(quieter > 0.3, $"A passage nine decibels under the drop, kick and all, barely pulsed ({quieter:F3}).");
   }
 
   /// <summary>
@@ -740,7 +835,8 @@ public class LightEngineTests {
   public void BeatsArrivingWithNothingRenderingThemAreDroppedRatherThanHoarded() {
     Harness harness = new Harness(new LightSettings(LightPalette.Party, ColorChangeBars: 0, PulseMs: 240));
 
-    for(long index = 0; index < 200; index++) {
+    // Ending on a downbeat, so the beat that renders is worth a whole pulse.
+    for(long index = 0; index <= 200; index++) {
       harness.Clock.Advance(TimeSpan.FromMilliseconds(500));
       harness.Engine.OnBeat(harness.BeatAt(index, harness.Clock.NowMicros));
     }
@@ -1323,6 +1419,69 @@ public class LightEngineTests {
     (HueColor shared, HueColor[] lights) = RenderRoom(harness, 0, 1);
 
     Assert.All(lights, light => Assert.Equal(shared, light));
+  }
+
+  /// <summary>
+  /// The downbeat reaches every light, and each beat after it one third of the room,
+  /// moving outward from the centre, so the pulse travels instead of every light firing
+  /// on the same instant. Nothing is heard, so the lights outside the group sit at the
+  /// resting level rather than at their shimmer.
+  /// </summary>
+  [Theory]
+  [InlineData(0, "111111111")]
+  [InlineData(1, "111000000")]
+  [InlineData(2, "000111000")]
+  [InlineData(3, "000000111")]
+  [InlineData(4, "111111111")]
+  public void EachBeatAfterTheDownbeatPulsesTheNextPartOfTheRoomOutward(long index, string pulsed) {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+    double[] ats = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
+
+    harness.BeatNow(index);
+    (_, HueColor[] lights) = RenderRoom(harness, ats);
+
+    string actual = string.Concat(lights.Select(light => Brightness(light) > 0.16 ? '1' : '0'));
+    Assert.Equal(pulsed, actual);
+  }
+
+  /// <summary>
+  /// A colour change on a downbeat turns the travel round, so the bar after it rolls in
+  /// from the edges, and the next change sends it back outward.
+  /// </summary>
+  [Fact]
+  public void AColourChangeTurnsTheTravelRound() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240, ColorChangeBars = 1 });
+    double[] ats = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
+
+    string PulsedAfter(long index) {
+      harness.Clock.Advance(TimeSpan.FromMilliseconds(500));
+      harness.BeatNow(index);
+      (_, HueColor[] lights) = RenderRoom(harness, ats);
+
+      return string.Concat(lights.Select(light => Brightness(light) > 0.16 ? '1' : '0'));
+    }
+
+    // Beat 0 is a change, so the bar after it travels inward; beat 4 changes it back.
+    PulsedAfter(0);
+    Assert.Equal("000000111", PulsedAfter(1));
+    PulsedAfter(2);
+    PulsedAfter(3);
+    PulsedAfter(4);
+    Assert.Equal("111000000", PulsedAfter(5));
+  }
+
+  /// <summary>
+  /// With fewer lights than there are beats to share out, some beats would reach no
+  /// light at all, so every light takes every pulse instead.
+  /// </summary>
+  [Fact]
+  public void ARoomWithTooFewLightsToTravelPulsesAllOfThem() {
+    Harness harness = new Harness(LightSettings.Default with { PulseMs = 240 });
+
+    harness.BeatNow(index: 2);
+    (_, HueColor[] lights) = RenderRoom(harness, 0, 1);
+
+    Assert.All(lights, light => Assert.True(Brightness(light) > 0.16));
   }
 
   /// <summary>
