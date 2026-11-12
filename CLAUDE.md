@@ -128,7 +128,14 @@ numbers nobody has ever heard.
      a test tag `vX.Y.Z-test1`, which CI turns into a prerelease draft. Delete a test
      draft and its tag afterwards.
   2. Open a release PR from `develop` to `main`, then move `main` with
-     `git fetch origin && git push origin <develop tip>:main`.
+     `git fetch origin && git push origin <develop tip>:main`. GitHub then
+     counts the release PR as merged, and the 0.6.1 release showed what follows
+     from that: with "Automatically delete head branches" on, it deleted
+     `develop`, because the maintainer bypasses the `develop` ruleset. So that
+     setting stays off, and the rulesets `develop stays` and `main stays` have no
+     bypass at all: nobody can delete either branch or force-push it, while
+     fast-forward pushes go through. To really delete one, change that ruleset
+     first. Feature branches are deleted by hand after their merge.
   3. Tag that commit `git tag -a vX.Y.Z -m vX.Y.Z` and push the tag.
      `.github/workflows/release.yml` refuses a tag that is lightweight, not on
      `main`, or different from `<Version>`. It drafts the release with
