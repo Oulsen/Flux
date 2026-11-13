@@ -63,6 +63,64 @@ public class AnlzLibraryTests {
     Assert.InRange(onDownbeat / (double)Math.Max(phrases, 1), 0.8, 1.0);
   }
 
+  [Fact]
+  public void ReadsEveryWaveformInTheLocalLibraryAtTheLengthOfItsTrack() {
+    // Skips without a library, as above.
+    if(!Directory.Exists(Library)) {
+      Assert.Skip("No local rekordbox library.");
+    }
+
+    string[] dats = Directory.GetFiles(Library, "ANLZ0000.DAT", SearchOption.AllDirectories);
+    var unread = new List<string>();
+    var misfit = new List<string>();
+    foreach(string dat in dats) {
+      string threeBand = AnlzFile.ThreeBandPath(dat);
+      if(!File.Exists(threeBand)) {
+        continue;
+      }
+
+      byte[] file = File.ReadAllBytes(threeBand);
+      if(AnlzWaveformReader.Read(file) is not { } waveform) {
+        if(AnlzFile.TryFindSection(file, "PWV7"u8, out _, out _)) {
+          unread.Add(threeBand);
+        }
+
+        continue;
+      }
+
+      // 150 columns a second of track: a grid's last beat inside the waveform, give or
+      // take the beats rekordbox piles on the final millisecond, is the check that the
+      // rate is what the header says.
+      if(AnlzBeatGrid.Read(File.ReadAllBytes(dat)) is { Count: > 0 } grid) {
+        double seconds = waveform.Count / (double)waveform.EntriesPerSecond;
+        if(grid[^1].TimeMs / 1000.0 > seconds + 1) {
+          misfit.Add(threeBand);
+        }
+      }
+    }
+
+    Assert.Empty(unread);
+    Assert.Empty(misfit);
+  }
+
+  [Fact]
+  public void ReadsEveryColourWaveformInTheLocalLibrary() {
+    // Skips without a library, as above.
+    if(!Directory.Exists(Library)) {
+      Assert.Skip("No local rekordbox library.");
+    }
+
+    var unread = new List<string>();
+    foreach(string ext in Directory.GetFiles(Library, "ANLZ0000.EXT", SearchOption.AllDirectories)) {
+      byte[] file = File.ReadAllBytes(ext);
+      if(AnlzColorWaveformReader.Read(file) is null && AnlzFile.TryFindSection(file, "PWV5"u8, out _, out _)) {
+        unread.Add(ext);
+      }
+    }
+
+    Assert.Empty(unread);
+  }
+
   /// <summary>A grid section with no beats: a track rekordbox has not analysed, which reads as no grid by design.</summary>
   private static bool HasEmptyGrid(byte[] file) =>
     AnlzFile.TryFindSection(file, "PQTZ"u8, out ReadOnlySpan<byte> section, out _)

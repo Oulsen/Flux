@@ -22,6 +22,7 @@ import {
 } from './protocol.ts';
 import { BAND_DEFAULT, COLOR_DEFAULT, LAYOUT_DEFAULT, SHAPE_DEFAULT } from './scene.ts';
 import type { ConnectionState } from './socket.ts';
+import type { HeldDeck } from './waveform.ts';
 import {
   clearsPendingSelection,
   resolvePending,
@@ -126,6 +127,12 @@ export class FluxStore {
   preview = $state<PreviewData | null>(null);
 
   /**
+   * The DJ program's deck and when its frame arrived on this page's clock, so the strip
+   * can carry the playhead on between frames. Null while no deck is followed.
+   */
+  deck = $state<HeldDeck | null>(null);
+
+  /**
    * Whether a newer Flux is waiting. Null until the server says, and a host with no
    * updater never does.
    */
@@ -222,6 +229,7 @@ export class FluxStore {
         this.grid = state.grid;
         this.light = state.light;
         this.preview = state.preview ?? null;
+        this.deck = state.deck ? { deck: state.deck, receivedAt: performance.now() } : null;
         this.diagnostics = state.diagnostics;
         this.pendingSource = resolvePending(this.pendingSource, state.source);
 

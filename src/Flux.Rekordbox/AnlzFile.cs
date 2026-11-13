@@ -27,6 +27,12 @@ internal static class AnlzFile {
     return Path.ChangeExtension(datPath, ".EXT");
   }
 
+  /// <summary>The second extended file beside <paramref name="datPath"/>, which holds the 3-band waveforms.</summary>
+  internal static string ThreeBandPath(string datPath) {
+    ArgumentException.ThrowIfNullOrEmpty(datPath);
+    return Path.ChangeExtension(datPath, ".2EX");
+  }
+
   /// <summary>
   /// The first section tagged <paramref name="tag"/>, from its tag onwards, and how long
   /// its own header is. False when the file is not an ANLZ file, is cut short, or has
@@ -58,6 +64,33 @@ internal static class AnlzFile {
     }
 
     return false;
+  }
+
+  /// <summary>
+  /// The entries of a fixed-size table tag - a header whose bytes 12 and 16 give the entry
+  /// size and count, entries after it - when the section holds what its header claims, the
+  /// entry size is <paramref name="entryBytes"/> and the rate word at byte 20 is
+  /// <paramref name="entriesPerSecond"/>. The waveform tags share this layout and differ
+  /// only in what an entry holds.
+  /// </summary>
+  internal static bool TryReadTable(ReadOnlySpan<byte> file, ReadOnlySpan<byte> tag, int entryBytes, int entriesPerSecond, out ReadOnlySpan<byte> entries, out int count) {
+    entries = default;
+    count = 0;
+    const int TableHeaderBytes = 24;
+    if(!TryFindSection(file, tag, out ReadOnlySpan<byte> section, out int header) || header < TableHeaderBytes) {
+      return false;
+    }
+
+    long size = BinaryPrimitives.ReadUInt32BigEndian(section[12..]);
+    long entryCount = BinaryPrimitives.ReadUInt32BigEndian(section[16..]);
+    int rate = BinaryPrimitives.ReadUInt16BigEndian(section[20..]);
+    if(size != entryBytes || rate != entriesPerSecond || entryCount == 0 || header + (entryCount * entryBytes) > section.Length) {
+      return false;
+    }
+
+    count = (int)entryCount;
+    entries = section.Slice(header, count * entryBytes);
+    return true;
   }
 
   /// <summary>

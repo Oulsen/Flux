@@ -26,6 +26,7 @@
     shapeLabel,
   } from '../lib/scene.ts';
   import type { StageData } from '../lib/protocol.ts';
+  import { WAVEFORM_STYLES, type WaveformStyle } from '../lib/preferences.ts';
   import RangeSetting from './RangeSetting.svelte';
 
   interface Props {
@@ -41,11 +42,19 @@
     /** Whether the colour is the engine's preview, because nothing is streaming. */
     previewing: boolean;
     setOn: (on: boolean) => void;
+    /** Whether this device draws the deck strip; local too. */
+    waveformOn: boolean;
+    /** Whether a DJ program's deck is being followed, so the strip has anything to show. */
+    hasDeck: boolean;
+    setWaveformOn: (on: boolean) => void;
+    /** The strip's style, local like its switch. */
+    waveformStyle: WaveformStyle;
+    setWaveformStyle: (style: WaveformStyle) => void;
     /** Names the one field that changed. The caller turns it into the whole record. */
     setStage: (change: Partial<StageData>) => void;
   }
 
-  const { on, stage, lit, previewing, setOn, setStage }: Props = $props();
+  const { on, stage, lit, previewing, setOn, waveformOn, hasDeck, setWaveformOn, waveformStyle, setWaveformStyle, setStage }: Props = $props();
 </script>
 
 <div class="stage-settings">
@@ -59,6 +68,36 @@
 
   {#if !on}
     <p class="hint">Numbers only on this device. Other screens keep their picture.</p>
+  {/if}
+
+  <!-- Local for the same reason: a phone may have no room for it. Offered whether or not
+       a deck is followed, so it can be turned off before the set starts. -->
+  <button type="button" class="switch" role="switch" aria-checked={waveformOn} onclick={() => setWaveformOn(!waveformOn)}>
+    <span class="heading">deck waveform</span>
+    <span class="state" class:on={waveformOn}>{waveformOn ? 'on' : 'off'}</span>
+  </button>
+
+  {#if waveformOn && !hasDeck}
+    <p class="hint">Shown above the beat while rekordbox plays an analysed track.</p>
+  {/if}
+
+  {#if waveformOn}
+    <div class="choice">
+      <span class="name">waveform</span>
+      <div class="options">
+        {#each WAVEFORM_STYLES as style (style)}
+          <button
+            type="button"
+            class="chip"
+            class:chosen={style === waveformStyle}
+            aria-pressed={style === waveformStyle}
+            onclick={() => setWaveformStyle(style)}
+          >
+            {style}
+          </button>
+        {/each}
+      </div>
+    </div>
   {/if}
 
   <!-- Nothing below configures a canvas that is not being drawn, and a phone that asked

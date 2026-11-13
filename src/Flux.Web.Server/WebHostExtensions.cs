@@ -1,6 +1,7 @@
 ﻿using Flux.Audio;
 using Flux.Beat;
 using Flux.Hue;
+using Flux.Web.Server.Protocol;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Hosting;
@@ -95,7 +96,8 @@ public static class WebHostExtensions {
       provider.GetRequiredService<SyncSourceManager>(),
       provider.GetService<HueStreamService>(),
       provider.GetService<LightPreview>(),
-      provider.GetRequiredService<IOptions<WebOptions>>()));
+      provider.GetRequiredService<IOptions<WebOptions>>(),
+      provider.GetService<IDeckView>()));
 
     // Both audio feeds are registered whether or not this build has audio. Each one
     // starts nothing when its seam is absent, which keeps the decision in one place
@@ -179,6 +181,25 @@ public static class WebHostExtensions {
         lifetime.ApplicationStopping);
 
       await hub.ServeAsync(socket, closing.Token).ConfigureAwait(false);
+    });
+
+    // The followed deck's waveform and grid, fetched once per track rather than pushed down
+    // the socket: a track's two waveforms are around 600 KB, which no state frame should carry.
+    // The id is a hash of the track's analysis files, so a response stays true for good and
+    // the page keeps it; a track re-analysed is a new id.
+    app.MapGet("/api/track/{id}", (string id, HttpContext context) => {
+      if(context.RequestServices.GetService<IDeckView>()?.Track(id) is not { } track) {
+        return Results.NotFound();
+      }
+
+      context.Response.Headers.CacheControl = "private, max-age=31536000, immutable";
+      return Results.Json(
+        new TrackData(
+          track.EntriesPerSecond,
+          track.LowMidHigh is { } threeBand ? Convert.ToBase64String(threeBand) : null,
+          track.HeightRgb is { } rgb ? Convert.ToBase64String(rgb) : null,
+          track.BeatTimesMs, track.BeatsInBar),
+        ProtocolJson.Default.TrackData);
     });
 
     ILogger log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Flux.Web.Server");

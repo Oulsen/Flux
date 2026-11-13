@@ -107,6 +107,7 @@ public sealed record DiagnosticsData(
 /// present alongside <paramref name="Light"/>: that stays the one authority on whether
 /// Flux is streaming, and this is the picture for when it is not.
 /// </param>
+/// <param name="Deck">The DJ program's deck being followed and where its playhead is, or null while none is.</param>
 public sealed record StateData(
   string Source,
   string SourceState,
@@ -115,7 +116,22 @@ public sealed record StateData(
   AlignmentData Alignment,
   LightData? Light,
   DiagnosticsData Diagnostics,
-  PreviewData? Preview = null);
+  PreviewData? Preview = null,
+  DeckData? Deck = null);
+
+/// <summary>
+/// The deck being followed, for the page to draw the track's waveform under a playhead.
+///
+/// Sent with every state rather than on a change, like the rest of the snapshot: the page
+/// carries the playhead forward between frames at <paramref name="Rate"/>, and each frame
+/// puts it back where the deck really is.
+/// </summary>
+/// <param name="Number">The deck, counted from 1.</param>
+/// <param name="Track">Opaque: fetch <c>/api/track/{track}</c> for its waveform and grid. Changes when the track or its analysis does.</param>
+/// <param name="PositionMs">Milliseconds into the track at its normal speed, when this frame was composed.</param>
+/// <param name="Rate">Track milliseconds per real millisecond: 1 at normal speed, more with the pitch up.</param>
+/// <param name="Playing">Whether the playhead is moving. A stopped deck's frame repeats where it stopped.</param>
+public sealed record DeckData(int Number, string Track, double PositionMs, double Rate, bool Playing);
 
 /// <summary>
 /// The light engine's output while no stream is open: the same two readings as
@@ -371,3 +387,17 @@ public sealed record ErrorData(string Code, string Message);
 /// error rather than failing the parse of the envelope around it.
 /// </summary>
 public sealed record ClientEnvelope(string? Type, JsonElement Data);
+
+/// <summary>
+/// The body of <c>GET /api/track/{track}</c>: the followed track's waveforms and grid.
+///
+/// The waveforms are base64 strings encoded here rather than byte arrays left to the
+/// serializer, which writes a null array as an empty string: a page told "null means
+/// none" would read that as a waveform with no columns.
+/// </summary>
+/// <param name="EntriesPerSecond">Waveform columns per second of track at normal speed, for both waveforms; 0 when there is neither.</param>
+/// <param name="ThreeBand">Base64 of three bytes per column, low, mid, high, each 0 to 127; null when the track has no 3-band analysis.</param>
+/// <param name="Rgb">Base64 of four bytes per column, height 0 to 31 then red, green, blue each 0 to 7; null when the track has no colour waveform.</param>
+/// <param name="BeatTimesMs">Each beat of the track's grid, in milliseconds into the track.</param>
+/// <param name="BeatsInBar">Each beat's place in its bar, 1 to 4, as the grid says.</param>
+public sealed record TrackData(int EntriesPerSecond, string? ThreeBand, string? Rgb, IReadOnlyList<int> BeatTimesMs, IReadOnlyList<int> BeatsInBar);

@@ -22,6 +22,7 @@ export default defineConfig({
       // The default mirrors Web:Port in src/Flux.App/appsettings.json; when that
       // changes, set FLUX_PORT rather than editing this file.
       '/ws': { target: `ws://localhost:${process.env.FLUX_PORT ?? '5050'}`, ws: true },
+      '/api': { target: `http://localhost:${process.env.FLUX_PORT ?? '5050'}` },
     },
   },
 });

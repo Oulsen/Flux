@@ -157,6 +157,11 @@ unless no build ever sent the field.
 Updating itself added `update`, `checkUpdate` and `applyUpdate`, all new types. An
 older page ignores `update` and never sends the other two, so the version stays 2.
 
+Phase 7 added `state.deck`, the rekordbox deck being followed, and the one HTTP
+request beside the socket, `GET /api/track/{track}`, for its waveform and grid. A new
+field and a new URL: an older page ignores the field and never asks for the URL, so
+the version stays 2.
+
 ## Units and conventions
 
 | Field | Unit |
@@ -258,6 +263,7 @@ changed. It is a snapshot and is never a delta.
 | `light` | object or **null** | Null exactly when Flux is not streaming to a bridge |
 | `diagnostics` | object | Health counters for the active source |
 | `preview` | object or **null** | What the light engine would be sending while nothing streams. **Null whenever `light` is present** |
+| `deck` | object or **null** | The rekordbox deck being followed and where its playhead is. Null while none is, and always in a build that reads no DJ program |
 
 `sourceState` distinguishes three situations that a single boolean would blur:
 
@@ -566,6 +572,59 @@ because a colour split needs lights to divide between and a preview without them
 only ever show the first colour.
 
 Null in a build with no Hue support, which has no engine to preview.
+
+### `state.deck`
+
+The deck the rekordbox source follows, whichever source is active, so the page can
+draw the track's waveform under a playhead and the track's beatgrid over it.
+
+```json
+"deck": { "number": 2, "track": "3f9a0c27d1e84b65", "positionMs": 61250.5, "rate": 1.05, "playing": true }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `number` | int | The deck, counted from 1 as rekordbox shows it. The same deck as `diagnostics.deck` |
+| `track` | string | Opaque. Names the track for `GET /api/track/{track}`, and **changes when the track does, when rekordbox analyses it again, or when a Flux update changes the answer's shape**, so a page fetches once per value and may keep the answer |
+| `positionMs` | number | Where the playhead is, in milliseconds into the track at its normal speed, when this frame was composed. Negative before the audio starts |
+| `rate` | number | Track milliseconds per real millisecond: 1 at normal speed, 1.05 with the pitch 5% up |
+| `playing` | bool | Whether the playhead is moving. A stopped deck repeats where it stopped |
+
+Sent with every `state` rather than on a change, like the rest of the snapshot. Between
+frames a page carries the playhead on as `positionMs + elapsed * rate` while `playing`,
+and lets each new frame correct it. Flux itself carries it on from rekordbox's last
+read to the moment the frame is composed, so a frame is not up to a read behind.
+
+Null until a track with a beatgrid is followed: rekordbox not running, no deck playing
+and none named master, a track not analysed. A track with a grid and no 3-band
+analysis has a `deck`; its waveform is simply absent from the track below.
+
+### `GET /api/track/{track}`
+
+The one request outside the socket: the followed track's waveforms and grid, fetched
+once per `state.deck.track` rather than pushed, because the two waveforms come to
+around 600 KB and the socket carries 20 snapshots a second. Same origin as the page.
+
+```json
+{ "entriesPerSecond": 150, "threeBand": "BAsGBQoF...", "rgb": "AAEDBwIF...", "beatTimesMs": [-1, 468, 937], "beatsInBar": [3, 4, 1] }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `entriesPerSecond` | int | Waveform columns per second of track at normal speed, for both waveforms: 150. 0 when the track has neither |
+| `threeBand` | string or **null** | rekordbox's 3-band waveform. Base64 of three bytes per column, **low, mid, high** in that order, each 0 to 127. Null when the track has no 3-band analysis |
+| `rgb` | string or **null** | rekordbox's RGB waveform, the one its RGB view draws. Base64 of four bytes per column: **height** 0 to 31, then **red, green, blue** each 0 to 7. Null when the track has none |
+| `beatTimesMs` | array of int | Each beat of the track's grid, milliseconds into the track. Can start just below 0 |
+| `beatsInBar` | array of int | Each beat's place in its bar, 1 to 4, as the track's grid says. Same length as `beatTimesMs` |
+
+**404 for any `track` but the one followed now.** The id is a hash of the track's
+analysis files, not a path, and only the track on the deck can be asked for, so the
+request never has Flux open a file of the caller's choosing. A 200 is the same bytes
+for as long as the id exists, and is sent as `private, max-age=31536000, immutable`.
+
+rekordbox stores a 3-band column mid, high, low, and an RGB column as one packed
+16-bit word; Flux reorders the first to the low-to-high order every other band in this
+protocol uses and unpacks the second into a byte a field. See `docs/rekordbox-anlz.md`.
 
 ### `state.diagnostics`
 

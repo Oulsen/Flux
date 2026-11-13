@@ -403,5 +403,6 @@ public static class Frames {
 [JsonSerializable(typeof(Envelope<EchoData>))]
 [JsonSerializable(typeof(Envelope<ErrorData>))]
 [JsonSerializable(typeof(ClientEnvelope))]
+[JsonSerializable(typeof(TrackData))]
 internal sealed partial class ProtocolJson: JsonSerializerContext {
 }

@@ -25,9 +25,11 @@ than the file has.
 |---|---|---|
 | `PQTZ` | `.DAT` | `AnlzBeatGrid` |
 | `PSSI` | `.EXT` | `AnlzPhrases` |
+| `PWV5` | `.EXT` | `AnlzColorWaveformReader` |
+| `PWV7` | `.2EX` | `AnlzWaveformReader` |
 
 `PSSI` is in the `.EXT`, not the `.2EX`, which holds the 3-band waveforms (`PWV6`,
-`PWV7`) that Phase 6 step 7 reads.
+`PWV7`).
 
 ## Beatgrid: `PQTZ`
 
@@ -116,6 +118,44 @@ every phrase start names the wrong beat. The rekordbox source keeps a track's ph
 when their end is no more than one beat past the grid and at least two thirds of the
 way through it, which sits in the empty ground on both sides.
 
+## Colour detail waveform: `PWV5`
+
+What rekordbox draws in its RGB waveform view. Header 24 bytes: entry size at byte 12,
+entry count at 16, then a word at 20. Each entry is one big-endian 16-bit word: red in
+bits 15-13, green in 12-10, blue in 9-7, height in 6-2, per the notes.
+
+Found in the library, not in the notes:
+
+- **The word at 20 is `00 96 03 05`** in all 5,489 tags: 150 entries a second, as for
+  `PWV7`, and a second half that is not explained. The reader refuses any other rate.
+- **Bits 1-0 are always 0**, across 12 million entries in 400 tracks surveyed, and every
+  field reaches its full range: 0 to 7 for each colour, 0 to 31 for the height. A field
+  in the wrong place would leave some range unused or set a low bit, so this is the
+  check on the layout. The reader refuses a word with either low bit set.
+- **The entry size is always 2**, and the count times 2 fills the tag exactly.
+- 19 tracks have an `.EXT` with no `PWV5`, and the page draws their 3-band waveform.
+
+## 3-band detail waveform: `PWV7`
+
+Header 24 bytes: entry size at byte 12, entry count at 16, and at 20 a word the notes
+call unknown and say "may always" be `00 96 00 00`. Each entry is three heights, one
+byte each, mid, high and low in that order per the notes.
+
+Found in the library, not in the notes:
+
+- **The file is the `.2EX`.** The notes put `PWV7` in the `.EXT` in one place; every
+  library file has it in the `.2EX`, beside `PWV6` and `PWVC`, and none in the `.EXT`.
+- **The unknown word is the rate.** All 5,480 tags have `00 96 00 00`, and `0x96` is
+  150: the entries per second the notes give elsewhere. The reader refuses any other
+  value rather than drawing a track at the wrong speed.
+- **Heights run 0 to 127** in every band, never higher, so the top bit is unused. The
+  reader refuses a height above 127.
+- **The entry size is always 3**, and the count times 3 always fills the tag exactly.
+
+Which byte is which band is the notes' word, not a measurement. The check still owed
+is the one the page makes possible: the strip drawn beside rekordbox's own waveform
+for the same track, where a swapped pair of bands shows as treble where the kicks are.
+
 ## How it was checked
 
 Every analysis file in a rekordbox 7.2.19 library (5,529 tracks) was read with a
@@ -123,4 +163,6 @@ throwaway script, then with the reader itself. `AnlzLibraryTests` repeats the se
 pass on any machine that has a rekordbox library: every non-empty grid and every
 phrase tag has to read, and phrases have to start on beat 1 far more often than
 chance. It skips in CI, because the files are somebody's music. The byte-built
-fixtures in `AnlzFixture` cover each rule above on their own.
+fixtures in `AnlzFixture` cover each rule above on their own. Two more passes read the
+waveforms the same way: every `PWV5` in an `.EXT` and every `PWV7` in a `.2EX` has to
+read, and a `PWV7`'s length at 150 entries a second has to reach the track's last beat.
