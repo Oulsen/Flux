@@ -19,6 +19,7 @@
   import AnchorPad from './components/AnchorPad.svelte';
   import BarShift from './components/BarShift.svelte';
   import UpdateNotice from './components/UpdateNotice.svelte';
+  import WaveformStrip from './components/WaveformStrip.svelte';
   import { stagePhrase } from './lib/diagnostics.ts';
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
@@ -29,8 +30,13 @@
     browserStorage,
     readDrawerTab,
     readStageOn,
+    readWaveformStyle,
+    readWaveformOn,
     writeDrawerTab,
     writeStageOn,
+    writeWaveformOn,
+    writeWaveformStyle,
+    type WaveformStyle,
     type DrawerTab,
   } from './lib/preferences.ts';
   import { FluxSocket, socketUrl } from './lib/socket.ts';
@@ -60,6 +66,10 @@
    * the drawer, for the phone that genuinely wants the numbers and nothing else.
    */
   let stageOn = $state(readStageOn(storage));
+
+  /** Whether this device draws the deck strip when a deck is followed; local, like the stage switch. */
+  let waveformOn = $state(readWaveformOn(storage));
+  let waveformStyle = $state<WaveformStyle>(readWaveformStyle(storage));
 
   /** Closed by default, so nothing subscribes to the device feed unasked. */
   let devicesOpen = $state(false);
@@ -245,6 +255,16 @@
   function setStageOn(on: boolean): void {
     stageOn = on;
     writeStageOn(storage, on);
+  }
+
+  function setWaveformOn(on: boolean): void {
+    waveformOn = on;
+    writeWaveformOn(storage, on);
+  }
+
+  function setWaveformStyle(style: WaveformStyle): void {
+    waveformStyle = style;
+    writeWaveformStyle(storage, style);
   }
 
   /**
@@ -499,6 +519,14 @@
     same width - and they never are. The beat dots drifted right by however much wider
     the BPM was than the frame rate.
   -->
+  <!-- Between the look panel and the readings it explains: the beat dots count Flux's
+       bars, and the strip shows where those bars fall on the track. -->
+  {#if waveformOn && store.deck !== null}
+    <div class="deck">
+      <WaveformStrip held={store.deck} grid={store.grid} aligned={store.alignment.aligned} quantum={store.quantum} style={waveformStyle} />
+    </div>
+  {/if}
+
   <div class="row bottom">
     <div class="cluster left">
       <BpmReadout bpm={store.grid?.bpm ?? null} stale={store.sourceState === 'quiet'} />
@@ -690,6 +718,11 @@
     <section class="panel">
       <StagePanel
         on={stageOn}
+        {waveformOn}
+        hasDeck={store.deck !== null}
+        setWaveformOn={setWaveformOn}
+        {waveformStyle}
+        {setWaveformStyle}
         {stage}
         lit={store.light?.color !== undefined}
         previewing={store.light === null && store.preview !== null}
@@ -791,7 +824,7 @@
     inset: 0;
     z-index: 1;
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto 1fr auto auto;
 
     /* At least zero rather than the implicit auto, which grows to fit min-content: a
        badge that cannot shrink then made the whole HUD wider than a phone, and the
@@ -874,8 +907,13 @@
     gap: var(--gap);
   }
 
-  .bottom {
+  .deck {
     grid-row: 3;
+    margin-bottom: var(--space-3);
+  }
+
+  .bottom {
+    grid-row: 4;
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: end;

@@ -300,6 +300,38 @@ export interface StateData {
    * never treat it as a sign that the room is lit.
    */
   preview: PreviewData | null;
+  /**
+   * The DJ program's deck being followed and where its playhead is; null while none is,
+   * and in a build that reads no DJ program. Absent from a server older than the field.
+   */
+  deck?: DeckData | null;
+}
+
+/** The deck followed, sent with every state. See `docs/protocol.md`. */
+export interface DeckData {
+  /** The deck, counted from 1. */
+  number: number;
+  /** Opaque: fetch `/api/track/{track}` for the waveform and grid. Changes with the track or its analysis. */
+  track: string;
+  /** Milliseconds into the track at normal speed, when the frame was composed. */
+  positionMs: number;
+  /** Track milliseconds per real millisecond: 1 at normal speed. */
+  rate: number;
+  /** Whether the playhead is moving. */
+  playing: boolean;
+}
+
+/** The body of `/api/track/{track}`. */
+export interface TrackData {
+  /** Waveform columns per second of track, for both waveforms; 0 with neither. */
+  entriesPerSecond: number;
+  /** rekordbox's 3-band waveform: base64 of three bytes per column, low, mid, high, each 0 to 127; null without one. */
+  threeBand: string | null;
+  /** rekordbox's RGB waveform: base64 of four bytes per column, height 0 to 31 then red, green, blue each 0 to 7; null without one. */
+  rgb: string | null;
+  beatTimesMs: number[];
+  /** Each beat's place in its bar, 1 to 4, as the track's grid says. */
+  beatsInBar: number[];
 }
 
 /**

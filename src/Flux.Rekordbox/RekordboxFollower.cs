@@ -164,6 +164,9 @@ internal sealed class RekordboxFollower {
 
   private long? lastPosition;
   private double lastMovedMicros;
+
+  /// <summary>The followed deck's tempo at the last read that had one, pitch included, for how fast its playhead runs.</summary>
+  private double? lastBpm;
   /// <summary>The timeline last published and not withdrawn: what the manager holds for this source.</summary>
   private BeatTimeline? held;
 
@@ -204,6 +207,38 @@ internal sealed class RekordboxFollower {
   internal (int? Deck, string? Detail, string? Phrase) Describe() {
     lock(this.gate) {
       return (this.master + 1, this.detail, this.DescribePhrase());
+    }
+  }
+
+  /// <summary>
+  /// The deck followed, for the page to draw: its track's analysis file and grid, and
+  /// where its playhead is at <paramref name="nowMicros"/>. Null while no track with a
+  /// grid is followed.
+  ///
+  /// The playhead is carried forward from the last read it moved in, at the deck's own
+  /// speed, so a page sampling this between reads sees it move smoothly rather than in
+  /// 5 ms steps. A deck no longer moving is where it stopped.
+  /// </summary>
+  internal DeckPlayhead? Playhead(double nowMicros) {
+    lock(this.gate) {
+      if(this.master is not { } deck || this.trackPath is not { } path || this.grid is not { Count: > 0 } beats || this.lastPosition is not { } position) {
+        return null;
+      }
+
+      double ms = position / SamplesPerMs;
+      double rate = 1.0;
+      if(this.lastBpm is { } bpm) {
+        int at = (int)Math.Clamp(Math.Floor(BeatgridPosition.BeatAt(beats, ms)), 0, beats.Count - 1);
+        rate = beats[at].Bpm > 0 ? bpm / beats[at].Bpm : 1.0;
+      }
+
+      double since = nowMicros - this.lastMovedMicros;
+      bool playing = this.held is not null && since <= StoppedAfterMicros;
+      if(playing) {
+        ms += Math.Max(0, since) / 1000.0 * rate;
+      }
+
+      return new DeckPlayhead(deck + 1, path, beats, ms, rate, playing);
     }
   }
 
@@ -379,6 +414,7 @@ internal sealed class RekordboxFollower {
       return;
     }
 
+    this.lastBpm = read.Bpm.Value;
     bool moved = position != this.lastPosition;
     this.lastPosition = position;
     if(moved) {
@@ -617,6 +653,7 @@ internal sealed class RekordboxFollower {
     this.incomplete = false;
     this.lastBeat = null;
     this.lastPosition = null;
+    this.lastBpm = null;
   }
 
   private void Silence(string why) {
@@ -629,6 +666,13 @@ internal sealed class RekordboxFollower {
 
     this.WithdrawPhrases();
   }
+
+  /// <summary>
+  /// The deck followed, from 1, the <c>.DAT</c> its track's analysis is in, the track's
+  /// grid, and the playhead: milliseconds into the track at normal speed, how many of
+  /// those pass per millisecond at the deck's pitch, and whether it is moving.
+  /// </summary>
+  internal sealed record DeckPlayhead(int Deck, string TrackPath, IReadOnlyList<AnlzBeat> Grid, double PositionMs, double Rate, bool Playing);
 
   /// <summary>What a track's analysis files hold for the follower, why there are no phrases when there are none, and whether they are worth reading again.</summary>
   private readonly record struct TrackFiles(IReadOnlyList<AnlzBeat>? Grid, AnlzPhraseList? Phrases, string? PhraseNote, bool Incomplete);

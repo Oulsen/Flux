@@ -144,7 +144,31 @@ public sealed class StateSnapshotTests {
     Assert.Equal("waiting", state.SourceState);
   }
 
-  private static Rig NewRig(string defaultSource) {
+  [Fact]
+  public void CarriesTheDeckWhenThereIsOneAndNullWhenThereIsNot() {
+    var decks = new FakeDeckView();
+    BeatBroadcaster broadcaster = NewRig(defaultSource: "link", decks).Broadcaster;
+    Assert.Null(broadcaster.Sample().Deck);
+
+    decks.Now = new DeckPlayhead(2, "0123456789abcdef", 61_250.5, 1.05, Playing: true);
+
+    Assert.Equal(new DeckData(2, "0123456789abcdef", 61_250.5, 1.05, Playing: true), broadcaster.Sample().Deck);
+  }
+
+  [Fact]
+  public void HasNoDeckInABuildThatReadsNoDjProgram() {
+    Assert.Null(NewRig(defaultSource: "link").Broadcaster.Sample().Deck);
+  }
+
+  private sealed class FakeDeckView: IDeckView {
+    internal DeckPlayhead? Now { get; set; }
+
+    public DeckPlayhead? Playhead() => this.Now;
+
+    public DeckTrack? Track(string track) => null;
+  }
+
+  private static Rig NewRig(string defaultSource, IDeckView? decks = null) {
     MonotonicClock clock = new MonotonicClock();
     BeatOptions beat = new BeatOptions { DefaultSource = defaultSource };
     BeatGrid grid = new BeatGrid(clock, beat.Quantum, beat.StaleAfter);
@@ -162,7 +186,8 @@ public sealed class StateSnapshotTests {
       sources,
       stream: null,
       preview: null,
-      Options.Create(new WebOptions()));
+      Options.Create(new WebOptions()),
+      decks);
 
     return new Rig(broadcaster, sources);
   }

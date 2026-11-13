@@ -55,6 +55,43 @@ public sealed class WireFormatTests {
   }
 
   [Fact]
+  public void StateCarriesTheDeckAndSaysNullWhenThereIsNone() {
+    StateData state = new StateData(
+      "rekordbox",
+      "live",
+      [],
+      Grid: null,
+      new AlignmentData(Aligned: true, Method: "rekordbox"),
+      Light: null,
+      new DiagnosticsData(0.0),
+      Preview: null,
+      new DeckData(2, "0123456789abcdef", 61_250.5, 1.05, Playing: true));
+
+    JsonElement deck = Payload(Frames.State(state), "state").GetProperty("deck");
+    Assert.Equal(2, deck.GetProperty("number").GetInt32());
+    Assert.Equal("0123456789abcdef", deck.GetProperty("track").GetString());
+    Assert.Equal(61_250.5, deck.GetProperty("positionMs").GetDouble());
+    Assert.Equal(1.05, deck.GetProperty("rate").GetDouble());
+    Assert.True(deck.GetProperty("playing").GetBoolean());
+
+    Assert.Equal(JsonValueKind.Null, Payload(Frames.State(state with { Deck = null }), "state").GetProperty("deck").ValueKind);
+  }
+
+  /// <summary>The track body: each waveform as base64 of its bytes or null, and the grid as two arrays of the same length.</summary>
+  [Fact]
+  public void TrackDataSendsTheWaveformsAsBase64AndTheGridAsArrays() {
+    var track = new TrackData(150, Convert.ToBase64String([30, 10, 20]), Rgb: null, [-1, 499], [3, 4]);
+
+    JsonElement body = JsonDocument.Parse(JsonSerializer.Serialize(track, ProtocolJson.Default.TrackData)).RootElement;
+
+    Assert.Equal(150, body.GetProperty("entriesPerSecond").GetInt32());
+    Assert.Equal(Convert.ToBase64String([30, 10, 20]), body.GetProperty("threeBand").GetString());
+    Assert.Equal(JsonValueKind.Null, body.GetProperty("rgb").ValueKind);
+    Assert.Equal([-1, 499], body.GetProperty("beatTimesMs").EnumerateArray().Select(beat => beat.GetInt32()));
+    Assert.Equal([3, 4], body.GetProperty("beatsInBar").EnumerateArray().Select(beat => beat.GetInt32()));
+  }
+
+  [Fact]
   public void StateNamesEveryFieldTheDocumentPromises() {
     StateData state = new StateData(
       "link",

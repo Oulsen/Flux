@@ -107,6 +107,13 @@ numbers nobody has ever heard.
   message, so write it as one. `develop` is not the default branch, so open
   each PR with `--base develop` and write `Refs #N`, not `Fixes #N`: a
   closing keyword does nothing outside the default branch.
+- Every PR: `/pr`, then `/code-review` on the opened PR (Claude Code's built-in
+  review), so the whole diff is read before the merge. Findings
+  are fixed as new commits on the PR or named in its description, and Claude
+  checks the fixes itself, with no second review pass. A docs-only PR gets no
+  review agent: Claude reads it for consistency and correctness instead. The
+  user merges. The release PR `develop` to `main` gets one final `/code-review`
+  before `main` is moved.
 - `main` holds releases and is the default branch. A release moves `main`
   forward to `develop`'s tip with `git push origin <commit>:main`, which only
   a fast-forward passes, so `main` and `develop` are the same commit after a

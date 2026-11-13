@@ -140,6 +140,10 @@ Around them:
 - With light sync off, the stage previews the look in the colours the lights
   would get, laid out like the room, so palettes can be judged with no bulbs on
   or no bridge at all.
+- With rekordbox playing an analysed track, a strip above the beat shows the
+  master deck's waveform scrolling under a playhead, in rekordbox's RGB or 3-band
+  colours or Flux's own, with the track's beatgrid and Flux's bar 1 over it: a
+  bar 1 off the track's downbeat is something to see rather than hear.
 - A phone can switch the visualizer off and keep the numbers.
 - The page reconnects by itself through a Flux restart or a Wi-Fi drop.
 - State, beats, spectrum and bridge status travel over a WebSocket, specified in
@@ -212,8 +216,8 @@ The rekordbox source reads, and never writes:
 
 - the running rekordbox's memory, on the same machine, for the master deck's
   tempo, playhead and analysis file;
-- the analysis files rekordbox writes for each track, for its beatgrid and
-  phrases.
+- the analysis files rekordbox writes for each track, for its beatgrid,
+  phrases and waveforms.
 
 It does not modify rekordbox, does not open its encrypted library database, and
 gets around no protection. It needs nothing from the network. `Rekordbox:Enabled`

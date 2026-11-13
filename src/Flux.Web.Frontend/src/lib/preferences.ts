@@ -16,6 +16,12 @@
 /** Whether the stage is drawn. Namespaced, because a browser origin is shared. */
 const STAGE_KEY = 'flux.stage';
 
+/** Whether this device draws the deck strip. Local for the reason the stage switch is. */
+const WAVEFORM_KEY = 'flux.waveform';
+
+/** Which of rekordbox's waveforms the deck strip draws, and in whose colours. */
+const WAVEFORM_STYLE_KEY = 'flux.waveformStyle';
+
 /** Which settings tab was open last. */
 const DRAWER_TAB_KEY = 'flux.drawerTab';
 
@@ -55,6 +61,41 @@ export interface PreferenceStore {
  */
 export function readStageOn(storage: PreferenceStore | null): boolean {
   return read(storage, STAGE_KEY) !== 'off';
+}
+
+/**
+ * Whether the deck strip is drawn, when there is a deck to draw. On unless turned off:
+ * it only appears while a DJ program is being followed, which is when it is wanted, and
+ * a screen with no room for it can say so once.
+ */
+export function readWaveformOn(storage: PreferenceStore | null): boolean {
+  return read(storage, WAVEFORM_KEY) !== 'off';
+}
+
+/** Remembers the choice, or silently does not. */
+export function writeWaveformOn(storage: PreferenceStore | null, on: boolean): void {
+  write(storage, WAVEFORM_KEY, on ? 'on' : 'off');
+}
+
+/**
+ * The deck strip's style, after rekordbox's own waveform views: `rgb`, its colour
+ * waveform; `3-band`, its 3-band waveform in its blue, amber and white; and `flux`, the
+ * 3-band waveform in Flux's blues. RGB is the default because it is rekordbox's, so the
+ * strip looks like the deck on the screen beside it unless somebody chose otherwise.
+ */
+export const WAVEFORM_STYLES = ['rgb', '3-band', 'flux'] as const;
+
+export type WaveformStyle = (typeof WAVEFORM_STYLES)[number];
+
+/** RGB unless another style was chosen; anything else stored reads as the default. */
+export function readWaveformStyle(storage: PreferenceStore | null): WaveformStyle {
+  const saved = read(storage, WAVEFORM_STYLE_KEY);
+  return WAVEFORM_STYLES.find((style) => style === saved) ?? 'rgb';
+}
+
+/** Remembers the choice, or silently does not. */
+export function writeWaveformStyle(storage: PreferenceStore | null, style: WaveformStyle): void {
+  write(storage, WAVEFORM_STYLE_KEY, style);
 }
 
 /** Remembers the choice, or silently does not. */

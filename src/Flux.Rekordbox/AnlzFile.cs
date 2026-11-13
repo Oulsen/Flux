@@ -27,6 +27,12 @@ internal static class AnlzFile {
     return Path.ChangeExtension(datPath, ".EXT");
   }
 
+  /// <summary>The second extended file beside <paramref name="datPath"/>, which holds the 3-band waveforms.</summary>
+  internal static string ThreeBandPath(string datPath) {
+    ArgumentException.ThrowIfNullOrEmpty(datPath);
+    return Path.ChangeExtension(datPath, ".2EX");
+  }
+
   /// <summary>
   /// The first section tagged <paramref name="tag"/>, from its tag onwards, and how long
   /// its own header is. False when the file is not an ANLZ file, is cut short, or has

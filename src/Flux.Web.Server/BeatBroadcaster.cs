@@ -55,6 +55,9 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
   /// <summary>Null in a build with no Hue support, which has no engine to preview either.</summary>
   private readonly LightPreview? preview;
 
+  /// <summary>The DJ program's deck, when this build reads one.</summary>
+  private readonly IDeckView? decks;
+
   private readonly Channel<BeatEvent> beats = Channel.CreateBounded<BeatEvent>(
     new BoundedChannelOptions(BeatQueueCapacity) {
       FullMode = BoundedChannelFullMode.DropOldest,
@@ -73,7 +76,8 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
     SyncSourceManager sources,
     HueStreamService? stream,
     LightPreview? preview,
-    IOptions<WebOptions> options) {
+    IOptions<WebOptions> options,
+    IDeckView? decks = null) {
     ArgumentNullException.ThrowIfNull(options);
 
     this.hub = hub ?? throw new ArgumentNullException(nameof(hub));
@@ -83,6 +87,7 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
     this.stream = stream;
     this.preview = preview;
     this.options = options.Value;
+    this.decks = decks;
   }
 
   public Task StartAsync(CancellationToken cancellationToken) {
@@ -221,7 +226,8 @@ public sealed class BeatBroadcaster: IHostedService, IDisposable {
 
       light,
       Counters(active.Diagnostics, snapshot.MaxReanchorJumpBeats),
-      light is null ? this.Previewing() : null);
+      light is null ? this.Previewing() : null,
+      this.decks?.Playhead() is { } deck ? new DeckData(deck.Deck, deck.Track, deck.PositionMs, deck.Rate, deck.Playing) : null);
   }
 
   /// <summary>

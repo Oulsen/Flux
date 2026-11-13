@@ -631,6 +631,42 @@ public class RekordboxFollowerTests {
     Assert.True(rig.Follower.Published().Ever);
   }
 
+  [Fact]
+  public void CarriesThePlayheadOnAtTheDecksPitchBetweenReads() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+
+    // The grid's 120 played at 126: 5% up, so 5 ms on the clock is 5.25 ms of track.
+    rig.Play(deck: 1, fromMs: 1000, forMs: 50, bpm: 126f);
+
+    RekordboxFollower.DeckPlayhead playhead = rig.Follower.Playhead(rig.Clock.NowMicros)!;
+    Assert.Equal(2, playhead.Deck);
+    Assert.Equal(TrackA, playhead.TrackPath);
+    Assert.Equal(1.05, playhead.Rate, precision: 6);
+    Assert.True(playhead.Playing);
+    Assert.Equal(1050 + (5 * 1.05), playhead.PositionMs, precision: 1);
+  }
+
+  [Fact]
+  public void LeavesAStoppedPlayheadWhereItStopped() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1);
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+
+    rig.Hold(deck: 0, atMs: 1050, forMs: 400);
+
+    RekordboxFollower.DeckPlayhead playhead = rig.Follower.Playhead(rig.Clock.NowMicros)!;
+    Assert.False(playhead.Playing);
+    Assert.Equal(1050, playhead.PositionMs, precision: 1);
+  }
+
+  [Fact]
+  public void HasNoPlayheadForATrackWithoutAGrid() {
+    using var rig = new Rig(active: "rekordbox", firstBeatInBar: 1, withGrid: false);
+
+    rig.Play(deck: 0, fromMs: 1000, forMs: 50);
+
+    Assert.Null(rig.Follower.Playhead(rig.Clock.NowMicros));
+  }
+
   /// <summary>Long enough of playing for the follower to look for a track's missing analysis again.</summary>
   private static double RetryMs => (RekordboxFollower.ReloadAfterMicros / 1000) + 10;
 

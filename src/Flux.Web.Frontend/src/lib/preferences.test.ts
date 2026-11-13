@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readDrawerTab, readStageOn, writeDrawerTab, writeStageOn, type PreferenceStore } from './preferences.ts';
+import {
+  readDrawerTab,
+  readStageOn,
+  readWaveformStyle,
+  readWaveformOn,
+  writeDrawerTab,
+  writeStageOn,
+  writeWaveformStyle,
+  writeWaveformOn,
+  type PreferenceStore,
+} from './preferences.ts';
 
 function store(initial: Record<string, string> = {}): PreferenceStore & { items: Record<string, string> } {
   const items = { ...initial };
@@ -57,6 +67,26 @@ test('storage that throws cannot stop the page from starting', () => {
   // takes the beat display down with it - to remember a preference.
   assert.equal(readStageOn(hostile()), true);
   assert.doesNotThrow(() => writeStageOn(hostile(), false));
+});
+
+test('the deck strip is on until this device turns it off, under a key of its own', () => {
+  const saved = store();
+  assert.equal(readWaveformOn(saved), true);
+
+  writeWaveformOn(saved, false);
+  assert.equal(readWaveformOn(saved), false);
+  assert.equal(readStageOn(saved), true);
+  assert.equal(readWaveformOn(hostile()), true);
+});
+
+test("the deck strip draws rekordbox's RGB waveform until another style is chosen", () => {
+  const saved = store();
+  assert.equal(readWaveformStyle(saved), 'rgb');
+
+  writeWaveformStyle(saved, '3-band');
+  assert.equal(readWaveformStyle(saved), '3-band');
+  assert.equal(readWaveformStyle(store({ 'flux.waveformStyle': 'nonsense' })), 'rgb');
+  assert.equal(readWaveformStyle(hostile()), 'rgb');
 });
 
 test('the drawer opens on lights until another tab has been chosen', () => {

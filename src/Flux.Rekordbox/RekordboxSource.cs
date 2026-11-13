@@ -2,6 +2,8 @@ using Flux.Beat;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Flux.Rekordbox;
 
@@ -42,8 +44,31 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
   private readonly ILogger<RekordboxSource> log;
   private readonly RekordboxFollower follower;
 
+  /// <summary>
+  /// How long a track's id is trusted before the files' write times are looked at again.
+  /// Flux's own number: rekordbox can analyse a loaded track, and a page should get the
+  /// new waveform within a moment of it, without the disk being asked 20 times a second.
+  /// </summary>
+  private static readonly TimeSpan TrackIdFor = TimeSpan.FromSeconds(2);
+
+  /// <summary>
+  /// Part of every track id, raised whenever what <see cref="Track"/> answers changes
+  /// shape. The page keeps an answer for good under its id, so a new build that answered
+  /// the same id differently would be read with the old answer: a page that had cached a
+  /// track before the colour waveform was added drew no waveform at all after it.
+  /// </summary>
+  private const int TrackFormat = 2;
+
   /// <summary>The last sentence logged, so a state that lasts is logged once rather than on every read.</summary>
   private string? logged;
+
+  private readonly object trackGate = new object();
+
+  /// <summary>The followed track's analysis path, its id, and when the id was worked out.</summary>
+  private (string Path, string Id, double AtMicros)? named;
+
+  /// <summary>The last track handed to the page, kept because each page that opens asks for it.</summary>
+  private RekordboxTrack? served;
 
   public RekordboxSource(
     SyncSourceManager sources,
@@ -86,6 +111,54 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
 
     bool quiet = this.clock.NowMicros - at > this.staleAfterMicros;
     return new SyncSourceStatus(quiet ? SyncSourceState.Quiet : SyncSourceState.Live, Confidence: 1, diagnostics);
+  }
+
+  /// <summary>
+  /// The deck followed and where its playhead is now, or null while no analysed track is
+  /// followed. Its <see cref="RekordboxDeck.TrackId"/> is what <see cref="Track"/> takes.
+  /// </summary>
+  public RekordboxDeck? Deck() {
+    if(this.follower.Playhead(this.clock.NowMicros) is not { } playhead) {
+      return null;
+    }
+
+    return new RekordboxDeck(playhead.Deck, this.IdOf(playhead.TrackPath), playhead.PositionMs, playhead.Rate, playhead.Playing);
+  }
+
+  /// <summary>
+  /// The followed track's waveform and grid, when <paramref name="trackId"/> names the
+  /// track followed now; null for any other. Only the track on the deck can be asked for,
+  /// so an id is never a way to have Flux open a file of the caller's choosing.
+  /// </summary>
+  public RekordboxTrack? Track(string trackId) {
+    ArgumentNullException.ThrowIfNull(trackId);
+    if(this.follower.Playhead(this.clock.NowMicros) is not { } playhead || this.IdOf(playhead.TrackPath) != trackId) {
+      return null;
+    }
+
+    lock(this.trackGate) {
+      if(this.served is { } kept && kept.TrackId == trackId) {
+        return kept;
+      }
+    }
+
+    // Both waveforms are 150 columns a second - each reader refuses any other rate - so
+    // one rate describes whichever of them the track has.
+    AnlzWaveform? threeBand = AnlzWaveformReader.Read(AnlzFile.ThreeBandPath(playhead.TrackPath));
+    AnlzColorWaveform? rgb = AnlzColorWaveformReader.Read(AnlzFile.ExtendedPath(playhead.TrackPath));
+    var track = new RekordboxTrack(
+      trackId,
+      threeBand?.EntriesPerSecond ?? rgb?.EntriesPerSecond ?? 0,
+      threeBand?.LowMidHigh,
+      rgb?.HeightRgb,
+      [.. playhead.Grid.Select(beat => beat.TimeMs)],
+      [.. playhead.Grid.Select(beat => beat.BeatInBar)]);
+
+    lock(this.trackGate) {
+      this.served = track;
+    }
+
+    return track;
   }
 
   public override void Dispose() {
@@ -165,6 +238,39 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
     }
   }
 
+  /// <summary>
+  /// An id for the track whose analysis is at <paramref name="path"/>: a hash of the path,
+  /// of when its three analysis files were last written and of <see cref="TrackFormat"/>,
+  /// so the page can keep a track's data for good and still fetch it again once rekordbox
+  /// has re-analysed it or Flux answers in a new shape.
+  /// Hashed rather than the path itself, which names the user's folders and has no
+  /// business in a URL.
+  /// </summary>
+  private string IdOf(string path) {
+    double now = this.clock.NowMicros;
+    lock(this.trackGate) {
+      if(this.named is { } known && known.Path == path && now - known.AtMicros < TrackIdFor.TotalMicroseconds) {
+        return known.Id;
+      }
+    }
+
+    string stamp = $"{TrackFormat}|{path}|{WrittenTicks(path)}|{WrittenTicks(AnlzFile.ExtendedPath(path))}|{WrittenTicks(AnlzFile.ThreeBandPath(path))}";
+    string id = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(stamp)))[..16];
+    lock(this.trackGate) {
+      this.named = (path, id, now);
+    }
+
+    return id;
+
+    static long WrittenTicks(string file) {
+      try {
+        return File.GetLastWriteTimeUtc(file).Ticks;
+      } catch(Exception error) when(error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) {
+        return 0;
+      }
+    }
+  }
+
   private void Lose(string why) {
     this.follower.Lose(why);
     this.LogDetail();
@@ -184,3 +290,24 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
     }
   }
 }
+
+/// <summary>
+/// The deck rekordbox is followed on, for the page to draw.
+/// </summary>
+/// <param name="Deck">The deck, counted from 1 as rekordbox shows it.</param>
+/// <param name="TrackId">Names the track for <see cref="RekordboxSource.Track"/>; changes when the track does, or is analysed again.</param>
+/// <param name="PositionMs">Where the playhead is, in milliseconds into the track at its normal speed.</param>
+/// <param name="Rate">Track milliseconds per real millisecond: 1 at normal speed, more with the pitch up.</param>
+/// <param name="Playing">Whether the playhead is moving.</param>
+public sealed record RekordboxDeck(int Deck, string TrackId, double PositionMs, double Rate, bool Playing);
+
+/// <summary>
+/// What the page draws of a track: rekordbox's two detail waveforms and its beatgrid.
+/// </summary>
+/// <param name="TrackId">The id it was asked for by.</param>
+/// <param name="EntriesPerSecond">Waveform columns per second of track, for both waveforms; 0 when there is neither.</param>
+/// <param name="LowMidHigh">Three heights per column, low, mid and high, each 0 to 127; null when the track has no 3-band analysis.</param>
+/// <param name="HeightRgb">Four bytes per column, height 0 to 31 then red, green, blue each 0 to 7; null when the track has no colour waveform.</param>
+/// <param name="BeatTimesMs">Each beat of the grid, in milliseconds into the track.</param>
+/// <param name="BeatsInBar">Each beat's place in its bar, 1 to 4, as rekordbox's grid says.</param>
+public sealed record RekordboxTrack(string TrackId, int EntriesPerSecond, byte[]? LowMidHigh, byte[]? HeightRgb, IReadOnlyList<int> BeatTimesMs, IReadOnlyList<int> BeatsInBar);

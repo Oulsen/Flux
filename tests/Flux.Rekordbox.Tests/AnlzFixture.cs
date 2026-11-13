@@ -79,6 +79,44 @@ internal static class AnlzFixture {
     });
   }
 
+  /// <summary>
+  /// A <c>PWV7</c> tag of the given entries, each written mid, high, low as rekordbox
+  /// stores them, with the entry size and rate every file in the library has unless told
+  /// otherwise.
+  /// </summary>
+  internal static byte[] Waveform((byte Mid, byte High, byte Low)[] entries, int entryBytes = 3, int rate = 150) {
+    byte[] body = new byte[entries.Length * 3];
+    for(int i = 0; i < entries.Length; i++) {
+      body[i * 3] = entries[i].Mid;
+      body[(i * 3) + 1] = entries[i].High;
+      body[(i * 3) + 2] = entries[i].Low;
+    }
+
+    return File(Section("PWV7", header: 24, body, header => {
+      BinaryPrimitives.WriteUInt32BigEndian(header[12..], (uint)entryBytes);
+      BinaryPrimitives.WriteUInt32BigEndian(header[16..], (uint)entries.Length);
+      BinaryPrimitives.WriteUInt16BigEndian(header[20..], (ushort)rate);
+    }));
+  }
+
+  /// <summary>
+  /// A <c>PWV5</c> tag of the given words, written as rekordbox stores them, with the
+  /// entry size and rate every file in the library has unless told otherwise.
+  /// </summary>
+  internal static byte[] ColorWaveform(ushort[] words, int entryBytes = 2, int rate = 150) {
+    byte[] body = new byte[words.Length * 2];
+    for(int i = 0; i < words.Length; i++) {
+      BinaryPrimitives.WriteUInt16BigEndian(body.AsSpan(i * 2), words[i]);
+    }
+
+    return File(Section("PWV5", header: 24, body, header => {
+      BinaryPrimitives.WriteUInt32BigEndian(header[12..], (uint)entryBytes);
+      BinaryPrimitives.WriteUInt32BigEndian(header[16..], (uint)words.Length);
+      BinaryPrimitives.WriteUInt16BigEndian(header[20..], (ushort)rate);
+      BinaryPrimitives.WriteUInt16BigEndian(header[22..], 0x0305);
+    }));
+  }
+
   /// <summary>A file around the given sections, after the <c>PPTH</c> every real one opens with.</summary>
   internal static byte[] File(params byte[][] sections) {
     byte[] path = Encoding.BigEndianUnicode.GetBytes("?/track.mp3\0");
