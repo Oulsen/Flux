@@ -67,6 +67,33 @@ internal static class AnlzFile {
   }
 
   /// <summary>
+  /// The entries of a fixed-size table tag - a header whose bytes 12 and 16 give the entry
+  /// size and count, entries after it - when the section holds what its header claims, the
+  /// entry size is <paramref name="entryBytes"/> and the rate word at byte 20 is
+  /// <paramref name="entriesPerSecond"/>. The waveform tags share this layout and differ
+  /// only in what an entry holds.
+  /// </summary>
+  internal static bool TryReadTable(ReadOnlySpan<byte> file, ReadOnlySpan<byte> tag, int entryBytes, int entriesPerSecond, out ReadOnlySpan<byte> entries, out int count) {
+    entries = default;
+    count = 0;
+    const int TableHeaderBytes = 24;
+    if(!TryFindSection(file, tag, out ReadOnlySpan<byte> section, out int header) || header < TableHeaderBytes) {
+      return false;
+    }
+
+    long size = BinaryPrimitives.ReadUInt32BigEndian(section[12..]);
+    long entryCount = BinaryPrimitives.ReadUInt32BigEndian(section[16..]);
+    int rate = BinaryPrimitives.ReadUInt16BigEndian(section[20..]);
+    if(size != entryBytes || rate != entriesPerSecond || entryCount == 0 || header + (entryCount * entryBytes) > section.Length) {
+      return false;
+    }
+
+    count = (int)entryCount;
+    entries = section.Slice(header, count * entryBytes);
+    return true;
+  }
+
+  /// <summary>
   /// Whether <paramref name="path"/> is one to open: a full path on a drive of this
   /// computer. Every path read here comes out of rekordbox's memory, and a chain that
   /// has moved can land on any string at all; one naming a network share would have

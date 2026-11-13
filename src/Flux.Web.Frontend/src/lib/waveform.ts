@@ -61,6 +61,11 @@ function fromBase64(text: string | null | undefined): Uint8Array {
  * Null outside the waveform.
  */
 export function rgbOver(heightRgb: Uint8Array, from: number, to: number): [number, number, number, number] | null {
+  // Before the track there is nothing, not its first column stretched back.
+  if (to <= 0) {
+    return null;
+  }
+
   const count = heightRgb.length / 4;
   const start = Math.max(0, Math.floor(from));
   const end = Math.min(count, Math.max(start + 1, Math.ceil(to)));
@@ -92,8 +97,8 @@ export function playheadAt(held: HeldDeck, now: number): number {
 }
 
 /**
- * How far a shown playhead may be from the frame's before it jumps rather than glides.
- * Flux's own number, reasoned: a frame arrives every 50 ms with up to a few tens of
+ * How far a new frame may move the playhead before it jumps rather than glides. Flux's
+ * own number, reasoned: a frame arrives every 50 ms with up to a few tens of
  * milliseconds of jitter, so anything under a quarter of a second is that jitter and is
  * eased away, and anything over it is a seek, a loop or a new track, which should be
  * where it is at once.
@@ -101,19 +106,29 @@ export function playheadAt(held: HeldDeck, now: number): number {
 export const SNAP_MS = 250;
 
 /**
- * Of the gap between what is shown and where the playhead is, the share closed each
- * animation frame. Flux's own number: about a tenth of a second to close a jitter at
- * 60 frames a second, slow enough not to wobble and quick enough not to lag a beat.
+ * How quickly a correction fades, as a time constant: after this long a third of it is
+ * left. Flux's own number: quick enough that a jitter is gone within a beat, slow enough
+ * that it reads as a glide rather than a twitch.
  */
-export const EASE_PER_FRAME = 0.15;
+export const SETTLE_MS = 80;
 
-/** The next shown position: `target` itself after a jump, otherwise eased towards it. */
-export function easePlayhead(shown: number | null, target: number): number {
-  if (shown === null || Math.abs(target - shown) > SNAP_MS) {
-    return target;
+/**
+ * The correction to draw the playhead with, as an offset from where the newest frame
+ * puts it. `jump` is how far a frame that just arrived moved the playhead (where the
+ * frame before would have put it now, minus where this one does); the offset absorbs it
+ * so the strip does not leap, then fades over `elapsedMs` of real time.
+ *
+ * An offset that fades, rather than the shown position eased towards a moving target:
+ * that version trailed the music by a fixed share of each frame's motion for as long as
+ * it played, a sixth of a beat at 60 frames a second and more at fewer.
+ */
+export function settleOffset(offset: number, jump: number, elapsedMs: number): number {
+  const total = offset + jump;
+  if (Math.abs(total) > SNAP_MS) {
+    return 0;
   }
 
-  return shown + (target - shown) * EASE_PER_FRAME;
+  return total * Math.exp(-Math.max(0, elapsedMs) / SETTLE_MS);
 }
 
 /**
@@ -184,6 +199,10 @@ export function isFluxDownbeat(beat: number, downbeat: number, quantum: number):
  * on, which would flicker as the strip scrolls. Zeros outside the waveform.
  */
 export function peakOver(lowMidHigh: Uint8Array, from: number, to: number): [number, number, number] {
+  if (to <= 0) {
+    return [0, 0, 0];
+  }
+
   const count = lowMidHigh.length / 3;
   const start = Math.max(0, Math.floor(from));
   const end = Math.min(count, Math.max(start + 1, Math.ceil(to)));

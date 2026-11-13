@@ -118,11 +118,11 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
   /// followed. Its <see cref="RekordboxDeck.TrackId"/> is what <see cref="Track"/> takes.
   /// </summary>
   public RekordboxDeck? Deck() {
-    if(this.follower.Playhead(this.clock.NowMicros) is not { } playhead) {
+    if(this.follower.Playhead(this.clock.NowMicros) is not { } playhead || this.NamedId(playhead.TrackPath) is not { } id) {
       return null;
     }
 
-    return new RekordboxDeck(playhead.Deck, this.IdOf(playhead.TrackPath), playhead.PositionMs, playhead.Rate, playhead.Playing);
+    return new RekordboxDeck(playhead.Deck, id, playhead.PositionMs, playhead.Rate, playhead.Playing);
   }
 
   /// <summary>
@@ -132,7 +132,7 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
   /// </summary>
   public RekordboxTrack? Track(string trackId) {
     ArgumentNullException.ThrowIfNull(trackId);
-    if(this.follower.Playhead(this.clock.NowMicros) is not { } playhead || this.IdOf(playhead.TrackPath) != trackId) {
+    if(this.follower.Playhead(this.clock.NowMicros) is not { } playhead || this.NamedId(playhead.TrackPath) != trackId) {
       return null;
     }
 
@@ -141,6 +141,12 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
         return kept;
       }
     }
+
+    // The grid from the file, like the waveforms, rather than the follower's copy: the id
+    // names the files as last written, and the follower keeps a complete track's grid
+    // from when it loaded it, so after a re-analysis its copy would go out under an id
+    // that says it is current, and be kept for good.
+    IReadOnlyList<AnlzBeat> grid = AnlzBeatGrid.Read(playhead.TrackPath) ?? playhead.Grid;
 
     // Both waveforms are 150 columns a second - each reader refuses any other rate - so
     // one rate describes whichever of them the track has.
@@ -151,8 +157,8 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
       threeBand?.EntriesPerSecond ?? rgb?.EntriesPerSecond ?? 0,
       threeBand?.LowMidHigh,
       rgb?.HeightRgb,
-      [.. playhead.Grid.Select(beat => beat.TimeMs)],
-      [.. playhead.Grid.Select(beat => beat.BeatInBar)]);
+      [.. grid.Select(beat => beat.TimeMs)],
+      [.. grid.Select(beat => beat.BeatInBar)]);
 
     lock(this.trackGate) {
       this.served = track;
@@ -230,6 +236,7 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
       while(!rekordbox.HasExited) {
         RekordboxReading reading = chains.Read(rekordbox, rekordbox.ModuleBase);
         this.follower.Follow(reading, this.clock.NowMicros);
+        this.NameTrack();
         this.LogDetail();
         await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
       }
@@ -238,19 +245,34 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
     }
   }
 
+  /// <summary>The id worked out for <paramref name="path"/>, or null until the poll thread has named it.</summary>
+  private string? NamedId(string path) {
+    lock(this.trackGate) {
+      return this.named is { } known && known.Path == path ? known.Id : null;
+    }
+  }
+
   /// <summary>
-  /// An id for the track whose analysis is at <paramref name="path"/>: a hash of the path,
-  /// of when its three analysis files were last written and of <see cref="TrackFormat"/>,
-  /// so the page can keep a track's data for good and still fetch it again once rekordbox
-  /// has re-analysed it or Flux answers in a new shape.
-  /// Hashed rather than the path itself, which names the user's folders and has no
-  /// business in a URL.
+  /// Works out an id for the followed track, when it is a new track or its id has not been
+  /// checked for <see cref="TrackIdFor"/>: a hash of the path, of when its three analysis
+  /// files were last written and of <see cref="TrackFormat"/>, so the page can keep a
+  /// track's data for good and still fetch it again once rekordbox has re-analysed it or
+  /// Flux answers in a new shape. Hashed rather than the path itself, which names the
+  /// user's folders and has no business in a URL.
+  ///
+  /// On the poll thread, which reads the analysis files anyway, so the page's state
+  /// frames, which carry the id 20 times a second, never wait on the disk for it.
   /// </summary>
-  private string IdOf(string path) {
+  private void NameTrack() {
     double now = this.clock.NowMicros;
+    if(this.follower.Playhead(now) is not { } playhead) {
+      return;
+    }
+
+    string path = playhead.TrackPath;
     lock(this.trackGate) {
       if(this.named is { } known && known.Path == path && now - known.AtMicros < TrackIdFor.TotalMicroseconds) {
-        return known.Id;
+        return;
       }
     }
 
@@ -259,8 +281,6 @@ public sealed class RekordboxSource: BackgroundService, ISyncSource {
     lock(this.trackGate) {
       this.named = (path, id, now);
     }
-
-    return id;
 
     static long WrittenTicks(string file) {
       try {

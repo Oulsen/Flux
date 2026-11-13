@@ -30,7 +30,6 @@ internal sealed record AnlzWaveform(int EntriesPerSecond, byte[] LowMidHigh) {
 /// waveform rather than as a picture of the wrong thing.
 /// </summary>
 internal static class AnlzWaveformReader {
-  private const int HeaderBytes = 24;
   private const int EntryBytes = 3;
   private const int EntriesPerSecond = 150;
 
@@ -40,18 +39,10 @@ internal static class AnlzWaveformReader {
 
   /// <summary>The waveform, or null when the file has none, an empty one, or one laid out other than as checked.</summary>
   internal static AnlzWaveform? Read(ReadOnlySpan<byte> file) {
-    if(!AnlzFile.TryFindSection(file, "PWV7"u8, out ReadOnlySpan<byte> section, out int header) || header < HeaderBytes) {
+    if(!AnlzFile.TryReadTable(file, "PWV7"u8, EntryBytes, EntriesPerSecond, out ReadOnlySpan<byte> entries, out _)) {
       return null;
     }
 
-    long entryBytes = BinaryPrimitives.ReadUInt32BigEndian(section[12..]);
-    long count = BinaryPrimitives.ReadUInt32BigEndian(section[16..]);
-    int rate = BinaryPrimitives.ReadUInt16BigEndian(section[20..]);
-    if(entryBytes != EntryBytes || rate != EntriesPerSecond || count == 0 || header + (count * EntryBytes) > section.Length) {
-      return null;
-    }
-
-    ReadOnlySpan<byte> entries = section.Slice(header, (int)count * EntryBytes);
     byte[] lowMidHigh = new byte[entries.Length];
     for(int i = 0; i < entries.Length; i += EntryBytes) {
       byte mid = entries[i];
@@ -66,7 +57,7 @@ internal static class AnlzWaveformReader {
       lowMidHigh[i + 2] = high;
     }
 
-    return new AnlzWaveform(rate, lowMidHigh);
+    return new AnlzWaveform(EntriesPerSecond, lowMidHigh);
   }
 }
 
@@ -98,7 +89,6 @@ internal sealed record AnlzColorWaveform(int EntriesPerSecond, byte[] HeightRgb)
 /// either low bit set.
 /// </summary>
 internal static class AnlzColorWaveformReader {
-  private const int HeaderBytes = 24;
   private const int EntryBytes = 2;
   private const int EntriesPerSecond = 150;
 
@@ -107,20 +97,13 @@ internal static class AnlzColorWaveformReader {
     AnlzFile.TryReadAllBytes(path) is { } file ? Read(file) : null;
 
   internal static AnlzColorWaveform? Read(ReadOnlySpan<byte> file) {
-    if(!AnlzFile.TryFindSection(file, "PWV5"u8, out ReadOnlySpan<byte> section, out int header) || header < HeaderBytes) {
-      return null;
-    }
-
-    long entryBytes = BinaryPrimitives.ReadUInt32BigEndian(section[12..]);
-    long count = BinaryPrimitives.ReadUInt32BigEndian(section[16..]);
-    int rate = BinaryPrimitives.ReadUInt16BigEndian(section[20..]);
-    if(entryBytes != EntryBytes || rate != EntriesPerSecond || count == 0 || header + (count * EntryBytes) > section.Length) {
+    if(!AnlzFile.TryReadTable(file, "PWV5"u8, EntryBytes, EntriesPerSecond, out ReadOnlySpan<byte> entries, out int count)) {
       return null;
     }
 
     byte[] heightRgb = new byte[count * 4];
     for(int i = 0; i < count; i++) {
-      int word = BinaryPrimitives.ReadUInt16BigEndian(section[(header + (i * EntryBytes))..]);
+      int word = BinaryPrimitives.ReadUInt16BigEndian(entries[(i * EntryBytes)..]);
       if((word & 0b11) != 0) {
         return null;
       }
@@ -131,6 +114,6 @@ internal static class AnlzColorWaveformReader {
       heightRgb[(i * 4) + 3] = (byte)((word >> 7) & 0x7);
     }
 
-    return new AnlzColorWaveform(rate, heightRgb);
+    return new AnlzColorWaveform(EntriesPerSecond, heightRgb);
   }
 }

@@ -27,7 +27,6 @@
     beatAt,
     decodeTrack,
     type DeckTrack,
-    easePlayhead,
     fluxDownbeat,
     type HeldDeck,
     isFluxDownbeat,
@@ -37,6 +36,7 @@
     RGB_MAX_COLOR,
     RGB_MAX_HEIGHT,
     rgbOver,
+    settleOffset,
   } from '../lib/waveform.ts';
   import type { WaveformStyle } from '../lib/preferences.ts';
 
@@ -67,6 +67,26 @@
   ];
 
   /**
+   * Every colour an RGB column can be, built once: three bits a channel is 512 colours,
+   * and a fresh string per pixel per frame was a quarter of a million a second.
+   */
+  const RGB_STYLES: string[] = Array.from({ length: (RGB_MAX_COLOR + 1) ** 3 }, (_, i) => {
+    const levels = RGB_MAX_COLOR + 1;
+    const scale = 255 / RGB_MAX_COLOR;
+    const r = Math.floor(i / (levels * levels));
+    const g = Math.floor(i / levels) % levels;
+    const b = i % levels;
+    return `rgb(${Math.round(r * scale)} ${Math.round(g * scale)} ${Math.round(b * scale)})`;
+  });
+
+  /**
+   * How long to wait before asking again for a track that did not arrive. Flux's own
+   * number: soon enough after a restart or a dropped Wi-Fi that the strip fills in while
+   * the track is still playing, rare enough not to matter to anyone.
+   */
+  const RETRY_MS = 2000;
+
+  /**
    * How many seconds of track the strip shows, by its width. Flux's own numbers: a
    * second for every 150 pixels keeps a beat at 120 BPM about 75 pixels wide, as rekordbox's
    * own detail view roughly is, within four seconds on a phone and twelve on a wide screen.
@@ -87,24 +107,43 @@
   const trackId = $derived(held.deck.track);
 
   // One fetch per track id. The id changes with the track and with its analysis, and
-  // the response for one never changes, so the browser may keep it for good.
+  // the response for one never changes, so the browser may keep it for good. A fetch
+  // that fails - Flux restarting, the Wi-Fi gone, the deck changed between the frame and
+  // the request - is tried again while the id stays, since the id alone never changes
+  // for the same track and would otherwise never ask again.
   $effect(() => {
     const id = trackId;
     track = null;
     const controller = new AbortController();
-    fetch(`/api/track/${encodeURIComponent(id)}`, { signal: controller.signal })
-      .then((response) => (response.ok ? (response.json() as Promise<TrackData>) : null))
-      .then((data) => {
-        if (data !== null && !controller.signal.aborted) {
-          track = decodeTrack(data);
-        }
-      })
-      .catch(() => {
-        // A track replaced before it arrived, or Flux gone for a moment: the next frame
-        // with a new id asks again, and until then the strip shows the grid it has.
-      });
+    let retry: ReturnType<typeof setTimeout> | undefined;
 
-    return () => controller.abort();
+    const load = (): void => {
+      fetch(`/api/track/${encodeURIComponent(id)}`, { signal: controller.signal })
+        .then((response) => (response.ok ? (response.json() as Promise<TrackData>) : null))
+        .then((data) => {
+          if (controller.signal.aborted) {
+            return;
+          }
+
+          if (data === null) {
+            retry = setTimeout(load, RETRY_MS);
+          } else {
+            track = decodeTrack(data);
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            retry = setTimeout(load, RETRY_MS);
+          }
+        });
+    };
+
+    load();
+
+    return () => {
+      controller.abort();
+      clearTimeout(retry);
+    };
   });
 
   /** Grid beat of one of Flux's bar 1s, from this frame; null with nothing to pair. */
@@ -149,7 +188,10 @@
     });
     observer.observe(element);
 
-    let shown: number | null = null;
+    /** The correction the playhead is drawn with, and what it was last measured against. */
+    let offset = 0;
+    let lastHeld: HeldDeck | null = null;
+    let lastAt = performance.now();
     let frame = 0;
 
     const draw = (): void => {
@@ -168,7 +210,17 @@
         return;
       }
 
-      shown = easePlayhead(shown, playheadAt(held, performance.now()));
+      // A new frame moves the playhead by however far it disagrees with the one before.
+      // The offset takes that up so the strip does not leap, and fades away; between
+      // frames there is nothing to correct, so a steady deck is drawn exactly where it is.
+      const now = performance.now();
+      const jump = lastHeld !== null && lastHeld !== held && lastHeld.deck.track === held.deck.track
+        ? playheadAt(lastHeld, now) - playheadAt(held, now)
+        : 0;
+      offset = settleOffset(offset, jump, now - lastAt);
+      lastHeld = held;
+      lastAt = now;
+      const shown = playheadAt(held, now) + offset;
       const spanMs = Math.min(MAX_SECONDS, Math.max(MIN_SECONDS, cssWidth / PIXELS_PER_SECOND)) * 1000;
       const msPerPixel = spanMs / width;
       const leftMs = shown - spanMs / 2;
@@ -188,8 +240,8 @@
           }
 
           const h = (column[0] / RGB_MAX_HEIGHT) * half;
-          const scale = 255 / RGB_MAX_COLOR;
-          context.fillStyle = `rgb(${Math.round(column[1] * scale)} ${Math.round(column[2] * scale)} ${Math.round(column[3] * scale)})`;
+          const levels = RGB_MAX_COLOR + 1;
+          context.fillStyle = RGB_STYLES[(column[1] * levels + column[2]) * levels + column[3]];
           context.fillRect(x, centre - h, 1, 2 * h);
         }
       } else if (track !== null && track.lowMidHigh.length > 0) {
