@@ -53,12 +53,40 @@ public sealed class StageMessagesTests {
   /// </summary>
   [Fact]
   public void ALookWithoutItsTrailIsNotAStatementOfTheLook() {
-    using JsonDocument without = JsonDocument.Parse("""{"layout":"upward","shape":"bars","color":"randomBeat","bands":64}""");
-    using JsonDocument with = JsonDocument.Parse("""{"layout":"upward","shape":"bars","color":"randomBeat","bands":64,"trailMs":200}""");
+    using JsonDocument without = JsonDocument.Parse("""{"layout":"upward","shape":"bars","color":"randomBeat","bands":64,"hueSpeed":20}""");
+    using JsonDocument with = JsonDocument.Parse("""{"layout":"upward","shape":"bars","color":"randomBeat","bands":64,"trailMs":200,"hueSpeed":20}""");
 
     Assert.False(Frames.TryReadStage(without.RootElement, out _));
     Assert.True(Frames.TryReadStage(with.RootElement, out StageData read));
     Assert.Equal(200, read.TrailMs);
+  }
+
+  /// <summary>The hue speed joined the look the way the trail did: required, never patched in.</summary>
+  [Fact]
+  public void ALookWithoutItsHueSpeedIsNotAStatementOfTheLook() {
+    using JsonDocument without = JsonDocument.Parse("""{"layout":"upward","shape":"bars","color":"hueCycle","bands":64,"trailMs":0}""");
+    using JsonDocument with = JsonDocument.Parse("""{"layout":"upward","shape":"bars","color":"hueCycle","bands":64,"trailMs":0,"hueSpeed":65}""");
+
+    Assert.False(Frames.TryReadStage(without.RootElement, out _));
+    Assert.True(Frames.TryReadStage(with.RootElement, out StageData read));
+    Assert.Equal(65, read.HueSpeed);
+  }
+
+  [Theory]
+  [InlineData(0, true)]
+  [InlineData(StageSettings.MaxHueSpeed, true)]
+  [InlineData(-1, false)]
+  [InlineData(StageSettings.MaxHueSpeed + 1, false)]
+  public void AHueSpeedOutsideItsRangeIsRefused(int hueSpeed, bool accepted) {
+    StageService service = new StageService(new MemoryStageSettingsStore());
+
+    Assert.Equal(accepted, service.TrySet(StageSettings.Default with { HueSpeed = hueSpeed }));
+  }
+
+  [Fact]
+  public void TheHueSpeedStartsAtTheScenesDefaultAndTravelsOnTheWire() {
+    Assert.Equal(20, StageSettings.Default.HueSpeed);
+    Assert.Equal(65, StageFrames.Compose(StageSettings.Default with { HueSpeed = 65 }).HueSpeed);
   }
 
   [Fact]

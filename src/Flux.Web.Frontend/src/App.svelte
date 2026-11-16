@@ -19,9 +19,14 @@
   import AnchorPad from './components/AnchorPad.svelte';
   import BarShift from './components/BarShift.svelte';
   import PhoneCode from './components/PhoneCode.svelte';
+  import RangeSetting from './components/RangeSetting.svelte';
   import UpdateNotice from './components/UpdateNotice.svelte';
   import WaveformStrip from './components/WaveformStrip.svelte';
   import { stagePhrase } from './lib/diagnostics.ts';
+
+  /** The audio source's sensitivity scale, mirrored from `IAudioSensitivity`. */
+  const SENSITIVITY_MIN = 1;
+  const SENSITIVITY_MAX = 100;
   import { FluxStore } from './lib/flux.svelte.ts';
   import { PROTOCOL_VERSION } from './lib/protocol.ts';
   import type { DiagnosticsData, HueEngineData, StageData } from './lib/protocol.ts';
@@ -372,6 +377,10 @@
     socket?.send({ type: 'applyUpdate', data: {} });
   }
 
+  function setSensitivity(sensitivity: number): void {
+    socket?.send({ type: 'setSensitivity', data: { sensitivity } });
+  }
+
   function setLatencyOffset(offsetMs: number): void {
     socket?.send({ type: 'setLatencyOffset', data: { offsetMs } });
   }
@@ -710,6 +719,23 @@
         {#if store.alignment.method === 'rekordbox'}
           <BarShift shift={shiftBar} captions />
         {/if}
+      {/if}
+
+      <!-- Only while audio is the source: it is the one source whose beats this decides,
+           and a slider that moves nothing under Link or rekordbox reads as broken. -->
+      {#if store.source === 'audio' && store.sensitivity !== null}
+        <RangeSetting
+          id="beat-sensitivity"
+          name="sensitivity"
+          min={SENSITIVITY_MIN}
+          max={SENSITIVITY_MAX}
+          step={1}
+          value={store.sensitivity}
+          format={(sensitivity) => `${sensitivity}`}
+          hint="How eagerly the audio source hears a beat."
+          detail="Turn it up for music with a soft kick, down when beats are found in the hi-hats. A tempo read at half or double is a different problem, and this is not the setting for it."
+          commit={setSensitivity}
+        />
       {/if}
     </section>
   </div>

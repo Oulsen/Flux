@@ -18,6 +18,9 @@
     BAND_MIN,
     COLOR_STYLES,
     colorLabel,
+    cyclesHue,
+    HUE_SPEED_MAX,
+    hueSpeedLabel,
     TRAIL_MAX_MS,
     trailMsLabel,
     LAYOUTS,
@@ -183,6 +186,21 @@
         becomes the colour the bulbs are being sent.
       {/if}
     </p>
+
+    {#if cyclesHue(stage.color)}
+      <RangeSetting
+        id="stage-hue-speed"
+        name="hue speed"
+        min={0}
+        max={HUE_SPEED_MAX}
+        step={1}
+        value={stage.hueSpeed}
+        format={hueSpeedLabel}
+        hint="How fast the colour travels round the wheel."
+        detail="Still holds it. On the screen only - the lights change colour with the music."
+        commit={(hueSpeed) => setStage({ hueSpeed })}
+      />
+    {/if}
 
     <!--
       A slider rather than a set of chips, and it can be one because the count reaches

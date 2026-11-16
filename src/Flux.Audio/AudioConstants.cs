@@ -201,10 +201,10 @@ internal static class AudioConstants {
   public const int DefaultSensitivity = 50;
 
   /// <inheritdoc cref="DefaultSensitivity"/>
-  public const int MinSensitivity = 1;
+  public const int MinSensitivity = IAudioSensitivity.Min;
 
   /// <inheritdoc cref="DefaultSensitivity"/>
-  public const int MaxSensitivity = 100;
+  public const int MaxSensitivity = IAudioSensitivity.Max;
 
   /// <summary>
   /// Sensitivity becomes a multiplier on the average flux:
@@ -365,7 +365,14 @@ internal static class AudioConstants {
   /// </summary>
   public const double UnlockAfterLockMillis = 15_000;
 
-  /// <summary>Bass energy below this counts as quiet, for drop detection.</summary>
+  /// <summary>
+  /// Bass energy below this counts as quiet, for drop detection.
+  ///
+  /// Drop detection itself has no switch, where the scene had "Auto Sync on Drop", on
+  /// by default. Left out until somebody needs it off: it is already rate limited twice
+  /// (see <see cref="DropCooldownMillis"/>), it only acts on the audio source, and a
+  /// switch nobody has asked for is one more thing to find in a booth.
+  /// </summary>
   public const double QuietEnergyThreshold = 0.02;
 
   /// <summary>How long it has to stay quiet before the return can be a drop.</summary>

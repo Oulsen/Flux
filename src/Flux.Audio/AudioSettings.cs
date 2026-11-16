@@ -15,7 +15,13 @@ namespace Flux.Audio;
 /// endpoints, in a booth. The configuration keys were never wrong - they are the right
 /// answer for the machine they were written for - they simply have no way of learning.
 /// </param>
-public sealed record AudioSettings(string? DeviceId) {
+/// <param name="Sensitivity">
+/// The beat sensitivity last set from the page, or null while nobody has set one, in
+/// which case <see cref="AudioOptions.Sensitivity"/> applies. Null rather than the
+/// configured value copied in, so a changed configuration still takes effect on a
+/// machine where nobody has touched the slider.
+/// </param>
+public sealed record AudioSettings(string? DeviceId, int? Sensitivity = null) {
   /// <summary>Nothing chosen yet.</summary>
   public static AudioSettings Empty { get; } = new AudioSettings(DeviceId: null);
 }
@@ -38,6 +44,19 @@ public interface IAudioSettingsStore {
   /// and a full disk must cost them the memory of the choice rather than the choice.
   /// </summary>
   void Save(AudioSettings settings);
+
+  /// <summary>
+  /// Changes one part of the stored settings and keeps the rest.
+  ///
+  /// The device and the sensitivity are set from different messages, and each would
+  /// otherwise write back a record read before the other's change. Never throws, like
+  /// <see cref="Save"/>.
+  /// </summary>
+  void Update(Func<AudioSettings, AudioSettings> change) {
+    ArgumentNullException.ThrowIfNull(change);
+
+    this.Save(change(this.Load()));
+  }
 }
 
 /// <summary>Plain JSON in the same per-user folder as everything else Flux remembers.</summary>
@@ -78,6 +97,16 @@ internal sealed class JsonAudioSettingsStore: IAudioSettingsStore {
     }
   }
 
+  public void Update(Func<AudioSettings, AudioSettings> change) {
+    ArgumentNullException.ThrowIfNull(change);
+
+    // Read and written under one hold of the gate, which is re-entrant, so a device
+    // picked while the slider moves cannot write back a record without the other.
+    lock(this.gate) {
+      this.Save(change(this.Load()));
+    }
+  }
+
   public void Save(AudioSettings settings) {
     ArgumentNullException.ThrowIfNull(settings);
 
@@ -90,7 +119,7 @@ internal sealed class JsonAudioSettingsStore: IAudioSettingsStore {
         // is waiting. That one is saved from a deliberate act of setup; this one is
         // saved as a side effect of picking a device mid-set, and failing there would
         // turn a full disk into a device selection that appears to be refused.
-        this.logger.LogWarning(e, "The chosen audio device could not be remembered in {Path}.", this.Path);
+        this.logger.LogWarning(e, "The audio settings could not be remembered in {Path}.", this.Path);
       }
     }
   }

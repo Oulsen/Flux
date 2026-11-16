@@ -237,7 +237,7 @@ public sealed class AudioCaptureService: BackgroundService, IAudioSamples, IAudi
     // Outside the lock, unlike everything above it. This writes a file, and the lock
     // it would otherwise be holding is the one every status read takes twenty times a
     // second - so a slow disk would stall the page rather than the picker.
-    this.settings?.Save(new AudioSettings(deviceId));
+    this.settings?.Update(stored => stored with { DeviceId = deviceId });
 
     return true;
   }

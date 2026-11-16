@@ -15,6 +15,11 @@
  * scene this project reimplements.
  * Four places depart from it, and each says so where it is declared: the level curve,
  * the default layout, what the band control means, and the two static colours.
+ *
+ * One of the scene's settings is left out rather than departed from: its background
+ * colour picker. The stage is drawn on the page's own dark surface, which is part of
+ * the page's look rather than of the show, and a colour input for it in a dark booth
+ * buys nothing the trail and the colour styles do not already change.
  */
 
 import type { LightColorData, StageColorStyle, StageLayout, StageShape } from './protocol.ts';
@@ -174,6 +179,21 @@ export const SMOOTH_SEAM_PX = 0.5;
  * business and arrive on the wire already timed to the bar.
  */
 export const HUE_SPEED_DEFAULT = 20;
+
+/** The top of the scene's hue speed dial. Mirrored from `StageSettings.MaxHueSpeed`. */
+export const HUE_SPEED_MAX = 100;
+
+/** Whether a colour style travels round the wheel, which is what the hue speed moves. */
+export function cyclesHue(color: StageColorStyle): boolean {
+  return color === 'hueCycle' || color === 'hueWave' || color === 'hueWaveVert';
+}
+
+/** A hue speed in words: "still" at zero, where the hue holds. */
+export function hueSpeedLabel(speed: number): string {
+  const rounded = Math.round(speed);
+
+  return !Number.isFinite(rounded) || rounded <= 0 ? 'still' : `${rounded}`;
+}
 
 /** The scene's `((now * speed) / 200 % 1000) / 1000`, split so it can be named. */
 const HUE_SPEED_DIVISOR = 200;

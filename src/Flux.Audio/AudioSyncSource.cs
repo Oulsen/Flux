@@ -23,7 +23,7 @@ namespace Flux.Audio;
 /// which is what makes an audio tempo interchangeable with a Link tempo rather
 /// than a second opinion running beside it.
 /// </summary>
-internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedService {
+internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IAudioSensitivity, IHostedService {
   /// <summary>This source's name in the protocol.</summary>
   public const string SourceName = "audio";
 
@@ -56,6 +56,9 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
 
   private readonly SpectrumAnalyzer analyzer;
   private readonly AudioBeatDetector detector;
+
+  /// <summary>Where a sensitivity set from the page is remembered; null in tests that need no disk.</summary>
+  private readonly IAudioSettingsStore? settings;
   private readonly IMonotonicClock clock;
   private readonly ITimelineSink sink;
   private readonly double staleAfterMicros;
@@ -117,14 +120,19 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
     IMonotonicClock clock,
     IOptions<AudioOptions> audio,
     IOptions<BeatOptions> beat,
-    ILogger<AudioSyncSource> log) {
+    ILogger<AudioSyncSource> log,
+    IAudioSettingsStore? settings = null) {
     ArgumentNullException.ThrowIfNull(sources);
     ArgumentNullException.ThrowIfNull(audio);
     ArgumentNullException.ThrowIfNull(beat);
 
     this.analyzer = analyzer ?? throw new ArgumentNullException(nameof(analyzer));
     this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
-    this.detector = new AudioBeatDetector(audio.Value.Sensitivity);
+    this.settings = settings;
+
+    // The page's last choice over the configured one, and the configured one until
+    // somebody makes a choice.
+    this.detector = new AudioBeatDetector(settings?.Load().Sensitivity ?? audio.Value.Sensitivity);
     this.staleAfterMicros = beat.Value.StaleAfter.TotalMilliseconds * 1000.0;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
 
@@ -136,6 +144,26 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IHostedServi
 
   /// <inheritdoc/>
   public string Name => SourceName;
+
+  /// <inheritdoc/>
+  public int Sensitivity => this.detector.Sensitivity;
+
+  /// <inheritdoc/>
+  public event Action<int>? SensitivityChanged;
+
+  /// <inheritdoc/>
+  public bool TrySetSensitivity(int sensitivity) {
+    if(sensitivity is < IAudioSensitivity.Min or > IAudioSensitivity.Max) {
+      return false;
+    }
+
+    this.detector.Sensitivity = sensitivity;
+    this.settings?.Update(stored => stored with { Sensitivity = sensitivity });
+    this.log.LogInformation("Beat sensitivity is now {Sensitivity}.", sensitivity);
+    this.SensitivityChanged?.Invoke(sensitivity);
+
+    return true;
+  }
 
   /// <summary>
   /// What this source knows, whether or not it is the active one.

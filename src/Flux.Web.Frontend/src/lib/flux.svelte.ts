@@ -17,10 +17,11 @@ import {
   type SourceState,
   type SpectrumData,
   type StageData,
+  type AudioData,
   type StateData,
   type UpdateData,
 } from './protocol.ts';
-import { BAND_DEFAULT, COLOR_DEFAULT, LAYOUT_DEFAULT, SHAPE_DEFAULT } from './scene.ts';
+import { BAND_DEFAULT, COLOR_DEFAULT, HUE_SPEED_DEFAULT, LAYOUT_DEFAULT, SHAPE_DEFAULT } from './scene.ts';
 import type { ConnectionState } from './socket.ts';
 import type { HeldDeck } from './waveform.ts';
 import {
@@ -154,7 +155,11 @@ export class FluxStore {
     color: COLOR_DEFAULT,
     bands: BAND_DEFAULT,
     trailMs: 0,
+    hueSpeed: HUE_SPEED_DEFAULT,
   });
+
+  /** The audio source's beat sensitivity; null until a server with an audio source says. */
+  sensitivity = $state<number | null>(null);
 
   /**
    * The stage settings this page has asked for and not yet seen come back.
@@ -256,6 +261,11 @@ export class FluxStore {
           this.pendingDevice = resolvePending(this.pendingDevice, selected);
         }
 
+        break;
+      }
+
+      case 'audio': {
+        this.sensitivity = (message.data as AudioData).sensitivity;
         break;
       }
 

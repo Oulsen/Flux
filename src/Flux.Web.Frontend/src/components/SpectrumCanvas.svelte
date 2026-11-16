@@ -39,7 +39,6 @@
     barRect,
     barThickness,
     dampPulse,
-    HUE_SPEED_DEFAULT,
     hueCss,
     hueShift,
     isSmooth,
@@ -250,7 +249,7 @@
     };
 
     const waveGradient = (side: Side, now: number): CanvasGradient => {
-      const phase = hueShift(now, HUE_SPEED_DEFAULT) * WAVE_PHASE_TURNS;
+      const phase = hueShift(now, stage.hueSpeed) * WAVE_PHASE_TURNS;
       const gradient = axisGradient(side);
 
       for (const stop of rainbowStops(phase)) {
@@ -262,7 +261,7 @@
 
     /** The same rainbow down the picture instead of across it, and not mirrored. */
     const verticalWaveGradient = (now: number): CanvasGradient => {
-      const phase = hueShift(now, HUE_SPEED_DEFAULT) * WAVE_PHASE_TURNS;
+      const phase = hueShift(now, stage.hueSpeed) * WAVE_PHASE_TURNS;
       const gradient = context.createLinearGradient(0, 0, 0, cssHeight);
 
       for (const stop of rainbowStops(phase)) {
@@ -291,7 +290,7 @@
     const sidePaint = (side: Side, now: number): string | CanvasGradient => {
       switch (stage.color) {
         case 'hueCycle':
-          return hueCss(hueShift(now, HUE_SPEED_DEFAULT));
+          return hueCss(hueShift(now, stage.hueSpeed));
         case 'hueWave':
           return waveGradient(side, now);
         case 'hueWaveVert':

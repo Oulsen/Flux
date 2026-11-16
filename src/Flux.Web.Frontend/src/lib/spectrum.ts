@@ -11,6 +11,16 @@
  * The constants are the scene's, transcribed as coded from the scene this project
  * reimplements, and the rest of Flux's audio numbers
  * are documented the same way in `docs/audio-constants.md`.
+ *
+ * Two of the scene's settings are left out rather than carried: its volume boost and
+ * its "scale frequencies by volume". The scene drew from the level Windows was playing
+ * at, so how big its bars were depended on a volume knob, and the boost was how it was
+ * told how loud loud was. Flux reads the mix itself, digitally from the controller or a
+ * loopback, onto the fixed decibel window `docs/audio-constants.md` documents, so the
+ * PC's volume no longer moves the picture and there is nothing for a boost to correct.
+ * Scaling by volume is a look rather than a correction, and is left out as one more
+ * knob nobody has missed; it is the first to bring back if quiet passages look too
+ * busy on the stage.
  */
 
 import type { SpectrumBeat, SpectrumData } from './protocol.ts';
