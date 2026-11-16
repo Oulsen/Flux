@@ -250,7 +250,7 @@ public sealed record HueAreaData(Guid Id, string Name, int ChannelCount, bool St
 /// </summary>
 /// <param name="State">"disabled", "unpaired", "discovering", "pairing", "connecting", "ready" or "failed".</param>
 /// <param name="Bridge">The paired bridge, or null before there is one.</param>
-/// <param name="Discovered">What the last discovery found. Kept while pairing, because that list is what the pairing screen is showing.</param>
+/// <param name="Discovered">What the last search for bridges found: a discovery's whole answer, or only the paired bridge when it answered at its last address. Kept while pairing, because that list is what the pairing screen is showing.</param>
 /// <param name="Areas">The bridge's entertainment areas, empty until it is reachable.</param>
 /// <param name="SelectedAreaId">The area lights will be streamed to, or null until one is chosen.</param>
 /// <param name="PairingSecondsRemaining">Seconds left in the pairing window; non-null exactly when <paramref name="State"/> is "pairing".</param>

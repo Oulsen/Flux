@@ -22,14 +22,14 @@ namespace Flux.Hue;
 /// <param name="LastBridgeAddress">
 /// Where the paired bridge last answered, kept as a hint and never as the truth.
 ///
-/// Credentials still belong to a bridge id rather than to an address - discovery is
-/// asked first, every time, and this is only consulted when it finds nothing. That
-/// case is real rather than theoretical: on a network where mDNS is filtered, the only
-/// other route is a cloud lookup rate-limited to about one request every fifteen
-/// minutes, and a few restarts inside that window leave Flux unable to find a bridge
-/// it was talking to moments earlier. The hint is verified before it is used, by
-/// asking whatever answers there for its id, so a stale one is discarded rather than
-/// believed.
+/// Credentials still belong to a bridge id rather than to an address. The hint is
+/// tried first on every connect, because discovery is slow where it works at all: a
+/// Hue Bridge Pro answers neither mDNS nor SSDP, so discovery runs through the LAN
+/// scan and a cloud lookup rate-limited to about one request every fifteen minutes,
+/// and the bridge is nearly always still where it answered last. The hint is verified
+/// before it is used, by asking whatever answers there for its id, so a stale one is
+/// discarded rather than believed and discovery takes over. When discovery finds
+/// nothing, the hint is asked once more before Flux reports the bridge missing.
 /// </param>
 /// <param name="Light">
 /// How the user has the light engine set, or null while they have never changed it.

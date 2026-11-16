@@ -519,7 +519,20 @@ public sealed class HueBridgeService: BackgroundService {
   }
 
   private async Task<HueBridge?> FindPairedBridgeAsync(string bridgeId, CancellationToken cancellationToken) {
-    // Discovery every time rather than a remembered address, because DHCP moves a
+    // The last working address first, because that is where the bridge almost always
+    // still is, and discovery is the slow way to learn it: a Hue Bridge Pro answers
+    // neither mDNS nor SSDP, so discovery runs through the LAN scan and the cloud
+    // lookup first, and the room stayed unpaired for five seconds on every start
+    // waiting for an answer the settings file already had. Whatever answers there is
+    // asked for its id, and the address is used only when that is the paired bridge's:
+    // a bridge that DHCP moved fails here and discovery finds it at its new address,
+    // and Flux never streams to or pairs with whatever now holds the old lease.
+    string? hint = _settings.Load().LastBridgeAddress is { Length: > 0 } stored ? stored : null;
+    if(await TryRememberedAddressAsync(hint, bridgeId, cancellationToken).ConfigureAwait(false) is { } remembered) {
+      return remembered;
+    }
+
+    // Discovery once the remembered address has not answered, because DHCP moves a
     // bridge between sessions and the credentials stay valid across the move. The
     // stored identity is the bridge, and this is the step that turns it back into a
     // place.
@@ -530,21 +543,22 @@ public sealed class HueBridgeService: BackgroundService {
       return located;
     }
 
-    // Discovery found nothing, which on an mDNS-hostile network is the normal state
-    // once the cloud lookup's fifteen-minute budget is spent. The last working address
-    // is tried before giving up - and verified rather than assumed, so a bridge that
-    // has genuinely moved is still reported as missing instead of Flux talking to
-    // whatever now holds that lease.
-    if(_settings.Load().LastBridgeAddress is not { Length: > 0 } hint) {
-      return null;
-    }
+    // Asked once more when discovery found nothing, which on an mDNS-hostile network
+    // is the normal state once the cloud lookup's fifteen-minute budget is spent. The
+    // first ask is held to a short wait, and a start at login can fall inside the
+    // seconds the network adapter is still coming up; by the time discovery has
+    // given up, the bridge has had that long again to become reachable.
+    return await TryRememberedAddressAsync(hint, bridgeId, cancellationToken).ConfigureAwait(false);
+  }
 
-    if(await _client.TryDescribeAsync(hint, cancellationToken).ConfigureAwait(false) is not { } remembered
+  private async Task<HueBridge?> TryRememberedAddressAsync(string? hint, string bridgeId, CancellationToken cancellationToken) {
+    if(hint is null
+      || await _client.TryDescribeAsync(hint, cancellationToken).ConfigureAwait(false) is not { } remembered
       || !string.Equals(remembered.Id, bridgeId, StringComparison.OrdinalIgnoreCase)) {
       return null;
     }
 
-    _logger.LogInformation("No bridge answered discovery. The paired bridge was still at its last address, {Address}.", hint);
+    _logger.LogInformation("The paired bridge answered at its last address, {Address}.", hint);
     Update(connection => connection with { Discovered = [remembered] });
 
     return remembered;

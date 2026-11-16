@@ -829,7 +829,7 @@ immediately after `hello`, and then **only when something changes**.
 |---|---|---|
 | `state` | string | Which of the seven situations below the user is in |
 | `bridge` | object or **null** | The paired bridge. Null before there is one |
-| `discovered` | array | What the last discovery found. May be empty, and may contain the paired bridge |
+| `discovered` | array | What the last search for bridges found. May be empty, and may contain the paired bridge; after a connect that found the paired bridge at its last address, it is only that bridge |
 | `areas` | array | The bridge's entertainment areas. Empty until it is reachable |
 | `selectedAreaId` | string (uuid) or **null** | The area lights will be streamed to. Null until one is chosen |
 | `pairingSecondsRemaining` | int or **null** | Seconds left in the pairing window. Non-null **exactly** when `state` is `"pairing"` |
@@ -912,8 +912,9 @@ produce a combination neither of them chose.
 | `address` | string | Where it answered from, this time |
 
 **`address` is for display and for nothing else.** It is expected to change
-between sessions, because DHCP moves a bridge and Flux stores only the id: every
-reconnect re-discovers where that id currently answers. A client that remembers
+between sessions, because DHCP moves a bridge and Flux trusts only the id: every
+reconnect checks where that id currently answers, at its last address first and
+through discovery when it is not there. A client that remembers
 an address has remembered the one part of this that is not durable.
 
 The discovered list is kept while pairing rather than cleared, because that list

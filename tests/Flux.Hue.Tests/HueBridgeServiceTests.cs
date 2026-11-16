@@ -248,26 +248,6 @@ public class HueBridgeServiceTests {
     Assert.Empty(harness.Service.Connection.Areas);
   }
 
-  /// <summary>
-  /// The case a real network produced within an hour of the feature existing: mDNS
-  /// filtered, the cloud lookup's fifteen-minute budget spent on earlier restarts, and
-  /// a paired bridge sitting at an address Flux had been talking to minutes before.
-  /// </summary>
-  [Fact]
-  public async Task FallsBackToTheLastWorkingAddressWhenDiscoveryFindsNothing() {
-    Harness harness = new Harness(
-      stored: settings => settings.Stored = new HueSettings(null, null, LastBridgeAddress: "192.168.1.51"));
-    harness.Credentials.Stored = Credentials;
-    harness.Client.Bridges = [];
-    harness.Client.AtAddress["192.168.1.51"] = Bridge;
-    harness.Client.Areas = [Living];
-
-    await harness.RunStartupAsync();
-
-    Assert.Equal(HueConnectionState.Ready, harness.Service.Connection.State);
-    Assert.Equal(Bridge, harness.Service.Connection.Bridge);
-  }
-
   [Fact]
   public async Task DoesNotTalkToWhateverNowHoldsAnOldAddress() {
     // The hint is verified rather than believed: a bridge that genuinely moved must be
@@ -281,6 +261,71 @@ public class HueBridgeServiceTests {
     await harness.RunStartupAsync();
 
     Assert.Equal(HueConnectionState.Failed, harness.Service.Connection.State);
+  }
+
+  /// <summary>
+  /// The case a real network produced within an hour of the hint existing: mDNS
+  /// filtered, the cloud lookup's fifteen-minute budget spent on earlier restarts, and
+  /// the first ask of the last address falling inside a network that was not up yet.
+  /// The address is asked again once discovery has come back empty.
+  /// </summary>
+  [Fact]
+  public async Task AsksTheLastAddressAgainWhenDiscoveryFindsNothing() {
+    Harness harness = new Harness(
+      stored: settings => settings.Stored = new HueSettings(null, null, LastBridgeAddress: "192.168.1.51"));
+    harness.Credentials.Stored = Credentials;
+    harness.Client.Bridges = [];
+    harness.Client.Areas = [Living];
+    harness.Client.AnswersFromDescribeCall["192.168.1.51"] = (2, Bridge);
+
+    await harness.RunStartupAsync();
+
+    Assert.Equal(HueConnectionState.Ready, harness.Service.Connection.State);
+    Assert.Equal(Bridge, harness.Service.Connection.Bridge);
+    Assert.Equal(1, harness.Client.DiscoverCalls);
+    Assert.Equal(2, harness.Client.DescribeCalls);
+  }
+
+  /// <summary>
+  /// A start where the bridge is where it was last time does not wait for discovery,
+  /// which on a Hue Bridge Pro is the full LAN scan and cloud lookup.
+  /// </summary>
+  [Fact]
+  public async Task TriesTheLastWorkingAddressBeforeDiscovery() {
+    Harness harness = new Harness(
+      stored: settings => settings.Stored = new HueSettings(null, null, LastBridgeAddress: Bridge.Address));
+    harness.Credentials.Stored = Credentials;
+    harness.Client.Bridges = [Bridge];
+    harness.Client.AtAddress[Bridge.Address] = Bridge;
+    harness.Client.Areas = [Living];
+
+    await harness.RunStartupAsync();
+
+    Assert.Equal(HueConnectionState.Ready, harness.Service.Connection.State);
+    Assert.Equal(Bridge, harness.Service.Connection.Bridge);
+    Assert.Equal(0, harness.Client.DiscoverCalls);
+  }
+
+  /// <summary>
+  /// DHCP moved the bridge: its old address now answers as something else, and
+  /// discovery finds it at the new one, which becomes the address tried next time.
+  /// </summary>
+  [Fact]
+  public async Task FindsABridgeThatMovedThroughDiscovery() {
+    HueBridge moved = Bridge with { Address = "192.168.1.77" };
+    Harness harness = new Harness(
+      stored: settings => settings.Stored = new HueSettings(null, null, LastBridgeAddress: "192.168.1.51"));
+    harness.Credentials.Stored = Credentials;
+    harness.Client.Bridges = [moved];
+    harness.Client.AtAddress["192.168.1.51"] = new HueBridge("ecb5fafffe0dbeef", "192.168.1.51");
+    harness.Client.Areas = [Living];
+
+    await harness.RunStartupAsync();
+
+    Assert.Equal(HueConnectionState.Ready, harness.Service.Connection.State);
+    Assert.Equal(moved, harness.Service.Connection.Bridge);
+    Assert.Equal(1, harness.Client.DiscoverCalls);
+    Assert.Equal(moved.Address, harness.Settings.Stored.LastBridgeAddress);
   }
 
   [Fact]

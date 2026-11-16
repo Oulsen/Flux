@@ -121,13 +121,24 @@ internal sealed class HueApiBridgeClient: IHueBridgeClient {
     }
 
     try {
-      return await DescribeAsync(address, cancellationToken).ConfigureAwait(false);
-    } catch(HueBridgeException) {
+      return await DescribeAsync(address, cancellationToken).WaitAsync(HintTimeout, cancellationToken).ConfigureAwait(false);
+    } catch(Exception e) when(e is HueBridgeException or TimeoutException) {
       // A hint that did not pay off is not a failure worth reporting: the address is
       // remembered precisely because it might be stale.
       return null;
     }
   }
+
+  /// <summary>
+  /// How long a remembered address gets to answer before discovery takes over.
+  ///
+  /// Flux's own number, reasoned rather than measured: a bridge on the same LAN
+  /// answers its config in well under a second, and the hint is now tried before
+  /// discovery on every start, so an address that leads nowhere - a stale lease no
+  /// host answers on - must not cost more than discovery would have saved. The HTTP
+  /// client's own default would wait a hundred seconds.
+  /// </summary>
+  private static readonly TimeSpan HintTimeout = TimeSpan.FromSeconds(2);
 
   public async Task<IReadOnlyList<HueArea>> GetAreasAsync(HueBridge bridge, HueCredentials credentials, CancellationToken cancellationToken) {
     ArgumentNullException.ThrowIfNull(bridge);

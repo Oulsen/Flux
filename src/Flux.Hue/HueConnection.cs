@@ -50,9 +50,10 @@ public enum HueConnectionState {
 /// <param name="State">Which situation the user is in.</param>
 /// <param name="Bridge">The paired bridge, or null before there is one.</param>
 /// <param name="Discovered">
-/// What the last discovery found. Kept while pairing, because the pairing screen is
-/// showing this list and a user who cannot see their bridge needs to know whether
-/// none were found or theirs was not among them.
+/// What the last search for bridges found: a discovery's whole answer, or only the
+/// paired bridge when it answered at its last address. Kept while pairing, because
+/// the pairing screen is showing this list and a user who cannot see their bridge
+/// needs to know whether none were found or theirs was not among them.
 /// </param>
 /// <param name="Areas">The bridge's entertainment areas, empty until it is reachable.</param>
 /// <param name="SelectedAreaId">The area lights will be streamed to, once one is chosen.</param>
