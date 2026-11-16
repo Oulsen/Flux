@@ -17,10 +17,11 @@ import {
   type SourceState,
   type SpectrumData,
   type StageData,
+  type AudioData,
   type StateData,
   type UpdateData,
 } from './protocol.ts';
-import { BAND_DEFAULT, COLOR_DEFAULT, LAYOUT_DEFAULT, SHAPE_DEFAULT } from './scene.ts';
+import { BAND_DEFAULT, COLOR_DEFAULT, HUE_SPEED_DEFAULT, LAYOUT_DEFAULT, SHAPE_DEFAULT } from './scene.ts';
 import type { ConnectionState } from './socket.ts';
 import type { HeldDeck } from './waveform.ts';
 import {
@@ -154,7 +155,14 @@ export class FluxStore {
     color: COLOR_DEFAULT,
     bands: BAND_DEFAULT,
     trailMs: 0,
+    hueSpeed: HUE_SPEED_DEFAULT,
   });
+
+  /** The audio source's beat sensitivity; null until a server with an audio source says. */
+  sensitivity = $state<number | null>(null);
+
+  /** The sensitivity this page asked for and has not seen come back, as for the stage. */
+  pendingSensitivity = $state<number | null>(null);
 
   /**
    * The stage settings this page has asked for and not yet seen come back.
@@ -259,6 +267,12 @@ export class FluxStore {
         break;
       }
 
+      case 'audio': {
+        this.sensitivity = (message.data as AudioData).sensitivity;
+        this.pendingSensitivity = resolvePending(this.pendingSensitivity, this.sensitivity);
+        break;
+      }
+
       case 'stage': {
         // Replaced wholesale rather than merged: the frame is a complete statement of
         // the look, which is exactly what the message that set it was.
@@ -309,6 +323,7 @@ export class FluxStore {
           this.pendingDevice = null;
           this.pendingEngine = {};
           this.pendingStage = {};
+          this.pendingSensitivity = null;
         }
 
         console.warn('Flux rejected a message:', error);
@@ -333,6 +348,7 @@ export class FluxStore {
     this.pendingDevice = null;
     this.pendingEngine = {};
     this.pendingStage = {};
+    this.pendingSensitivity = null;
 
     // A subscription is a preference held by the connection that is now gone, so
     // the list it filled is gone with it. Keeping the rows would show meters

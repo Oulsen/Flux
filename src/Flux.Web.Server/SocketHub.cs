@@ -92,6 +92,9 @@ public sealed class SocketHub {
   /// <summary>Null where nothing finds one, as in the tests: the greeting then says null.</summary>
   private readonly PhoneAddress? phone;
 
+  /// <summary>Null in a build with no audio source, which then sends no <c>audio</c> frame.</summary>
+  private readonly IAudioSensitivity? sensitivity;
+
   /// <summary>
   /// The quantum comes from the beat settings rather than from the web settings
   /// because it is a property of the music, not of the transport. It is also the
@@ -116,7 +119,8 @@ public sealed class SocketHub {
     IAppUpdates? updates,
     IHostApplicationLifetime lifetime,
     ILogger<SocketHub> log,
-    PhoneAddress? phone = null) {
+    PhoneAddress? phone = null,
+    IAudioSensitivity? sensitivity = null) {
     ArgumentNullException.ThrowIfNull(options);
     ArgumentNullException.ThrowIfNull(beat);
     ArgumentNullException.ThrowIfNull(lifetime);
@@ -132,6 +136,7 @@ public sealed class SocketHub {
     this.stopping = lifetime.ApplicationStopping;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
     this.phone = phone;
+    this.sensitivity = sensitivity;
 
     this.quantum = beat.Value.Quantum;
   }
@@ -232,6 +237,11 @@ public sealed class SocketHub {
     // page that waited for the next one would draw the defaults over somebody's chosen
     // look until the next time anybody touched a control.
     client.Enqueue(StageFrames.Snapshot(this.stage.Settings));
+
+    // The audio source's sensitivity, pushed on change like the stage.
+    if(this.sensitivity is not null) {
+      client.Enqueue(Frames.Audio(new AudioData(this.sensitivity.Sensitivity)));
+    }
 
     // And whether a newer Flux is waiting, once more for the same reason. Not sent by a
     // host with no updater, which is how the page knows to show no control for it.
@@ -488,6 +498,10 @@ public sealed class SocketHub {
 
       case "setStageSettings":
         this.SetStageSettings(client, envelope.Data);
+        break;
+
+      case "setSensitivity":
+        this.SetSensitivity(client, envelope.Data);
         break;
 
       case "strobe":
@@ -765,6 +779,28 @@ public sealed class SocketHub {
   }
 
   /// <summary>
+  /// Sets how eagerly the audio source hears a beat. No acknowledgement: the <c>audio</c>
+  /// frame that follows goes to every page, so a phone moving it moves the laptop's too.
+  /// </summary>
+  private void SetSensitivity(Client client, JsonElement data) {
+    if(!Frames.TryReadSensitivity(data, out int requested)) {
+      client.Enqueue(Frames.Error("invalid_data", "Setting the sensitivity needs an integer 'data.sensitivity'."));
+      return;
+    }
+
+    if(this.sensitivity is null) {
+      client.Enqueue(Frames.Error("rejected", "This build has no audio source to set a sensitivity on."));
+      return;
+    }
+
+    if(!this.sensitivity.TrySetSensitivity(requested)) {
+      client.Enqueue(Frames.Error(
+        "rejected",
+        $"A sensitivity must be between {IAudioSensitivity.Min} and {IAudioSensitivity.Max}."));
+    }
+  }
+
+  /// <summary>
   /// Shifts light against the beat.
   ///
   /// Refused rather than clamped outside the range, on the same argument as a manual
@@ -871,7 +907,7 @@ public sealed class SocketHub {
     if(!Frames.TryReadStage(data, out StageData requested)) {
       client.Enqueue(Frames.Error(
         "invalid_data",
-        "Setting the stage needs strings 'data.layout', 'data.shape' and 'data.color' and integers 'data.bands' and 'data.trailMs'."));
+        "Setting the stage needs strings 'data.layout', 'data.shape' and 'data.color' and integers 'data.bands', 'data.trailMs' and 'data.hueSpeed'."));
       return;
     }
 
@@ -890,10 +926,10 @@ public sealed class SocketHub {
       return;
     }
 
-    if(!this.stage.TrySet(new StageSettings(layout, shape, color, requested.Bands, requested.TrailMs))) {
+    if(!this.stage.TrySet(new StageSettings(layout, shape, color, requested.Bands, requested.TrailMs, requested.HueSpeed))) {
       client.Enqueue(Frames.Error(
         "rejected",
-        $"The band count must be between {SpectrumBands.Min} and {SpectrumBands.Max}, and a trail between 0 and {StageSettings.MaxTrailMs} ms."));
+        $"The band count must be between {SpectrumBands.Min} and {SpectrumBands.Max}, a trail between 0 and {StageSettings.MaxTrailMs} ms, and the hue speed between 0 and {StageSettings.MaxHueSpeed}."));
     }
   }
 

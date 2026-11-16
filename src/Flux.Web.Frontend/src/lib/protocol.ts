@@ -76,6 +76,27 @@ export interface StageData {
    * frames drawn again under the live one, each fainter. Screen only.
    */
   trailMs: number;
+  /**
+   * How fast the hue travels under the three cycling colour styles, 0 to 100, where 0
+   * holds it still. The scene's own dial, and its default of 20. Screen only.
+   */
+  hueSpeed: number;
+}
+
+/** The audio source's sensitivity scale. Mirrored from `IAudioSensitivity.Min` and `Max`. */
+export const SENSITIVITY_MIN = 1;
+
+/** @see SENSITIVITY_MIN */
+export const SENSITIVITY_MAX = 100;
+
+/** How the audio source listens. Sent only by a build that has an audio source. */
+export interface AudioData {
+  /** How eagerly a beat is heard, 1 to 100: higher hears softer kicks, lower ignores hi-hats. */
+  sensitivity: number;
+}
+
+export interface SetSensitivityData {
+  sensitivity: number;
 }
 
 export type DeviceState = 'signal' | 'digitalSilence' | 'noData' | 'failed';
@@ -542,6 +563,8 @@ export type ClientMessage =
   | { type: 'setLatencyOffset'; data: SetLatencyOffsetData }
   | { type: 'setLightSettings'; data: SetLightSettingsData }
   | { type: 'setStageSettings'; data: SetStageSettingsData }
+  // Answered by the audio frame that follows, sent to every page.
+  | { type: 'setSensitivity'; data: SetSensitivityData }
   // Repeated every STROBE_RENEW_MS while the finger stays down, because the server
   // holds the strobe on a lease rather than until it hears a release.
   | { type: 'strobe'; data: StrobeData }

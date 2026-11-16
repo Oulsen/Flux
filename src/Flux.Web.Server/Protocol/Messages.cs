@@ -30,6 +30,13 @@ public sealed record Envelope<TData>(string Type, TData Data);
 public sealed record HelloData(int Protocol, string App, int Quantum, int StateHz, int SpectrumHz, int DevicesHz, string? PhoneUrl);
 
 /// <summary>
+/// How the audio source listens, pushed on change and once to every client as it
+/// connects. Sent only by a build that has an audio source.
+/// </summary>
+/// <param name="Sensitivity">How eagerly a beat is heard, 1 to 100: higher hears softer kicks, lower ignores hi-hats.</param>
+public sealed record AudioData(int Sensitivity);
+
+/// <summary>
 /// Where the beat is, as a snapshot rather than a delta.
 /// </summary>
 /// <param name="Bpm">Tempo in beats per minute.</param>

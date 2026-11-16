@@ -64,7 +64,7 @@ internal readonly record struct BeatDecision(
 /// for real seconds to pass.
 /// </summary>
 internal sealed class AudioBeatDetector {
-  private readonly int sensitivity;
+  private int sensitivity;
 
   /// <summary>Recent flux values, for the adaptive threshold.</summary>
   private readonly List<double> fluxHistory = new List<double>(AudioConstants.HistoryMinFrames * 2);
@@ -111,7 +111,19 @@ internal sealed class AudioBeatDetector {
   /// setting.
   /// </param>
   public AudioBeatDetector(int sensitivity = AudioConstants.DefaultSensitivity) {
-    this.sensitivity = Math.Clamp(sensitivity, AudioConstants.MinSensitivity, AudioConstants.MaxSensitivity);
+    this.Sensitivity = sensitivity;
+  }
+
+  /// <summary>
+  /// The sensitivity in use, clamped to 1 to 100.
+  ///
+  /// Settable while frames are running, because the page moves it mid-track. Written
+  /// from a socket thread and read on the capture thread once a frame, so it is one
+  /// int read and written whole: a frame sees the old value or the new one.
+  /// </summary>
+  public int Sensitivity {
+    get => Volatile.Read(ref this.sensitivity);
+    set => Volatile.Write(ref this.sensitivity, Math.Clamp(value, AudioConstants.MinSensitivity, AudioConstants.MaxSensitivity));
   }
 
   /// <summary>
@@ -271,7 +283,7 @@ internal sealed class AudioBeatDetector {
 
     double average = total / this.fluxHistory.Count;
     double multiplier = AudioConstants.SensitivityBase
-      - (this.sensitivity / 100.0 * AudioConstants.SensitivitySpan);
+      - (this.Sensitivity / 100.0 * AudioConstants.SensitivitySpan);
 
     return (average * multiplier) + AudioConstants.FluxThresholdOffset;
   }

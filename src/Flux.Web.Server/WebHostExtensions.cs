@@ -86,7 +86,8 @@ public static class WebHostExtensions {
       provider.GetService<IAppUpdates>(),
       provider.GetRequiredService<IHostApplicationLifetime>(),
       provider.GetRequiredService<ILogger<SocketHub>>(),
-      provider.GetRequiredService<PhoneAddress>()));
+      provider.GetRequiredService<PhoneAddress>(),
+      provider.GetService<IAudioSensitivity>()));
 
     // A factory rather than constructor discovery, now that it has an optional seam
     // of its own: GetService is the only resolution that answers null for a build
@@ -126,6 +127,11 @@ public static class WebHostExtensions {
     builder.Services.AddHostedService(provider => new StageBroadcaster(
       provider.GetRequiredService<SocketHub>(),
       provider.GetRequiredService<StageService>()));
+
+    // The sensitivity is optional the way the device feed is: no audio source, no frame.
+    builder.Services.AddHostedService(provider => new AudioBroadcaster(
+      provider.GetRequiredService<SocketHub>(),
+      provider.GetService<IAudioSensitivity>()));
 
     // Updates are optional the way audio is: only an installed desktop app has an
     // updater to register, and without one this starts nothing.

@@ -146,6 +146,7 @@ public static class ServiceCollectionExtensions {
     services.AddSingleton<AudioSyncSource>();
     services.AddSingleton<ISyncSource>(provider => provider.GetRequiredService<AudioSyncSource>());
     services.AddSingleton<IAudioSpectrum>(provider => provider.GetRequiredService<AudioSyncSource>());
+    services.AddSingleton<IAudioSensitivity>(provider => provider.GetRequiredService<AudioSyncSource>());
     services.AddHostedService(provider => provider.GetRequiredService<AudioSyncSource>());
 
     return services;

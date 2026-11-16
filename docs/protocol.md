@@ -162,6 +162,13 @@ request beside the socket, `GET /api/track/{track}`, for its waveform and grid. 
 field and a new URL: an older page ignores the field and never asks for the URL, so
 the version stays 2.
 
+`hello` then gained `phoneUrl`, for the page's QR code: an addition, which an older page
+ignores. After that the scene's last settings came onto the page: `audio` and
+`setSensitivity` are new types. `stage` gained `hueSpeed` and
+`setStageSettings` requires it, the way `trailMs` arrived, so a page built before it has
+its look refused as `invalid_data` rather than quietly applied without a speed it never
+chose. The version stays 2.
+
 ## Units and conventions
 
 | Field | Unit |
@@ -967,7 +974,8 @@ connects.
   "shape": "bars",
   "color": "randomBeat",
   "bands": 64,
-  "trailMs": 0
+  "trailMs": 0,
+  "hueSpeed": 20
 }}
 ```
 
@@ -978,6 +986,7 @@ connects.
 | `color` | string | `"randomBeat"`, `"hueCycle"`, `"hueWave"`, `"hueWaveVert"` or `"static"` |
 | `bands` | int | How many display columns `spectrum.bins` carries, 16 to 128 |
 | `trailMs` | int | How long the picture's afterimage lasts, 0 to 1000 ms. **0 is off**, and the default |
+| `hueSpeed` | int | How fast the hue travels under `hueCycle`, `hueWave` and `hueWaveVert`, 0 to 100. **0 holds it still**; 20, the scene's own default, is the default |
 
 Its own message rather than fields on `state`, on the argument that gave `hue` one:
 state goes out twenty times a second, and a look that changes when somebody taps a
@@ -1029,11 +1038,28 @@ It is on the screen only. In the scene the canvas was the device and the fade sm
 the LEDs along with the picture; Flux's lights have an envelope of their own, and
 `setLightSettings.pulseMs` is what decides how long a light trails a beat.
 
+### `audio`
+
+How the audio source listens, pushed on change and once to every client the moment it
+connects. Sent only by a build that has an audio source, which is how a page knows to
+show no control for it.
+
+```json
+{ "type": "audio", "data": { "sensitivity": 50 } }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `sensitivity` | int | How eagerly a beat is heard, 1 to 100: higher hears softer kicks, lower ignores hi-hats. The scene's own scale and default |
+
+Its own message for the reason `stage` has one: a setting that moves when somebody
+touches a slider would be twelve hundred identical copies a minute on `state`.
+
 ### `update`
 
-Whether a newer Flux is waiting. Sent once on connect, right after `stage`, and again to
-every client whenever it changes. The desktop app always sends it, and a host with no
-updater at all sends none. A page that has received none since the last `hello`, or
+Whether a newer Flux is waiting. Sent once on connect, right after `stage` and, on a
+build with an audio source, `audio`, and again to every client whenever it changes. The
+desktop app always sends it, and a host with no updater at all sends none. A page that has received none since the last `hello`, or
 has received `unavailable`, shows no update control.
 
 ```json
@@ -1450,6 +1476,27 @@ room should look; neither is a fact about the bridge, so re-pairing after a netw
 change must not discard a number somebody tuned by eye or a palette they picked for
 the night.
 
+### `setSensitivity`
+
+```json
+{ "type": "setSensitivity", "data": { "sensitivity": 65 } }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `sensitivity` | int | How eagerly the audio source hears a beat, 1 to 100 |
+
+The audio source's one tuning knob, which until now only `Audio:Sensitivity` in the
+configuration could set: the setting meant for the booth was in a file nobody at the
+booth opens. The configured value is where a machine starts until somebody moves the
+slider; from then the page's choice is remembered, in
+`%APPDATA%\Flux\audio-settings.json` beside the chosen device, or under `Flux-dev` for a
+build run from source.
+
+Confirmed by the `audio` frame that follows, which goes to every client. Outside 1 to 100
+is `rejected` rather than clamped, as is any value on a build with no audio source.
+Anything that is not an integer is `invalid_data`.
+
 ### `setLatencyOffset`
 
 ```json
@@ -1693,7 +1740,8 @@ One complete statement of how the visualizer should draw.
   "shape": "bars",
   "color": "randomBeat",
   "bands": 64,
-  "trailMs": 0
+  "trailMs": 0,
+  "hueSpeed": 20
 }}
 ```
 
@@ -1708,9 +1756,10 @@ controls too, and a reply addressed to the phone would leave the laptop showing 
 nobody is running.
 
 A name that is not on one of the three lists is `rejected` with the name quoted back.
-A `bands` outside 16 to 128 or a `trailMs` outside 0 to 1000 is `rejected` rather than
-clamped, on the same argument as `setLatencyOffset`. A missing field, a non-integer
-`bands` or `trailMs`, or a name that is not a string is `invalid_data`.
+A `bands` outside 16 to 128, a `trailMs` outside 0 to 1000 or a `hueSpeed` outside 0 to
+100 is `rejected` rather than clamped, on the same argument as `setLatencyOffset`. A
+missing field, a non-integer `bands`, `trailMs` or `hueSpeed`, or a name that is not a
+string is `invalid_data`.
 
 These survive a restart, in `%APPDATA%\Flux\stage-settings.json`, or under
 `Flux-dev` for a build run from source.

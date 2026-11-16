@@ -23,7 +23,8 @@ namespace Flux.Web.Server.Protocol;
 /// old count.
 /// </param>
 /// <param name="TrailMs">How long the picture's afterimage lasts, 0 to 1000 milliseconds, where 0 is off. Screen only.</param>
-public sealed record StageData(string Layout, string Shape, string Color, int Bands, int TrailMs);
+/// <param name="HueSpeed">How fast the hue travels under the cycling colour styles, 0 to 100, where 0 holds it still. Screen only.</param>
+public sealed record StageData(string Layout, string Shape, string Color, int Bands, int TrailMs, int HueSpeed);
 
 /// <summary>
 /// Composes the <c>stage</c> frame, and reads a request to change it.
@@ -55,7 +56,8 @@ internal static class StageFrames {
       Name(settings.Shape),
       Name(settings.Color),
       settings.Bands,
-      settings.TrailMs);
+      settings.TrailMs,
+      settings.HueSpeed);
   }
 
   /// <summary>

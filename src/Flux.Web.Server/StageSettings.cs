@@ -111,12 +111,26 @@ public enum StageColor {
 /// lights have an envelope of their own, and <see cref="Flux.Hue.LightSettings.PulseMs"/>
 /// is what decides how long a light trails a beat.
 /// </param>
+/// <param name="HueSpeed">
+/// How fast the hue travels under the three cycling colour styles, on the scene's own 0 to
+/// <see cref="MaxHueSpeed"/> dial, where 0 holds the hue still. The scene's default of
+/// <see cref="DefaultHueSpeed"/> and its arithmetic are carried across unchanged, and it
+/// was fixed at that default until it moved onto the page. Screen only: the room's colour
+/// changes are the light engine's, timed to the bar.
+/// </param>
 public sealed record StageSettings(
   StageLayout Layout,
   StageShape Shape,
   StageColor Color,
   int Bands,
-  int TrailMs = 0) {
+  int TrailMs = 0,
+  int HueSpeed = StageSettings.DefaultHueSpeed) {
+  /// <summary>The scene's hue cycling speed, and its default.</summary>
+  public const int DefaultHueSpeed = 20;
+
+  /// <summary>The top of the scene's hue speed dial.</summary>
+  public const int MaxHueSpeed = 100;
+
   /// <summary>
   /// The longest trail, in milliseconds.
   ///
@@ -148,7 +162,9 @@ public sealed record StageSettings(
     && Enum.IsDefined(this.Color)
     && SpectrumBands.IsValid(this.Bands)
     && this.TrailMs >= 0
-    && this.TrailMs <= MaxTrailMs;
+    && this.TrailMs <= MaxTrailMs
+    && this.HueSpeed >= 0
+    && this.HueSpeed <= MaxHueSpeed;
 }
 
 /// <summary>

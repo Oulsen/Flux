@@ -226,6 +226,55 @@ public sealed class AudioSyncSourceTests {
     Assert.Null(counters.Taps);
   }
 
+  [Fact]
+  public void StartsAtTheConfiguredSensitivityUntilOneIsChosen() {
+    Assert.Equal(35, new Rig(new MemorySettings(AudioSettings.Empty), configuredSensitivity: 35).Source.Sensitivity);
+    Assert.Equal(80, new Rig(new MemorySettings(new AudioSettings(null, Sensitivity: 80)), configuredSensitivity: 35).Source.Sensitivity);
+  }
+
+  /// <summary>
+  /// Set from the page, it takes effect at once, is announced, and is remembered without
+  /// losing the device chosen beside it.
+  /// </summary>
+  [Fact]
+  public void ASensitivitySetFromThePageIsAppliedAnnouncedAndRemembered() {
+    MemorySettings settings = new MemorySettings(new AudioSettings("device-1"));
+    Rig rig = new Rig(settings);
+    int? announced = null;
+    rig.Source.SensitivityChanged += value => announced = value;
+
+    Assert.True(rig.Source.TrySetSensitivity(72));
+
+    Assert.Equal(72, rig.Source.Sensitivity);
+    Assert.Equal(72, announced);
+    Assert.Equal(new AudioSettings("device-1", Sensitivity: 72), settings.Stored);
+  }
+
+  [Theory]
+  [InlineData(0)]
+  [InlineData(101)]
+  public void ASensitivityOutsideTheScaleIsRefusedAndNothingChanges(int sensitivity) {
+    MemorySettings settings = new MemorySettings(AudioSettings.Empty);
+    Rig rig = new Rig(settings);
+
+    Assert.False(rig.Source.TrySetSensitivity(sensitivity));
+
+    Assert.Equal(AudioConstants.DefaultSensitivity, rig.Source.Sensitivity);
+    Assert.Equal(AudioSettings.Empty, settings.Stored);
+  }
+
+  private sealed class MemorySettings: IAudioSettingsStore {
+    public MemorySettings(AudioSettings stored) {
+      this.Stored = stored;
+    }
+
+    public AudioSettings Stored { get; private set; }
+
+    public AudioSettings Load() => this.Stored;
+
+    public void Save(AudioSettings settings) => this.Stored = settings;
+  }
+
   /// <summary>
   /// The source under test, wired to a real grid and manager so the assertions are
   /// about what the rest of the app would see rather than about what this class
@@ -236,7 +285,7 @@ public sealed class AudioSyncSourceTests {
 
     private readonly AudioSyncSource source;
 
-    public Rig() {
+    public Rig(IAudioSettingsStore? settings = null, int configuredSensitivity = AudioConstants.DefaultSensitivity) {
       BeatOptions beat = new BeatOptions();
 
       this.Clock = new FakeClock();
@@ -261,9 +310,10 @@ public sealed class AudioSyncSourceTests {
         analyzer,
         sources,
         this.Clock,
-        Options.Create(new AudioOptions()),
+        Options.Create(new AudioOptions { Sensitivity = configuredSensitivity }),
         Options.Create(beat),
-        NullLogger<AudioSyncSource>.Instance);
+        NullLogger<AudioSyncSource>.Instance,
+        settings);
     }
 
     public FakeClock Clock { get; }

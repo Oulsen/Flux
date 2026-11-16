@@ -67,6 +67,10 @@ public static class Frames {
     return Encode("hue", hue, ProtocolJson.Default.EnvelopeHueData);
   }
 
+  public static ReadOnlyMemory<byte> Audio(AudioData audio) {
+    return Encode("audio", audio, ProtocolJson.Default.EnvelopeAudioData);
+  }
+
   public static ReadOnlyMemory<byte> Stage(StageData stage) {
     return Encode("stage", stage, ProtocolJson.Default.EnvelopeStageData);
   }
@@ -216,6 +220,13 @@ public static class Frames {
     return TryReadString(data, "areaId", out string text) && Guid.TryParse(text, out areaId);
   }
 
+  /// <summary>Reads a <c>setSensitivity</c> payload, as far as its shape.</summary>
+  public static bool TryReadSensitivity(JsonElement data, out int sensitivity) {
+    sensitivity = 0;
+
+    return data.ValueKind == JsonValueKind.Object && TryReadInt(data, "sensitivity", out sensitivity);
+  }
+
   /// <summary>
   /// Reads a <c>setLatencyOffset</c> payload.
   ///
@@ -291,18 +302,19 @@ public static class Frames {
   /// offending name quoted - which this cannot produce and the caller can.
   /// </summary>
   public static bool TryReadStage(JsonElement data, out StageData stage) {
-    stage = new StageData(string.Empty, string.Empty, string.Empty, 0, 0);
+    stage = new StageData(string.Empty, string.Empty, string.Empty, 0, 0, 0);
 
     if(data.ValueKind != JsonValueKind.Object
       || !TryReadString(data, "layout", out string layout)
       || !TryReadString(data, "shape", out string shape)
       || !TryReadString(data, "color", out string color)
       || !TryReadInt(data, "bands", out int bands)
-      || !TryReadInt(data, "trailMs", out int trailMs)) {
+      || !TryReadInt(data, "trailMs", out int trailMs)
+      || !TryReadInt(data, "hueSpeed", out int hueSpeed)) {
       return false;
     }
 
-    stage = new StageData(layout, shape, color, bands, trailMs);
+    stage = new StageData(layout, shape, color, bands, trailMs, hueSpeed);
     return true;
   }
 
@@ -399,6 +411,7 @@ public static class Frames {
 [JsonSerializable(typeof(Envelope<DevicesData>))]
 [JsonSerializable(typeof(Envelope<HueData>))]
 [JsonSerializable(typeof(Envelope<StageData>))]
+[JsonSerializable(typeof(Envelope<AudioData>))]
 [JsonSerializable(typeof(Envelope<UpdateData>))]
 [JsonSerializable(typeof(Envelope<EchoData>))]
 [JsonSerializable(typeof(Envelope<ErrorData>))]

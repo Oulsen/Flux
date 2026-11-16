@@ -182,7 +182,7 @@ overrides both for one run, for example `--Hue:Enabled=false`.
 | `Link:InterfaceAddress` | `null` | Network adapter to listen for Link on; `null` picks one |
 | `Audio:DeviceId` | `null` | Exact endpoint id of the device to capture; `null` goes by name. A device picked on the page wins |
 | `Audio:PreferDeviceNamed` | `DDJ-FLX10` | Part of the capture device's name, inputs before outputs; empty captures nothing until one is picked |
-| `Audio:Sensitivity` | `50` | How eagerly audio beat detection triggers, 1 to 100 |
+| `Audio:Sensitivity` | `50` | How eagerly audio beat detection triggers, 1 to 100. The starting value: the sensitivity slider under beat, with audio as the source, overrides it and is remembered |
 | `Audio:RecordFramesPath` | `null` | Write analysed audio frames to this file, to turn a track into a test fixture |
 | `Audio:RecordAudioPath` | `null` | Write the captured audio to this mono WAVE file; about 11 MB a minute |
 | `Midi:Enabled` | `true` | Watch a MIDI controller for cue presses, read-only |

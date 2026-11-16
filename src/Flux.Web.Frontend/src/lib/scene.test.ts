@@ -13,6 +13,8 @@ import {
   afterimageAlpha,
   keepAfterimages,
   trailMsLabel,
+  cyclesHue,
+  hueSpeedLabel,
   type Afterimage,
   brightnessOf,
   COLOR_RELEASE_REMAINDER,
@@ -20,6 +22,7 @@ import {
   dampPulse,
   hueCss,
   hueShift,
+  advanceHue,
   HUE_SPEED_DEFAULT,
   isSmooth,
   LAYOUTS,
@@ -538,4 +541,27 @@ test('an afterimage starts faint, falls to a tenth of that over the trail, and i
 test('a trail of nothing says off', () => {
   assert.equal(trailMsLabel(0), 'off');
   assert.equal(trailMsLabel(350), '350 ms');
+});
+
+test('the hue speed is offered only for the styles that travel round the wheel', () => {
+  assert.equal(cyclesHue('hueCycle'), true);
+  assert.equal(cyclesHue('hueWave'), true);
+  assert.equal(cyclesHue('hueWaveVert'), true);
+  assert.equal(cyclesHue('randomBeat'), false);
+  assert.equal(cyclesHue('static'), false);
+});
+
+test('a hue speed of nothing reads as still, not as zero', () => {
+  assert.equal(hueSpeedLabel(0), 'still');
+  assert.equal(hueSpeedLabel(20), '20');
+});
+
+test('changing the hue speed changes how fast the colour travels, not where it is', () => {
+  // An hour in at the default, then one step faster: the hue carries on from where it
+  // was rather than jumping to wherever the new speed times the hour would put it.
+  const before = advanceHue(0.3, 0, HUE_SPEED_DEFAULT);
+  assertClose(advanceHue(before, 0, HUE_SPEED_DEFAULT + 1), 0.3, 'no time, no movement');
+  assertClose(advanceHue(0.3, 5_000, HUE_SPEED_DEFAULT), 0.8, 'half a turn in five seconds at 20');
+  assertClose(advanceHue(0.9, 5_000, HUE_SPEED_DEFAULT), 0.4, 'wraps past a whole turn');
+  assert.equal(advanceHue(0.3, 5_000, 0), 0.3);
 });
