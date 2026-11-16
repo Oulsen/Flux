@@ -42,6 +42,7 @@ export class FluxStore {
 
   app = $state<string | null>(null);
   protocol = $state<number | null>(null);
+  phoneUrl = $state<string | null>(null);
   quantum = $state(4);
   stateHz = $state(20);
 
@@ -204,6 +205,7 @@ export class FluxStore {
         const hello = message.data as HelloData;
         this.protocol = hello.protocol;
         this.app = hello.app;
+        this.phoneUrl = hello.phoneUrl ?? null;
         this.quantum = hello.quantum;
         this.stateHz = hello.stateHz;
         // Cleared on every greeting: the update frame follows it from a host that has an

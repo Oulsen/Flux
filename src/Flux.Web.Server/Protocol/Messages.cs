@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Flux.Web.Server.Protocol;
@@ -26,7 +26,8 @@ public sealed record Envelope<TData>(string Type, TData Data);
 /// <param name="StateHz">Nominal state rate, so the client can size its own smoothing.</param>
 /// <param name="SpectrumHz">Nominal spectrum rate for a subscriber, so a canvas can size its own decay per frame.</param>
 /// <param name="DevicesHz">Nominal device list rate for a subscriber.</param>
-public sealed record HelloData(int Protocol, string App, int Quantum, int StateHz, int SpectrumHz, int DevicesHz);
+/// <param name="PhoneUrl">Where a phone on this network opens the page, for the page's QR code. Null when nothing but this PC can reach it.</param>
+public sealed record HelloData(int Protocol, string App, int Quantum, int StateHz, int SpectrumHz, int DevicesHz, string? PhoneUrl);
 
 /// <summary>
 /// Where the beat is, as a snapshot rather than a delta.

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
@@ -40,10 +40,10 @@ public static class Frames {
   /// <summary>How much of a rejected type name is quoted back, so a client cannot have its own input amplified at it.</summary>
   private const int MaxQuotedTypeLength = 40;
 
-  public static ReadOnlyMemory<byte> Hello(string app, int quantum, int stateHz, int spectrumHz, int devicesHz) {
+  public static ReadOnlyMemory<byte> Hello(string app, int quantum, int stateHz, int spectrumHz, int devicesHz, Uri? phoneUrl) {
     return Encode(
       "hello",
-      new HelloData(Version, app, quantum, stateHz, spectrumHz, devicesHz),
+      new HelloData(Version, app, quantum, stateHz, spectrumHz, devicesHz, phoneUrl?.ToString()),
       ProtocolJson.Default.EnvelopeHelloData);
   }
 

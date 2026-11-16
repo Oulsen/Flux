@@ -17,7 +17,7 @@ public sealed class WireFormatTests {
   [Fact]
   public void HelloCarriesTheProtocolVersionAndTheBuild() {
     JsonElement data = Payload(
-      Frames.Hello("0.1.0", quantum: 4, stateHz: 20, spectrumHz: 30, devicesHz: 10),
+      Frames.Hello("0.1.0", quantum: 4, stateHz: 20, spectrumHz: 30, devicesHz: 10, phoneUrl: new Uri("http://192.168.1.163:5050/")),
       "hello");
 
     Assert.Equal(Frames.Version, data.GetProperty("protocol").GetInt32());
@@ -26,6 +26,20 @@ public sealed class WireFormatTests {
     Assert.Equal(20, data.GetProperty("stateHz").GetInt32());
     Assert.Equal(30, data.GetProperty("spectrumHz").GetInt32());
     Assert.Equal(10, data.GetProperty("devicesHz").GetInt32());
+    Assert.Equal("http://192.168.1.163:5050/", data.GetProperty("phoneUrl").GetString());
+  }
+
+  /// <summary>
+  /// Sent as null rather than left out when nothing but this PC can reach the page, on
+  /// the rule every other absent reading follows.
+  /// </summary>
+  [Fact]
+  public void HelloSaysNullWhenThereIsNoPhoneAddress() {
+    JsonElement data = Payload(
+      Frames.Hello("0.1.0", quantum: 4, stateHz: 20, spectrumHz: 30, devicesHz: 10, phoneUrl: null),
+      "hello");
+
+    Assert.Equal(JsonValueKind.Null, data.GetProperty("phoneUrl").ValueKind);
   }
 
   /// <summary>

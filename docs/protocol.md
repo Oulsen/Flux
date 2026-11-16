@@ -199,7 +199,8 @@ Sent once, immediately after the socket opens, before anything else.
   "quantum": 4,
   "stateHz": 20,
   "spectrumHz": 30,
-  "devicesHz": 10
+  "devicesHz": 10,
+  "phoneUrl": "http://192.168.1.163:5050/"
 }}
 ```
 
@@ -211,6 +212,12 @@ Sent once, immediately after the socket opens, before anything else.
 | `stateHz` | int | Nominal `state` rate, so the client can size its own smoothing |
 | `spectrumHz` | int | Nominal `spectrum` rate for a subscriber |
 | `devicesHz` | int | Nominal `devices` rate for a subscriber |
+| `phoneUrl` | string or **null** | Where a phone on this network opens the page, for the page's QR code. Null when nothing but this PC can reach it: a loopback bind, or no usable network adapter. Absent from a Flux before 0.7 |
+
+`phoneUrl` is one address, not every one this PC has: the adapter with a default
+gateway, Ethernet or Wi-Fi first, on the rule the Link listener uses to pick its
+network. It is worked out per connection rather than once, because a laptop that moves
+to another network changes it under a running Flux.
 
 The three rates are nominal and are what a client should size its own decay and
 smoothing against. They are not promises: every feed drops frames for a client
