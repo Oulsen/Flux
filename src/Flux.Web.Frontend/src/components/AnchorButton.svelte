@@ -2,11 +2,11 @@
   /*
    * The press that says where the bar starts.
    *
-   * Extracted from `AnchorPad` when the same button was wanted on the stage, because
-   * the part worth not duplicating is not the circle - it is the rule that a tap fires
-   * on the press and never on the click. Two copies of that would drift, and the
-   * symptom of the wrong one is phase error nobody can see: the button would still
-   * work, and the downbeat would land wherever the finger happened to lift.
+   * One component for the stage's button and the manual source's downbeat-only press
+   * in the drawer, because the part worth not duplicating is not the circle - it is the
+   * rule that a tap fires on the press and never on the click. Two copies of that would
+   * drift, and the symptom of the wrong one is phase error nobody can see: the button
+   * would still work, and the downbeat would land wherever the finger happened to lift.
    */
 
   interface Props {

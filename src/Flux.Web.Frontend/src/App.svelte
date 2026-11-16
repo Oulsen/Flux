@@ -16,7 +16,7 @@
   import SpectrumCanvas from './components/SpectrumCanvas.svelte';
   import StrobeButton from './components/StrobeButton.svelte';
   import StagePanel from './components/StagePanel.svelte';
-  import AnchorPad from './components/AnchorPad.svelte';
+  import ManualTempo from './components/ManualTempo.svelte';
   import BarShift from './components/BarShift.svelte';
   import PhoneCode from './components/PhoneCode.svelte';
   import RangeSetting from './components/RangeSetting.svelte';
@@ -216,6 +216,15 @@
 
   /** The same, for the stage. Never null: the store seeds it with the server's own defaults. */
   const stage = $derived({ ...store.stage, ...store.pendingStage });
+
+  /** Whether the drawer's beat panel has anything the stage does not, for this source. */
+  const sensitivityShown = $derived(store.source === 'audio' && store.sensitivity !== null);
+  const beatPanelShown = $derived(
+    store.source === 'rekordbox' ||
+      store.source === 'manual' ||
+      store.alignment.method === 'rekordbox' ||
+      sensitivityShown,
+  );
 
   /*
    * The drawer shows itself once, the first time Flux says the bridge needs setting up.
@@ -696,45 +705,49 @@
     {/if}
 
     <!--
-      The beat after the lights, and without the source buttons: those are on the stage's
-      look panel, one tap from the music, and what is left here is the correction to the
-      grid the source chose.
+      The beat after the lights, holding only what the stage does not: the source buttons
+      and the tap or anchor button are on the stage, one press from the music, and this is
+      what is left for each source - a typed tempo and a downbeat-only press under manual,
+      the grid correction rekordbox offers, and audio's sensitivity. Under Link alone there
+      is nothing, and the panel is not drawn rather than drawn empty.
 
       rekordbox reads bar one from the track, so a tap there is a second opinion it
       overrules at the next seek; what it offers instead is a correction to its grid. It
       reads bar one under another source's tempo too, and there the correction is offered
-      beside the tap rather than in its place: the tap is still the only fix for a bar
-      that nothing else set, and rekordbox going quiet leaves its last downbeat labelled
-      as its own.
+      as well, because rekordbox going quiet leaves its last downbeat labelled as its own.
     -->
-    <section class="panel">
-      <h2>beat</h2>
-      {#if store.source === 'rekordbox'}
-        <BarShift shift={shiftBar} captions status={rekordboxStatus(store.diagnostics)} />
-      {:else}
-        <AnchorPad manual={store.source === 'manual'} bpm={store.grid?.bpm ?? null} {tap} {anchor} {setBpm} />
-        {#if store.alignment.method === 'rekordbox'}
-          <BarShift shift={shiftBar} captions />
+    {#if beatPanelShown}
+      <section class="panel">
+        <h2>beat</h2>
+        {#if store.source === 'rekordbox'}
+          <BarShift shift={shiftBar} captions status={rekordboxStatus(store.diagnostics)} />
+        {:else}
+          {#if store.source === 'manual'}
+            <ManualTempo bpm={store.grid?.bpm ?? null} {anchor} {setBpm} />
+          {/if}
+          {#if store.alignment.method === 'rekordbox'}
+            <BarShift shift={shiftBar} captions />
+          {/if}
         {/if}
-      {/if}
 
-      <!-- Only while audio is the source: it is the one source whose beats this decides,
-           and a slider that moves nothing under Link or rekordbox reads as broken. -->
-      {#if store.source === 'audio' && store.sensitivity !== null}
-        <RangeSetting
-          id="beat-sensitivity"
-          name="sensitivity"
-          min={SENSITIVITY_MIN}
-          max={SENSITIVITY_MAX}
-          step={1}
-          value={store.pendingSensitivity ?? store.sensitivity}
-          format={(sensitivity) => `${sensitivity}`}
-          hint="How eagerly the audio source hears a beat."
-          detail="Turn it up for music with a soft kick, down when beats are found in the hi-hats. A tempo read at half or double is a different problem, and this is not the setting for it."
-          commit={setSensitivity}
-        />
-      {/if}
-    </section>
+        <!-- Only while audio is the source: it is the one source whose beats this decides,
+             and a slider that moves nothing under Link or rekordbox reads as broken. -->
+        {#if sensitivityShown && store.sensitivity !== null}
+          <RangeSetting
+            id="beat-sensitivity"
+            name="sensitivity"
+            min={SENSITIVITY_MIN}
+            max={SENSITIVITY_MAX}
+            step={1}
+            value={store.pendingSensitivity ?? store.sensitivity}
+            format={(sensitivity) => `${sensitivity}`}
+            hint="How eagerly the audio source hears a beat."
+            detail="Turn it up for music with a soft kick, down when beats are found in the hi-hats. A tempo read at half or double is a different problem, and this is not the setting for it."
+            commit={setSensitivity}
+          />
+        {/if}
+      </section>
+    {/if}
   </div>
 
   <div class="tab-panel" role="tabpanel" id="panel-screen" aria-labelledby="tab-screen" hidden={drawerTab !== 'screen'}>
