@@ -34,10 +34,10 @@ public interface IHueBridgeClient {
   /// <summary>
   /// Asks whatever is at an address to identify itself, without credentials.
   ///
-  /// Null for anything that is not a bridge, or does not answer. Unauthenticated on
-  /// purpose: a bridge's identity is not privileged, and this runs in the one case
-  /// where discovery has already failed and the only thing left is an address that
-  /// worked before.
+  /// Null for anything that is not a bridge, or does not answer within a couple of
+  /// seconds. Unauthenticated on purpose: a bridge's identity is not privileged, and
+  /// this runs before discovery on an address that worked before, with no
+  /// credentials checked yet.
   /// </summary>
   Task<HueBridge?> TryDescribeAsync(string address, CancellationToken cancellationToken);
 

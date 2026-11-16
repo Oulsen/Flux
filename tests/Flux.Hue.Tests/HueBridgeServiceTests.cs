@@ -283,6 +283,48 @@ public class HueBridgeServiceTests {
     Assert.Equal(HueConnectionState.Failed, harness.Service.Connection.State);
   }
 
+  /// <summary>
+  /// A start where the bridge is where it was last time does not wait for discovery,
+  /// which on a Hue Bridge Pro is the full LAN scan and cloud lookup.
+  /// </summary>
+  [Fact]
+  public async Task TriesTheLastWorkingAddressBeforeDiscovery() {
+    Harness harness = new Harness(
+      stored: settings => settings.Stored = new HueSettings(null, null, LastBridgeAddress: Bridge.Address));
+    harness.Credentials.Stored = Credentials;
+    harness.Client.Bridges = [Bridge];
+    harness.Client.AtAddress[Bridge.Address] = Bridge;
+    harness.Client.Areas = [Living];
+
+    await harness.RunStartupAsync();
+
+    Assert.Equal(HueConnectionState.Ready, harness.Service.Connection.State);
+    Assert.Equal(Bridge, harness.Service.Connection.Bridge);
+    Assert.Equal(0, harness.Client.DiscoverCalls);
+  }
+
+  /// <summary>
+  /// DHCP moved the bridge: its old address now answers as something else, and
+  /// discovery finds it at the new one, which becomes the address tried next time.
+  /// </summary>
+  [Fact]
+  public async Task FindsABridgeThatMovedThroughDiscovery() {
+    HueBridge moved = Bridge with { Address = "192.168.1.77" };
+    Harness harness = new Harness(
+      stored: settings => settings.Stored = new HueSettings(null, null, LastBridgeAddress: "192.168.1.51"));
+    harness.Credentials.Stored = Credentials;
+    harness.Client.Bridges = [moved];
+    harness.Client.AtAddress["192.168.1.51"] = new HueBridge("ecb5fafffe0dbeef", "192.168.1.51");
+    harness.Client.Areas = [Living];
+
+    await harness.RunStartupAsync();
+
+    Assert.Equal(HueConnectionState.Ready, harness.Service.Connection.State);
+    Assert.Equal(moved, harness.Service.Connection.Bridge);
+    Assert.Equal(1, harness.Client.DiscoverCalls);
+    Assert.Equal(moved.Address, harness.Settings.Stored.LastBridgeAddress);
+  }
+
   [Fact]
   public async Task RemembersWhereTheBridgeAnsweredForNextTime() {
     Harness harness = new Harness();

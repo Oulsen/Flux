@@ -519,35 +519,31 @@ public sealed class HueBridgeService: BackgroundService {
   }
 
   private async Task<HueBridge?> FindPairedBridgeAsync(string bridgeId, CancellationToken cancellationToken) {
-    // Discovery every time rather than a remembered address, because DHCP moves a
+    // The last working address first, because that is where the bridge almost always
+    // still is, and discovery is the slow way to learn it: a Hue Bridge Pro answers
+    // neither mDNS nor SSDP, so discovery runs through the LAN scan and the cloud
+    // lookup first, and the room stayed unpaired for five seconds on every start
+    // waiting for an answer the settings file already had. The address is verified
+    // rather than believed - the bridge id must match the paired one - so a bridge
+    // that DHCP moved fails here and discovery finds it at its new address, and Flux
+    // never talks to whatever now holds the old lease.
+    if(_settings.Load().LastBridgeAddress is { Length: > 0 } hint
+      && await _client.TryDescribeAsync(hint, cancellationToken).ConfigureAwait(false) is { } remembered
+      && string.Equals(remembered.Id, bridgeId, StringComparison.OrdinalIgnoreCase)) {
+      _logger.LogInformation("The paired bridge answered at its last address, {Address}.", hint);
+      Update(connection => connection with { Discovered = [remembered] });
+
+      return remembered;
+    }
+
+    // Discovery once the remembered address has not answered, because DHCP moves a
     // bridge between sessions and the credentials stay valid across the move. The
     // stored identity is the bridge, and this is the step that turns it back into a
     // place.
     IReadOnlyList<HueBridge> found = await _client.DiscoverAsync(_options.Value.DiscoveryTimeout, cancellationToken).ConfigureAwait(false);
     Update(connection => connection with { Discovered = found });
 
-    if(found.FirstOrDefault(bridge => string.Equals(bridge.Id, bridgeId, StringComparison.OrdinalIgnoreCase)) is { } located) {
-      return located;
-    }
-
-    // Discovery found nothing, which on an mDNS-hostile network is the normal state
-    // once the cloud lookup's fifteen-minute budget is spent. The last working address
-    // is tried before giving up - and verified rather than assumed, so a bridge that
-    // has genuinely moved is still reported as missing instead of Flux talking to
-    // whatever now holds that lease.
-    if(_settings.Load().LastBridgeAddress is not { Length: > 0 } hint) {
-      return null;
-    }
-
-    if(await _client.TryDescribeAsync(hint, cancellationToken).ConfigureAwait(false) is not { } remembered
-      || !string.Equals(remembered.Id, bridgeId, StringComparison.OrdinalIgnoreCase)) {
-      return null;
-    }
-
-    _logger.LogInformation("No bridge answered discovery. The paired bridge was still at its last address, {Address}.", hint);
-    Update(connection => connection with { Discovered = [remembered] });
-
-    return remembered;
+    return found.FirstOrDefault(bridge => string.Equals(bridge.Id, bridgeId, StringComparison.OrdinalIgnoreCase));
   }
 
   private void Fail(HueBridgeException e) {
