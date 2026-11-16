@@ -18,6 +18,7 @@
   import StagePanel from './components/StagePanel.svelte';
   import AnchorPad from './components/AnchorPad.svelte';
   import BarShift from './components/BarShift.svelte';
+  import PhoneCode from './components/PhoneCode.svelte';
   import UpdateNotice from './components/UpdateNotice.svelte';
   import WaveformStrip from './components/WaveformStrip.svelte';
   import { stagePhrase } from './lib/diagnostics.ts';
@@ -73,6 +74,9 @@
 
   /** Closed by default, so nothing subscribes to the device feed unasked. */
   let devicesOpen = $state(false);
+
+  /** Closed by default: the code is for the moment a phone joins, not for every visit. */
+  let phoneOpen = $state(false);
 
   let drawerOpen = $state(false);
 
@@ -788,6 +792,27 @@
         <DevicePicker devices={store.devices} pending={store.pendingDevice} select={selectAudioDevice} />
       {/if}
     </section>
+
+    <!-- Only when another device can reach this page at all: a loopback bind has no
+         address to offer, and a code that leads nowhere is worse than none. -->
+    {#if store.phoneUrl !== null}
+      <section class="panel">
+        <button
+          type="button"
+          class="disclosure"
+          class:open={phoneOpen}
+          aria-expanded={phoneOpen}
+          onclick={() => (phoneOpen = !phoneOpen)}
+        >
+          <span class="heading">phone</span>
+          <span class="toggle">{phoneOpen ? 'hide' : 'show'}</span>
+        </button>
+
+        {#if phoneOpen}
+          <PhoneCode url={store.phoneUrl} />
+        {/if}
+      </section>
+    {/if}
 
     <section class="panel">
       <h2>{sourceName}</h2>

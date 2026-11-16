@@ -199,7 +199,8 @@ Sent once, immediately after the socket opens, before anything else.
   "quantum": 4,
   "stateHz": 20,
   "spectrumHz": 30,
-  "devicesHz": 10
+  "devicesHz": 10,
+  "phoneUrl": "http://192.168.1.163:5050/"
 }}
 ```
 
@@ -211,6 +212,14 @@ Sent once, immediately after the socket opens, before anything else.
 | `stateHz` | int | Nominal `state` rate, so the client can size its own smoothing |
 | `spectrumHz` | int | Nominal `spectrum` rate for a subscriber |
 | `devicesHz` | int | Nominal `devices` rate for a subscriber |
+| `phoneUrl` | string or **null** | Where a phone on this network opens the page, for the page's QR code. Null when nothing but this PC can reach it: a loopback bind, or no usable network adapter. Absent from an older Flux |
+
+`phoneUrl` is one address, not every one this PC has: an adapter with a default
+gateway, never a 169.254 address, Ethernet or Wi-Fi first, and the adapter pinned with
+`Link:InterfaceAddress` when it is one of those. With no such adapter it is null. Flux
+refreshes it when Windows reports a network change, so a page that connects after a
+laptop moved to another network gets the new address; a page already connected keeps
+the one it was greeted with until it reconnects.
 
 The three rates are nominal and are what a client should size its own decay and
 smoothing against. They are not promises: every feed drops frames for a client

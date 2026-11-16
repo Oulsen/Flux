@@ -73,6 +73,7 @@ public static class WebHostExtensions {
     // The alternative - an empty interface implementation registered as a
     // placeholder - would make "there is no audio in this build" indistinguishable
     // from "there are no devices on this machine".
+    builder.Services.AddSingleton<PhoneAddress>();
     builder.Services.AddSingleton<SocketHub>(provider => new SocketHub(
       provider.GetRequiredService<IOptions<WebOptions>>(),
       provider.GetRequiredService<IOptions<BeatOptions>>(),
@@ -84,7 +85,8 @@ public static class WebHostExtensions {
       provider.GetRequiredService<StageService>(),
       provider.GetService<IAppUpdates>(),
       provider.GetRequiredService<IHostApplicationLifetime>(),
-      provider.GetRequiredService<ILogger<SocketHub>>()));
+      provider.GetRequiredService<ILogger<SocketHub>>(),
+      provider.GetRequiredService<PhoneAddress>()));
 
     // A factory rather than constructor discovery, now that it has an optional seam
     // of its own: GetService is the only resolution that answers null for a build

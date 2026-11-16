@@ -110,9 +110,12 @@ numbers nobody has ever heard.
 - Every PR: `/pr`, then `/code-review` on the opened PR (Claude Code's built-in
   review), so the whole diff is read before the merge. Findings
   are fixed as new commits on the PR or named in its description, and Claude
-  checks the fixes itself, with no second review pass. A docs-only PR gets no
-  review agent: Claude reads it for consistency and correctness instead. The
-  user merges. The release PR `develop` to `main` gets one final `/code-review`
+  checks the fixes itself, with no second review pass. Then, before the merge,
+  the PR's final state is tried by hand: the dev build started from the branch
+  and the change checked in the Flux window (and on a phone where the change is
+  about one), with what was seen written into the PR's "Tested" section. A
+  docs-only PR skips that and gets no review agent: Claude reads it for
+  consistency and correctness instead. The user merges. The release PR `develop` to `main` gets one final `/code-review`
   before `main` is moved.
 - `main` holds releases and is the default branch. A release moves `main`
   forward to `develop`'s tip with `git push origin <commit>:main`, which only

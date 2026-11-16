@@ -59,8 +59,9 @@ You also need:
    entertainment area. Pairing survives restarts.
 3. Start light sync.
 
-To control Flux from a phone, open `http://<this PC's address>:5050` on the same
-network. The log lists the addresses to try.
+To control Flux from a phone, scan the QR code under "phone" in the setup tab, with
+the phone on the same network. The address is printed under the code to type in
+instead, and the log lists every address this PC has.
 
 ## Updates
 

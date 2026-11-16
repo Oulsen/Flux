@@ -87,7 +87,10 @@ public sealed class SocketHub {
   private readonly CancellationToken stopping;
 
   private readonly ILogger<SocketHub> log;
-  private readonly ReadOnlyMemory<byte> greeting;
+  private readonly int quantum;
+
+  /// <summary>Null where nothing finds one, as in the tests: the greeting then says null.</summary>
+  private readonly PhoneAddress? phone;
 
   /// <summary>
   /// The quantum comes from the beat settings rather than from the web settings
@@ -112,7 +115,8 @@ public sealed class SocketHub {
     StageService stage,
     IAppUpdates? updates,
     IHostApplicationLifetime lifetime,
-    ILogger<SocketHub> log) {
+    ILogger<SocketHub> log,
+    PhoneAddress? phone = null) {
     ArgumentNullException.ThrowIfNull(options);
     ArgumentNullException.ThrowIfNull(beat);
     ArgumentNullException.ThrowIfNull(lifetime);
@@ -127,15 +131,29 @@ public sealed class SocketHub {
     this.updates = updates;
     this.stopping = lifetime.ApplicationStopping;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
+    this.phone = phone;
 
-    // Every field in the greeting is fixed for the lifetime of the process, so
-    // it is encoded once here rather than per connection.
-    this.greeting = Frames.Hello(
+    this.quantum = beat.Value.Quantum;
+  }
+
+  /// <summary>
+  /// The hello frame, encoded per connection.
+  ///
+  /// Everything in it is fixed for the life of the process except the phone address:
+  /// a laptop that moves to another network, or a lease renewed onto a new address,
+  /// changes it under a running Flux, and a page that connects should show the code
+  /// that works now. The address itself is cached by <see cref="PhoneAddress"/> and
+  /// refreshed on a network change, so this costs an encode and no adapter walk. A page
+  /// already connected keeps the code it was greeted with until it reconnects.
+  /// </summary>
+  private ReadOnlyMemory<byte> Greeting() {
+    return Frames.Hello(
       FluxVersion.Current,
-      beat.Value.Quantum,
+      this.quantum,
       this.options.StateHz,
       this.options.SpectrumHz,
-      this.options.DevicesHz);
+      this.options.DevicesHz,
+      this.phone?.Current);
   }
 
   /// <summary>
@@ -199,7 +217,7 @@ public sealed class SocketHub {
     // Greeted before registered, so the greeting cannot end up queued behind a
     // state frame that a broadcast slipped in first. The protocol promises hello
     // arrives before anything else.
-    client.Enqueue(this.greeting);
+    client.Enqueue(this.Greeting());
 
     // The bridge picture follows immediately, and is the only other frame sent
     // unasked-for. Everything else on this socket repeats; hue is pushed on change,

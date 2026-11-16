@@ -193,6 +193,8 @@ export interface HelloData {
   stateHz: number;
   spectrumHz: number;
   devicesHz: number;
+  /** Where a phone opens the page; null when only this PC can, absent from an older Flux. */
+  phoneUrl?: string | null;
 }
 
 export interface GridData {
