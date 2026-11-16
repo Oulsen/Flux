@@ -23,12 +23,8 @@
   import UpdateNotice from './components/UpdateNotice.svelte';
   import WaveformStrip from './components/WaveformStrip.svelte';
   import { stagePhrase } from './lib/diagnostics.ts';
-
-  /** The audio source's sensitivity scale, mirrored from `IAudioSensitivity`. */
-  const SENSITIVITY_MIN = 1;
-  const SENSITIVITY_MAX = 100;
   import { FluxStore } from './lib/flux.svelte.ts';
-  import { PROTOCOL_VERSION } from './lib/protocol.ts';
+  import { PROTOCOL_VERSION, SENSITIVITY_MAX, SENSITIVITY_MIN } from './lib/protocol.ts';
   import type { DiagnosticsData, HueEngineData, StageData } from './lib/protocol.ts';
   import { bridgeNeedsSetup, colorChangeLabel, showsRooms } from './lib/hue.ts';
   import {
@@ -378,6 +374,7 @@
   }
 
   function setSensitivity(sensitivity: number): void {
+    store.pendingSensitivity = sensitivity;
     socket?.send({ type: 'setSensitivity', data: { sensitivity } });
   }
 
@@ -730,7 +727,7 @@
           min={SENSITIVITY_MIN}
           max={SENSITIVITY_MAX}
           step={1}
-          value={store.sensitivity}
+          value={store.pendingSensitivity ?? store.sensitivity}
           format={(sensitivity) => `${sensitivity}`}
           hint="How eagerly the audio source hears a beat."
           detail="Turn it up for music with a soft kick, down when beats are found in the hi-hats. A tempo read at half or double is a different problem, and this is not the setting for it."

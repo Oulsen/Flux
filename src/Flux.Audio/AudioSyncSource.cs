@@ -59,6 +59,9 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IAudioSensit
 
   /// <summary>Where a sensitivity set from the page is remembered; null in tests that need no disk.</summary>
   private readonly IAudioSettingsStore? settings;
+
+  /// <summary>Serialises <see cref="TrySetSensitivity"/>, see there.</summary>
+  private readonly object sensitivityGate = new();
   private readonly IMonotonicClock clock;
   private readonly ITimelineSink sink;
   private readonly double staleAfterMicros;
@@ -157,10 +160,17 @@ internal sealed class AudioSyncSource: ISyncSource, IAudioSpectrum, IAudioSensit
       return false;
     }
 
-    this.detector.Sensitivity = sensitivity;
-    this.settings?.Update(stored => stored with { Sensitivity = sensitivity });
-    this.log.LogInformation("Beat sensitivity is now {Sensitivity}.", sensitivity);
-    this.SensitivityChanged?.Invoke(sensitivity);
+    // One change at a time, all three steps together: two pages dragging at once each
+    // reach here on their own socket thread, and interleaved they would leave the
+    // detector, the file and the pages on three different values.
+    lock(this.sensitivityGate) {
+      this.detector.Sensitivity = sensitivity;
+      this.settings?.Update(stored => stored with { Sensitivity = sensitivity });
+
+      // Debug rather than information: a drag sends ten of these a second.
+      this.log.LogDebug("Beat sensitivity is now {Sensitivity}.", sensitivity);
+      this.SensitivityChanged?.Invoke(sensitivity);
+    }
 
     return true;
   }

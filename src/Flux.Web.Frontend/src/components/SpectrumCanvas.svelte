@@ -40,7 +40,7 @@
     barThickness,
     dampPulse,
     hueCss,
-    hueShift,
+    advanceHue,
     isSmooth,
     keepAfterimages,
     lightAt,
@@ -237,6 +237,19 @@
      * each half. Either way the window ends up with the same two turns across it, which
      * is what keeps switching layout from also changing how busy the colour is.
      */
+    // Where the cycling hue has got to, advanced once per frame at the speed in force, so
+    // moving the speed changes how fast the colour travels without moving it.
+    let hueTurns = 0;
+    let hueAtMs: number | null = null;
+    const hueAt = (now: number): number => {
+      if (hueAtMs !== null && now > hueAtMs) {
+        hueTurns = advanceHue(hueTurns, now - hueAtMs, stage.hueSpeed);
+      }
+
+      hueAtMs = now;
+      return hueTurns;
+    };
+
     const axisGradient = (side: Side): CanvasGradient => {
       if (stage.layout === 'upward') {
         return context.createLinearGradient(0, 0, cssWidth, 0);
@@ -249,7 +262,7 @@
     };
 
     const waveGradient = (side: Side, now: number): CanvasGradient => {
-      const phase = hueShift(now, stage.hueSpeed) * WAVE_PHASE_TURNS;
+      const phase = hueAt(now) * WAVE_PHASE_TURNS;
       const gradient = axisGradient(side);
 
       for (const stop of rainbowStops(phase)) {
@@ -261,7 +274,7 @@
 
     /** The same rainbow down the picture instead of across it, and not mirrored. */
     const verticalWaveGradient = (now: number): CanvasGradient => {
-      const phase = hueShift(now, stage.hueSpeed) * WAVE_PHASE_TURNS;
+      const phase = hueAt(now) * WAVE_PHASE_TURNS;
       const gradient = context.createLinearGradient(0, 0, 0, cssHeight);
 
       for (const stop of rainbowStops(phase)) {
@@ -290,7 +303,7 @@
     const sidePaint = (side: Side, now: number): string | CanvasGradient => {
       switch (stage.color) {
         case 'hueCycle':
-          return hueCss(hueShift(now, stage.hueSpeed));
+          return hueCss(hueAt(now));
         case 'hueWave':
           return waveGradient(side, now);
         case 'hueWaveVert':

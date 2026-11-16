@@ -637,6 +637,24 @@ export function hueShift(nowMs: number, speed: number): number {
 }
 
 /**
+ * Moves a hue on by the time since it was last drawn, at the speed in force now.
+ *
+ * The scene could take the hue from the clock alone because its speed only changed in
+ * a settings dialog. Here it moves on a slider while the page runs, and the clock alone
+ * would multiply the whole time the page has been open by the new speed: an hour in, one
+ * step of the slider moves the phase by eighteen turns and the colour jumps to a random
+ * place on the wheel. Advancing by the elapsed time keeps the colour where it is and
+ * changes only how fast it travels from there.
+ */
+export function advanceHue(turns: number, elapsedMs: number, speed: number): number {
+  if (!Number.isFinite(turns)) {
+    return 0;
+  }
+
+  return (turns + hueShift(Math.max(0, elapsedMs), speed)) % 1;
+}
+
+/**
  * The outline of the right-hand half, from the centre outward along the bar tips.
  *
  * One quadrant only. The scene fills this path four times under mirroring transforms

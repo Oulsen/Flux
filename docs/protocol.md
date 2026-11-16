@@ -162,8 +162,9 @@ request beside the socket, `GET /api/track/{track}`, for its waveform and grid. 
 field and a new URL: an older page ignores the field and never asks for the URL, so
 the version stays 2.
 
-It then brought the scene's last settings onto the page. `hello` gained `phoneUrl`, an
-addition. `audio` and `setSensitivity` are new types. `stage` gained `hueSpeed` and
+`hello` then gained `phoneUrl`, for the page's QR code: an addition, which an older page
+ignores. After that the scene's last settings came onto the page: `audio` and
+`setSensitivity` are new types. `stage` gained `hueSpeed` and
 `setStageSettings` requires it, the way `trailMs` arrived, so a page built before it has
 its look refused as `invalid_data` rather than quietly applied without a speed it never
 chose. The version stays 2.
@@ -1056,9 +1057,9 @@ touches a slider would be twelve hundred identical copies a minute on `state`.
 
 ### `update`
 
-Whether a newer Flux is waiting. Sent once on connect, right after `stage`, and again to
-every client whenever it changes. The desktop app always sends it, and a host with no
-updater at all sends none. A page that has received none since the last `hello`, or
+Whether a newer Flux is waiting. Sent once on connect, right after `stage` and, on a
+build with an audio source, `audio`, and again to every client whenever it changes. The
+desktop app always sends it, and a host with no updater at all sends none. A page that has received none since the last `hello`, or
 has received `unavailable`, shows no update control.
 
 ```json

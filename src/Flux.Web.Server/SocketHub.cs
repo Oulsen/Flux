@@ -779,14 +779,6 @@ public sealed class SocketHub {
   }
 
   /// <summary>
-  /// Shifts light against the beat.
-  ///
-  /// Refused rather than clamped outside the range, on the same argument as a manual
-  /// tempo: half a second is a whole beat at 120 BPM, so a larger value aims at a
-  /// different beat, and clamping a typo produces a plausible wrong answer that
-  /// somebody then tunes around.
-  /// </summary>
-  /// <summary>
   /// Sets how eagerly the audio source hears a beat. No acknowledgement: the <c>audio</c>
   /// frame that follows goes to every page, so a phone moving it moves the laptop's too.
   /// </summary>
@@ -808,6 +800,14 @@ public sealed class SocketHub {
     }
   }
 
+  /// <summary>
+  /// Shifts light against the beat.
+  ///
+  /// Refused rather than clamped outside the range, on the same argument as a manual
+  /// tempo: half a second is a whole beat at 120 BPM, so a larger value aims at a
+  /// different beat, and clamping a typo produces a plausible wrong answer that
+  /// somebody then tunes around.
+  /// </summary>
   private void SetLatencyOffset(Client client, JsonElement data) {
     if(!Frames.TryReadLatencyOffset(data, out int offsetMs)) {
       client.Enqueue(Frames.Error("invalid_data", "Setting the latency offset needs an integer 'data.offsetMs'."));

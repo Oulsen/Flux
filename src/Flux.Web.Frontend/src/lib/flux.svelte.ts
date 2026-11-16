@@ -161,6 +161,9 @@ export class FluxStore {
   /** The audio source's beat sensitivity; null until a server with an audio source says. */
   sensitivity = $state<number | null>(null);
 
+  /** The sensitivity this page asked for and has not seen come back, as for the stage. */
+  pendingSensitivity = $state<number | null>(null);
+
   /**
    * The stage settings this page has asked for and not yet seen come back.
    *
@@ -266,6 +269,7 @@ export class FluxStore {
 
       case 'audio': {
         this.sensitivity = (message.data as AudioData).sensitivity;
+        this.pendingSensitivity = resolvePending(this.pendingSensitivity, this.sensitivity);
         break;
       }
 
@@ -319,6 +323,7 @@ export class FluxStore {
           this.pendingDevice = null;
           this.pendingEngine = {};
           this.pendingStage = {};
+          this.pendingSensitivity = null;
         }
 
         console.warn('Flux rejected a message:', error);
@@ -343,6 +348,7 @@ export class FluxStore {
     this.pendingDevice = null;
     this.pendingEngine = {};
     this.pendingStage = {};
+    this.pendingSensitivity = null;
 
     // A subscription is a preference held by the connection that is now gone, so
     // the list it filled is gone with it. Keeping the rows would show meters

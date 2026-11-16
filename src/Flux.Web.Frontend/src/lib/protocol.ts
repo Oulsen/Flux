@@ -83,6 +83,12 @@ export interface StageData {
   hueSpeed: number;
 }
 
+/** The audio source's sensitivity scale. Mirrored from `IAudioSensitivity.Min` and `Max`. */
+export const SENSITIVITY_MIN = 1;
+
+/** @see SENSITIVITY_MIN */
+export const SENSITIVITY_MAX = 100;
+
 /** How the audio source listens. Sent only by a build that has an audio source. */
 export interface AudioData {
   /** How eagerly a beat is heard, 1 to 100: higher hears softer kicks, lower ignores hi-hats. */

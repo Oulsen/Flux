@@ -220,13 +220,6 @@ public static class Frames {
     return TryReadString(data, "areaId", out string text) && Guid.TryParse(text, out areaId);
   }
 
-  /// <summary>
-  /// Reads a <c>setLatencyOffset</c> payload.
-  ///
-  /// Integer milliseconds, strictly. A fractional offset is refused rather than
-  /// rounded, because the slider that sends this deals in whole milliseconds and
-  /// anything else is a client that has stopped agreeing with the document.
-  /// </summary>
   /// <summary>Reads a <c>setSensitivity</c> payload, as far as its shape.</summary>
   public static bool TryReadSensitivity(JsonElement data, out int sensitivity) {
     sensitivity = 0;
@@ -234,6 +227,13 @@ public static class Frames {
     return data.ValueKind == JsonValueKind.Object && TryReadInt(data, "sensitivity", out sensitivity);
   }
 
+  /// <summary>
+  /// Reads a <c>setLatencyOffset</c> payload.
+  ///
+  /// Integer milliseconds, strictly. A fractional offset is refused rather than
+  /// rounded, because the slider that sends this deals in whole milliseconds and
+  /// anything else is a client that has stopped agreeing with the document.
+  /// </summary>
   public static bool TryReadLatencyOffset(JsonElement data, out int offsetMs) {
     offsetMs = 0;
 
