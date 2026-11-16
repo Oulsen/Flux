@@ -89,6 +89,9 @@ public sealed class SocketHub {
   private readonly ILogger<SocketHub> log;
   private readonly int quantum;
 
+  /// <summary>Null where nothing finds one, as in the tests: the greeting then says null.</summary>
+  private readonly PhoneAddress? phone;
+
   /// <summary>
   /// The quantum comes from the beat settings rather than from the web settings
   /// because it is a property of the music, not of the transport. It is also the
@@ -112,7 +115,8 @@ public sealed class SocketHub {
     StageService stage,
     IAppUpdates? updates,
     IHostApplicationLifetime lifetime,
-    ILogger<SocketHub> log) {
+    ILogger<SocketHub> log,
+    PhoneAddress? phone = null) {
     ArgumentNullException.ThrowIfNull(options);
     ArgumentNullException.ThrowIfNull(beat);
     ArgumentNullException.ThrowIfNull(lifetime);
@@ -127,6 +131,7 @@ public sealed class SocketHub {
     this.updates = updates;
     this.stopping = lifetime.ApplicationStopping;
     this.log = log ?? throw new ArgumentNullException(nameof(log));
+    this.phone = phone;
 
     this.quantum = beat.Value.Quantum;
   }
@@ -136,8 +141,10 @@ public sealed class SocketHub {
   ///
   /// Everything in it is fixed for the life of the process except the phone address:
   /// a laptop that moves to another network, or a lease renewed onto a new address,
-  /// changes it under a running Flux, and a page that reconnects should show the code
-  /// that works now. Finding it walks the network adapters, once per connection.
+  /// changes it under a running Flux, and a page that connects should show the code
+  /// that works now. The address itself is cached by <see cref="PhoneAddress"/> and
+  /// refreshed on a network change, so this costs an encode and no adapter walk. A page
+  /// already connected keeps the code it was greeted with until it reconnects.
   /// </summary>
   private ReadOnlyMemory<byte> Greeting() {
     return Frames.Hello(
@@ -146,7 +153,7 @@ public sealed class SocketHub {
       this.options.StateHz,
       this.options.SpectrumHz,
       this.options.DevicesHz,
-      PhoneAddress.For(this.options));
+      this.phone?.Current);
   }
 
   /// <summary>
