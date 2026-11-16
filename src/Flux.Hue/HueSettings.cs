@@ -28,7 +28,8 @@ namespace Flux.Hue;
 /// scan and a cloud lookup rate-limited to about one request every fifteen minutes,
 /// and the bridge is nearly always still where it answered last. The hint is verified
 /// before it is used, by asking whatever answers there for its id, so a stale one is
-/// discarded rather than believed and discovery takes over.
+/// discarded rather than believed and discovery takes over. When discovery finds
+/// nothing, the hint is asked once more before Flux reports the bridge missing.
 /// </param>
 /// <param name="Light">
 /// How the user has the light engine set, or null while they have never changed it.

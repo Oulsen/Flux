@@ -60,13 +60,24 @@ internal sealed class FakeHueBridgeClient: IHueBridgeClient {
     return PairAnswers.Count > 0 ? PairAnswers.Dequeue() : null;
   }
 
-  /// <summary>What answers at an address, for the fallback discovery cannot cover.</summary>
+  /// <summary>What answers at an address, for the remembered address tried around discovery.</summary>
   public Dictionary<string, HueBridge> AtAddress { get; } = [];
 
   public int DescribeCalls { get; private set; }
 
+  /// <summary>
+  /// A bridge that answers at an address only from the given call on, counted across
+  /// all addresses: an address that was not reachable yet the first time it was asked.
+  /// </summary>
+  public Dictionary<string, (int FromCall, HueBridge Bridge)> AnswersFromDescribeCall { get; } = [];
+
   public Task<HueBridge?> TryDescribeAsync(string address, CancellationToken cancellationToken) {
     DescribeCalls++;
+
+    if(AnswersFromDescribeCall.TryGetValue(address, out (int FromCall, HueBridge Bridge) late)) {
+      return Task.FromResult<HueBridge?>(DescribeCalls >= late.FromCall ? late.Bridge : null);
+    }
+
     return Task.FromResult(AtAddress.GetValueOrDefault(address));
   }
 
